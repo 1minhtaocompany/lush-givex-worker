@@ -63,7 +63,7 @@ def parse_params_from_text(param_text):
     if not text:
         return []
     try:
-        tree = ast.parse(f"def _signature_parser({text}):\n    pass")
+        tree = ast.parse(f"def _temp_signature_function({text}):\n    pass")
         func = tree.body[0]
         if isinstance(func, ast.FunctionDef):
             return extract_param_names(func.args)
