@@ -1,1 +1,5 @@
-
+on:
+  push:
+    branches: [ develop, test/e2e-validation-phase2 ]
+  pull_request:
+    branches: [ develop ]
