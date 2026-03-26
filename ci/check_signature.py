@@ -1,8 +1,8 @@
 import ast
-from collections import Counter
 import os
 import re
 import sys
+from collections import Counter
 
 
 MARKDOWN_FUNCTION_PATTERN = re.compile(
@@ -37,7 +37,7 @@ def parse_params_from_text(param_text):
     if not text:
         return []
     try:
-        tree = ast.parse(f"def _parse_fn({text}):\n    pass")
+        tree = ast.parse(f"def _signature_parser({text}):\n    pass")
         func = tree.body[0]
         if isinstance(func, ast.FunctionDef):
             return extract_param_names(func.args)
@@ -75,8 +75,8 @@ def parse_interface_spec(spec_path):
     if not os.path.isfile(spec_path):
         return {}
     try:
-        with open(spec_path, "r", encoding="utf-8") as file:
-            content = file.read()
+        with open(spec_path, "r", encoding="utf-8") as spec_file:
+            content = spec_file.read()
     except (OSError, UnicodeError):
         return {}
     signatures = {}
@@ -95,8 +95,8 @@ def parse_schema_spec(spec_path):
     if not os.path.isfile(spec_path):
         return {}
     try:
-        with open(spec_path, "r", encoding="utf-8") as file:
-            content = file.read()
+        with open(spec_path, "r", encoding="utf-8") as spec_file:
+            content = spec_file.read()
     except (OSError, UnicodeError):
         return {}
     try:
@@ -203,8 +203,8 @@ def main():
 
     for file_path in iter_python_files(modules_dir):
         try:
-            with open(file_path, "r", encoding="utf-8") as file:
-                content = file.read()
+            with open(file_path, "r", encoding="utf-8") as source_file:
+                content = source_file.read()
             tree = ast.parse(content, filename=file_path)
         except SyntaxError as exc:
             rel_path = os.path.relpath(file_path, repo_root)
