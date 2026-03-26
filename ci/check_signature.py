@@ -36,7 +36,7 @@ def parse_params_from_text(param_text):
     if not text:
         return []
     try:
-        tree = ast.parse(f"def __spec__({text}):\n    pass")
+        tree = ast.parse(f"def _temp_spec_func({text}):\n    pass")
         func = tree.body[0]
         if isinstance(func, ast.FunctionDef):
             return extract_param_names(func.args)
@@ -65,7 +65,7 @@ def format_annotation(node, source):
         return None
     try:
         text = ast.unparse(node)
-    except Exception:
+    except (AttributeError, ValueError, TypeError):
         text = ast.get_source_segment(source, node) or ""
     return normalize_type(text)
 
@@ -171,7 +171,7 @@ def compare_signatures(
                     f"missing return annotation (expected {spec_return})",
                 )
             )
-        elif normalize_type(code_return) != normalize_type(spec_return):
+        elif code_return != spec_return:
             warnings.append(
                 (
                     rel_path,
