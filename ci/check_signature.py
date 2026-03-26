@@ -1,289 +1,288 @@
-��i m p o r t   a s t  
- i m p o r t   o s  
- i m p o r t   r e  
- i m p o r t   s y s  
- f r o m   c o l l e c t i o n s   i m p o r t   C o u n t e r  
-  
-  
- S I G N A T U R E _ L I N E _ P A T T E R N   =   r e . c o m p i l e (  
-         r " ^ ( ? : d e f \ s + ) ? ( ? P < n a m e > [ A - Z a - z _ ] \ w * ) \ s * \ ( "  
- )  
-  
-  
- d e f   e x t r a c t _ p a r e n t h e s i z e d ( t e x t ,   s t a r t _ i n d e x ) :  
-         d e p t h   =   0  
-         s t a r t   =   N o n e  
-         f o r   i n d e x   i n   r a n g e ( s t a r t _ i n d e x ,   l e n ( t e x t ) ) :  
-                 c h a r   =   t e x t [ i n d e x ]  
-                 i f   c h a r   = =   " ( " :  
-                         d e p t h   + =   1  
-                         i f   d e p t h   = =   1 :  
-                                 s t a r t   =   i n d e x   +   1  
-                 e l i f   c h a r   = =   " ) " :  
-                         d e p t h   - =   1  
-                         i f   d e p t h   = =   0   a n d   s t a r t   i s   n o t   N o n e :  
-                                 r e t u r n   t e x t [ s t a r t : i n d e x ] ,   i n d e x  
-         r e t u r n   N o n e ,   N o n e  
-  
-  
- d e f   e x t r a c t _ r e t u r n _ t y p e ( t e x t ,   c l o s e _ i n d e x ) :  
-         l i n e _ e n d   =   t e x t . f i n d ( " \ n " ,   c l o s e _ i n d e x   +   1 )  
-         i f   l i n e _ e n d   = =   - 1 :  
-                 l i n e _ e n d   =   l e n ( t e x t )  
-         l i n e _ t a i l   =   t e x t [ c l o s e _ i n d e x   +   1   :   l i n e _ e n d ]  
-         m a t c h   =   r e . s e a r c h ( r " - > \ s * ( [ ^ \ n : ] + ) " ,   l i n e _ t a i l )  
-         i f   n o t   m a t c h :  
-                 r e t u r n   N o n e  
-         r e t u r n   n o r m a l i z e _ t y p e ( m a t c h . g r o u p ( 1 ) )  
-  
-  
- d e f   n o r m a l i z e _ t y p e ( t y p e _ t e x t ) :  
-         i f   n o t   t y p e _ t e x t :  
-                 r e t u r n   N o n e  
-         c l e a n e d   =   "   " . j o i n ( t y p e _ t e x t . s t r i p ( ) . r s t r i p ( " : " ) . s p l i t ( ) )  
-         r e t u r n   c l e a n e d   o r   N o n e  
-  
-  
- d e f   e x t r a c t _ p a r a m _ n a m e s ( a r g s ) :  
-         n a m e s   =   [ ]  
-         f o r   a r g   i n   a r g s . p o s o n l y a r g s   +   a r g s . a r g s :  
-                 n a m e s . a p p e n d ( a r g . a r g )  
-         i f   a r g s . v a r a r g :  
-                 n a m e s . a p p e n d ( a r g s . v a r a r g . a r g )  
-         f o r   a r g   i n   a r g s . k w o n l y a r g s :  
-                 n a m e s . a p p e n d ( a r g . a r g )  
-         i f   a r g s . k w a r g :  
-                 n a m e s . a p p e n d ( a r g s . k w a r g . a r g )  
-         r e t u r n   n a m e s  
-  
-  
- d e f   p a r s e _ p a r a m s _ f r o m _ t e x t ( p a r a m _ t e x t ) :  
-         t e x t   =   p a r a m _ t e x t . s t r i p ( )  
-         i f   n o t   t e x t :  
-                 r e t u r n   [ ]  
-         t r y :  
-                 t r e e   =   a s t . p a r s e ( f " d e f   _ t e m p _ s i g n a t u r e _ f u n c t i o n ( { t e x t } ) : \ n         p a s s " )  
-                 f u n c   =   t r e e . b o d y [ 0 ]  
-                 i f   i s i n s t a n c e ( f u n c ,   a s t . F u n c t i o n D e f ) :  
-                         r e t u r n   e x t r a c t _ p a r a m _ n a m e s ( f u n c . a r g s )  
-         e x c e p t   S y n t a x E r r o r :  
-                 p a s s  
-         p a r a m s   =   [ ]  
-         f o r   r a w   i n   t e x t . s p l i t ( " , " ) :  
-                 p i e c e   =   r a w . s t r i p ( )  
-                 i f   n o t   p i e c e   o r   p i e c e   i n   { " * " ,   " / " } :  
-                         c o n t i n u e  
-                 i f   p i e c e . s t a r t s w i t h ( " * * " ) :  
-                         p i e c e   =   p i e c e [ 2 : ]  
-                 e l i f   p i e c e . s t a r t s w i t h ( " * " ) :  
-                         p i e c e   =   p i e c e [ 1 : ]  
-                 i f   " : "   i n   p i e c e :  
-                         p i e c e   =   p i e c e . s p l i t ( " : " ,   1 ) [ 0 ] . s t r i p ( )  
-                 i f   " = "   i n   p i e c e :  
-                         p i e c e   =   p i e c e . s p l i t ( " = " ,   1 ) [ 0 ] . s t r i p ( )  
-                 i f   p i e c e :  
-                         p a r a m s . a p p e n d ( p i e c e )  
-         r e t u r n   p a r a m s  
-  
-  
- d e f   f o r m a t _ a n n o t a t i o n ( n o d e ,   s o u r c e ) :  
-         i f   n o d e   i s   N o n e :  
-                 r e t u r n   N o n e  
-         t r y :  
-                 t e x t   =   a s t . u n p a r s e ( n o d e )  
-         e x c e p t   ( A t t r i b u t e E r r o r ,   V a l u e E r r o r ,   T y p e E r r o r ) :  
-                 t e x t   =   a s t . g e t _ s o u r c e _ s e g m e n t ( s o u r c e ,   n o d e )   o r   " "  
-         r e t u r n   n o r m a l i z e _ t y p e ( t e x t )  
-  
-  
- d e f   p a r s e _ i n t e r f a c e _ s p e c ( s p e c _ p a t h ) :  
-         i f   n o t   o s . p a t h . i s f i l e ( s p e c _ p a t h ) :  
-                 r e t u r n   { }  
-         t r y :  
-                 w i t h   o p e n ( s p e c _ p a t h ,   " r " ,   e n c o d i n g = " u t f - 8 " )   a s   s p e c _ f i l e :  
-                         c o n t e n t   =   s p e c _ f i l e . r e a d ( )  
-         e x c e p t   ( O S E r r o r ,   U n i c o d e E r r o r ) :  
-                 r e t u r n   { }  
-         s i g n a t u r e s   =   { }  
-         i n _ c o d e _ b l o c k   =   F a l s e  
-         f o r   l i n e   i n   c o n t e n t . s p l i t l i n e s ( ) :  
-                 s t r i p p e d   =   l i n e . s t r i p ( )  
-                 i f   s t r i p p e d . s t a r t s w i t h ( " ` ` ` " ) :  
-                         i n _ c o d e _ b l o c k   =   n o t   i n _ c o d e _ b l o c k  
-                         c o n t i n u e  
-                 c a n d i d a t e   =   s t r i p p e d  
-                 i f   n o t   i n _ c o d e _ b l o c k :  
-                         c a n d i d a t e   =   c a n d i d a t e . l s t r i p ( " - * + " ) . s t r i p ( )  
-                         i f   c a n d i d a t e . s t a r t s w i t h ( " ` " )   a n d   c a n d i d a t e . e n d s w i t h ( " ` " ) :  
-                                 c a n d i d a t e   =   c a n d i d a t e . s t r i p ( " ` " ) . s t r i p ( )  
-                         e l i f   c a n d i d a t e . s t a r t s w i t h ( " ` " ) :  
-                                 c a n d i d a t e   =   c a n d i d a t e . s t r i p ( " ` " ) . s t r i p ( )  
-                 m a t c h   =   S I G N A T U R E _ L I N E _ P A T T E R N . m a t c h ( c a n d i d a t e )  
-                 i f   n o t   m a t c h :  
-                         c o n t i n u e  
-                 n a m e   =   m a t c h . g r o u p ( " n a m e " )  
-                 p a r a m s _ t e x t ,   c l o s e _ i n d e x   =   e x t r a c t _ p a r e n t h e s i z e d ( c a n d i d a t e ,   m a t c h . e n d ( )   -   1 )  
-                 i f   p a r a m s _ t e x t   i s   N o n e :  
-                         c o n t i n u e  
-                 r e t u r n _ t e x t   =   e x t r a c t _ r e t u r n _ t y p e ( c a n d i d a t e ,   c l o s e _ i n d e x )  
-                 s i g n a t u r e s [ n a m e ]   =   {  
-                         " p a r a m s " :   p a r s e _ p a r a m s _ f r o m _ t e x t ( p a r a m s _ t e x t ) ,  
-                         " r e t u r n _ t y p e " :   r e t u r n _ t e x t ,  
-                 }  
-         r e t u r n   s i g n a t u r e s  
-  
-  
- d e f   p a r s e _ s c h e m a _ s p e c ( s p e c _ p a t h ) :  
-         i f   n o t   o s . p a t h . i s f i l e ( s p e c _ p a t h ) :  
-                 r e t u r n   { }  
-         t r y :  
-                 w i t h   o p e n ( s p e c _ p a t h ,   " r " ,   e n c o d i n g = " u t f - 8 " )   a s   s p e c _ f i l e :  
-                         c o n t e n t   =   s p e c _ f i l e . r e a d ( )  
-         e x c e p t   ( O S E r r o r ,   U n i c o d e E r r o r ) :  
-                 r e t u r n   { }  
-         t r y :  
-                 t r e e   =   a s t . p a r s e ( c o n t e n t ,   f i l e n a m e = s p e c _ p a t h )  
-         e x c e p t   S y n t a x E r r o r :  
-                 r e t u r n   { }  
-         s i g n a t u r e s   =   { }  
-         f o r   n o d e   i n   t r e e . b o d y :  
-                 i f   i s i n s t a n c e ( n o d e ,   ( a s t . F u n c t i o n D e f ,   a s t . A s y n c F u n c t i o n D e f ) ) :  
-                         s i g n a t u r e s [ n o d e . n a m e ]   =   {  
-                                 " p a r a m s " :   e x t r a c t _ p a r a m _ n a m e s ( n o d e . a r g s ) ,  
-                                 " r e t u r n _ t y p e " :   f o r m a t _ a n n o t a t i o n ( n o d e . r e t u r n s ,   c o n t e n t ) ,  
-                         }  
-         r e t u r n   s i g n a t u r e s  
-  
-  
- d e f   l o a d _ s p e c _ s i g n a t u r e s ( r e p o _ r o o t ) :  
-         s p e c _ d i r   =   o s . p a t h . j o i n ( r e p o _ r o o t ,   " s p e c " )  
-         i n t e r f a c e _ p a t h   =   o s . p a t h . j o i n ( s p e c _ d i r ,   " i n t e r f a c e . m d " )  
-         s c h e m a _ p a t h   =   o s . p a t h . j o i n ( s p e c _ d i r ,   " s c h e m a . p y " )  
-         i n t e r f a c e _ s i g n a t u r e s   =   p a r s e _ i n t e r f a c e _ s p e c ( i n t e r f a c e _ p a t h )  
-         i f   i n t e r f a c e _ s i g n a t u r e s :  
-                 r e t u r n   i n t e r f a c e _ s i g n a t u r e s  
-         s c h e m a _ s i g n a t u r e s   =   p a r s e _ s c h e m a _ s p e c ( s c h e m a _ p a t h )  
-         r e t u r n   s c h e m a _ s i g n a t u r e s  
-  
-  
- d e f   i t e r _ p y t h o n _ f i l e s ( m o d u l e s _ d i r ) :  
-         f o r   r o o t ,   _ ,   f i l e s   i n   o s . w a l k ( m o d u l e s _ d i r ) :  
-                 f o r   f i l e n a m e   i n   f i l e s :  
-                         i f   f i l e n a m e . e n d s w i t h ( " . p y " ) :  
-                                 y i e l d   o s . p a t h . j o i n ( r o o t ,   f i l e n a m e )  
-  
-  
- d e f   c o m p a r e _ s i g n a t u r e s (  
-         f i l e _ p a t h ,   n o d e ,   s p e c _ s i g n a t u r e ,   s o u r c e ,   e r r o r s ,   w a r n i n g s ,   r e p o _ r o o t  
- ) :  
-         s p e c _ p a r a m s   =   s p e c _ s i g n a t u r e [ " p a r a m s " ]  
-         c o d e _ p a r a m s   =   e x t r a c t _ p a r a m _ n a m e s ( n o d e . a r g s )  
-         r e l _ p a t h   =   o s . p a t h . r e l p a t h ( f i l e _ p a t h ,   r e p o _ r o o t )  
-         i f   l e n ( c o d e _ p a r a m s )   ! =   l e n ( s p e c _ p a r a m s ) :  
-                 s p e c _ c o u n t e r   =   C o u n t e r ( s p e c _ p a r a m s )  
-                 c o d e _ c o u n t e r   =   C o u n t e r ( c o d e _ p a r a m s )  
-                 m i s s i n g   =   [ ]  
-                 e x t r a   =   [ ]  
-                 f o r   n a m e ,   c o u n t   i n   ( s p e c _ c o u n t e r   -   c o d e _ c o u n t e r ) . i t e m s ( ) :  
-                         m i s s i n g . a p p e n d ( f " { n a m e }   ( c o u n t :   { c o u n t } ) "   i f   c o u n t   >   1   e l s e   n a m e )  
-                 f o r   n a m e ,   c o u n t   i n   ( c o d e _ c o u n t e r   -   s p e c _ c o u n t e r ) . i t e m s ( ) :  
-                         e x t r a . a p p e n d ( f " { n a m e }   ( c o u n t :   { c o u n t } ) "   i f   c o u n t   >   1   e l s e   n a m e )  
-                 p a r t s   =   [ ]  
-                 i f   m i s s i n g :  
-                         p a r t s . a p p e n d ( f " m i s s i n g   p a r a m s :   { ' ,   ' . j o i n ( m i s s i n g ) } " )  
-                 i f   e x t r a :  
-                         p a r t s . a p p e n d ( f " e x t r a   p a r a m s :   { ' ,   ' . j o i n ( e x t r a ) } " )  
-                 m e s s a g e   =   " ;   " . j o i n ( p a r t s )   o r   (  
-                         f " p a r a m   c o u n t   m i s m a t c h   ( e x p e c t e d   { l e n ( s p e c _ p a r a m s ) } ,   g o t   { l e n ( c o d e _ p a r a m s ) } ) "  
-                 )  
-                 e r r o r s . a p p e n d ( ( r e l _ p a t h ,   n o d e . l i n e n o ,   n o d e . n a m e ,   m e s s a g e ) )  
-                 r e t u r n  
-         i f   c o d e _ p a r a m s   ! =   s p e c _ p a r a m s :  
-                 m i s m a t c h e s   =   [  
-                         f " { i d x   +   1 } :   e x p e c t e d   ' { s p e c } ' ,   g o t   ' { c o d e } ' "  
-                         f o r   i d x ,   ( s p e c ,   c o d e )   i n   e n u m e r a t e ( z i p ( s p e c _ p a r a m s ,   c o d e _ p a r a m s ) )  
-                         i f   s p e c   ! =   c o d e  
-                 ]  
-                 i f   m i s m a t c h e s :  
-                         m e s s a g e   =   " p a r a m   n a m e   m i s m a t c h   ( "   +   " ;   " . j o i n ( m i s m a t c h e s )   +   " ) "  
-                         e r r o r s . a p p e n d ( ( r e l _ p a t h ,   n o d e . l i n e n o ,   n o d e . n a m e ,   m e s s a g e ) )  
-                         r e t u r n  
-         s p e c _ r e t u r n   =   s p e c _ s i g n a t u r e . g e t ( " r e t u r n _ t y p e " )  
-         i f   s p e c _ r e t u r n :  
-                 c o d e _ r e t u r n   =   f o r m a t _ a n n o t a t i o n ( n o d e . r e t u r n s ,   s o u r c e )  
-                 i f   n o t   c o d e _ r e t u r n :  
-                         w a r n i n g s . a p p e n d (  
-                                 (  
-                                         r e l _ p a t h ,  
-                                         n o d e . l i n e n o ,  
-                                         n o d e . n a m e ,  
-                                         f " m i s s i n g   r e t u r n   a n n o t a t i o n   ( e x p e c t e d   { s p e c _ r e t u r n } ) " ,  
-                                 )  
-                         )  
-                 e l i f   c o d e _ r e t u r n   ! =   s p e c _ r e t u r n :  
-                         w a r n i n g s . a p p e n d (  
-                                 (  
-                                         r e l _ p a t h ,  
-                                         n o d e . l i n e n o ,  
-                                         n o d e . n a m e ,  
-                                         f " r e t u r n   t y p e   m i s m a t c h   ( e x p e c t e d   { s p e c _ r e t u r n } ,   g o t   { c o d e _ r e t u r n } ) " ,  
-                                 )  
-                         )  
-  
-  
- d e f   p r i n t _ w a r n i n g s ( w a r n i n g s ) :  
-         f o r   r e l _ p a t h ,   l i n e ,   f u n c _ n a m e ,   m e s s a g e   i n   w a r n i n g s :  
-                 p r i n t ( f " W A R N :   { r e l _ p a t h } : { l i n e }   { f u n c _ n a m e }   { m e s s a g e } " )  
-  
-  
- d e f   m a i n ( ) :  
-         r e p o _ r o o t   =   o s . p a t h . d i r n a m e ( o s . p a t h . d i r n a m e ( o s . p a t h . a b s p a t h ( _ _ f i l e _ _ ) ) )  
-         m o d u l e s _ d i r   =   o s . p a t h . j o i n ( r e p o _ r o o t ,   " m o d u l e s " )  
-         s p e c _ s i g n a t u r e s   =   l o a d _ s p e c _ s i g n a t u r e s ( r e p o _ r o o t )  
-  
-         i f   n o t   o s . p a t h . i s d i r ( m o d u l e s _ d i r ) :  
-                 p r i n t ( " c h e c k _ s i g n a t u r e :   P A S S " )  
-                 r e t u r n   0  
-  
-         e r r o r s   =   [ ]  
-         w a r n i n g s   =   [ ]  
-  
-         f o r   f i l e _ p a t h   i n   i t e r _ p y t h o n _ f i l e s ( m o d u l e s _ d i r ) :  
-                 t r y :  
-                         w i t h   o p e n ( f i l e _ p a t h ,   " r " ,   e n c o d i n g = " u t f - 8 " )   a s   s o u r c e _ f i l e :  
-                                 c o n t e n t   =   s o u r c e _ f i l e . r e a d ( )  
-                         t r e e   =   a s t . p a r s e ( c o n t e n t ,   f i l e n a m e = f i l e _ p a t h )  
-                 e x c e p t   S y n t a x E r r o r   a s   e x c :  
-                         r e l _ p a t h   =   o s . p a t h . r e l p a t h ( f i l e _ p a t h ,   r e p o _ r o o t )  
-                         e r r o r s . a p p e n d ( ( r e l _ p a t h ,   e x c . l i n e n o   o r   0 ,   " S y n t a x E r r o r " ,   e x c . m s g ) )  
-                         c o n t i n u e  
-                 e x c e p t   ( O S E r r o r ,   U n i c o d e E r r o r )   a s   e x c :  
-                         r e l _ p a t h   =   o s . p a t h . r e l p a t h ( f i l e _ p a t h ,   r e p o _ r o o t )  
-                         e r r o r s . a p p e n d ( ( r e l _ p a t h ,   0 ,   " R e a d E r r o r " ,   s t r ( e x c ) ) )  
-                         c o n t i n u e  
-  
-                 f o r   n o d e   i n   t r e e . b o d y :  
-                         i f   n o t   i s i n s t a n c e ( n o d e ,   ( a s t . F u n c t i o n D e f ,   a s t . A s y n c F u n c t i o n D e f ) ) :  
-                                 c o n t i n u e  
-                         s p e c _ s i g n a t u r e   =   s p e c _ s i g n a t u r e s . g e t ( n o d e . n a m e )  
-                         i f   n o t   s p e c _ s i g n a t u r e :  
-                                 c o n t i n u e  
-                         c o m p a r e _ s i g n a t u r e s (  
-                                 f i l e _ p a t h ,   n o d e ,   s p e c _ s i g n a t u r e ,   c o n t e n t ,   e r r o r s ,   w a r n i n g s ,   r e p o _ r o o t  
-                         )  
-  
-         i f   e r r o r s :  
-                 p r i n t ( " c h e c k _ s i g n a t u r e :   F A I L " )  
-                 f o r   r e l _ p a t h ,   l i n e ,   f u n c _ n a m e ,   m e s s a g e   i n   e r r o r s :  
-                         p r i n t ( f " F A I L :   { r e l _ p a t h } : { l i n e }   { f u n c _ n a m e }   { m e s s a g e } " )  
-                 p r i n t _ w a r n i n g s ( w a r n i n g s )  
-                 r e t u r n   1  
-  
-         p r i n t _ w a r n i n g s ( w a r n i n g s )  
-         p r i n t ( " c h e c k _ s i g n a t u r e :   P A S S " )  
-         r e t u r n   0  
-  
-  
- i f   _ _ n a m e _ _   = =   " _ _ m a i n _ _ " :  
-         s y s . e x i t ( m a i n ( ) )  
- 
+﻿import ast
+import os
+import re
+import sys
+from collections import Counter
+
+
+SIGNATURE_LINE_PATTERN = re.compile(
+    r"^(?:def\s+)?(?P<name>[A-Za-z_]\w*)\s*\("
+)
+
+
+def extract_parenthesized(text, start_index):
+    depth = 0
+    start = None
+    for index in range(start_index, len(text)):
+        char = text[index]
+        if char == "(":
+            depth += 1
+            if depth == 1:
+                start = index + 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0 and start is not None:
+                return text[start:index], index
+    return None, None
+
+
+def extract_return_type(text, close_index):
+    line_end = text.find("\n", close_index + 1)
+    if line_end == -1:
+        line_end = len(text)
+    line_tail = text[close_index + 1 : line_end]
+    match = re.search(r"->\s*([^\n:]+)", line_tail)
+    if not match:
+        return None
+    return normalize_type(match.group(1))
+
+
+def normalize_type(type_text):
+    if not type_text:
+        return None
+    cleaned = " ".join(type_text.strip().rstrip(":").split())
+    return cleaned or None
+
+
+def extract_param_names(args):
+    names = []
+    for arg in args.posonlyargs + args.args:
+        names.append(arg.arg)
+    if args.vararg:
+        names.append(args.vararg.arg)
+    for arg in args.kwonlyargs:
+        names.append(arg.arg)
+    if args.kwarg:
+        names.append(args.kwarg.arg)
+    return names
+
+
+def parse_params_from_text(param_text):
+    text = param_text.strip()
+    if not text:
+        return []
+    try:
+        tree = ast.parse(f"def _temp_signature_function({text}):\n    pass")
+        func = tree.body[0]
+        if isinstance(func, ast.FunctionDef):
+            return extract_param_names(func.args)
+    except SyntaxError:
+        pass
+    params = []
+    for raw in text.split(","):
+        piece = raw.strip()
+        if not piece or piece in {"*", "/"}:
+            continue
+        if piece.startswith("**"):
+            piece = piece[2:]
+        elif piece.startswith("*"):
+            piece = piece[1:]
+        if ":" in piece:
+            piece = piece.split(":", 1)[0].strip()
+        if "=" in piece:
+            piece = piece.split("=", 1)[0].strip()
+        if piece:
+            params.append(piece)
+    return params
+
+
+def format_annotation(node, source):
+    if node is None:
+        return None
+    try:
+        text = ast.unparse(node)
+    except (AttributeError, ValueError, TypeError):
+        text = ast.get_source_segment(source, node) or ""
+    return normalize_type(text)
+
+
+def parse_interface_spec(spec_path):
+    if not os.path.isfile(spec_path):
+        return {}
+    try:
+        with open(spec_path, "r", encoding="utf-8") as spec_file:
+            content = spec_file.read()
+    except (OSError, UnicodeError):
+        return {}
+    signatures = {}
+    in_code_block = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        candidate = stripped
+        if not in_code_block:
+            candidate = candidate.lstrip("-*+").strip()
+            if candidate.startswith("`") and candidate.endswith("`"):
+                candidate = candidate.strip("`").strip()
+            elif candidate.startswith("`"):
+                candidate = candidate.strip("`").strip()
+        match = SIGNATURE_LINE_PATTERN.match(candidate)
+        if not match:
+            continue
+        name = match.group("name")
+        params_text, close_index = extract_parenthesized(candidate, match.end() - 1)
+        if params_text is None:
+            continue
+        return_text = extract_return_type(candidate, close_index)
+        signatures[name] = {
+            "params": parse_params_from_text(params_text),
+            "return_type": return_text,
+        }
+    return signatures
+
+
+def parse_schema_spec(spec_path):
+    if not os.path.isfile(spec_path):
+        return {}
+    try:
+        with open(spec_path, "r", encoding="utf-8") as spec_file:
+            content = spec_file.read()
+    except (OSError, UnicodeError):
+        return {}
+    try:
+        tree = ast.parse(content, filename=spec_path)
+    except SyntaxError:
+        return {}
+    signatures = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            signatures[node.name] = {
+                "params": extract_param_names(node.args),
+                "return_type": format_annotation(node.returns, content),
+            }
+    return signatures
+
+
+def load_spec_signatures(repo_root):
+    spec_dir = os.path.join(repo_root, "spec")
+    interface_path = os.path.join(spec_dir, "interface.md")
+    schema_path = os.path.join(spec_dir, "schema.py")
+    interface_signatures = parse_interface_spec(interface_path)
+    if interface_signatures:
+        return interface_signatures
+    schema_signatures = parse_schema_spec(schema_path)
+    return schema_signatures
+
+
+def iter_python_files(modules_dir):
+    for root, _, files in os.walk(modules_dir):
+        for filename in files:
+            if filename.endswith(".py"):
+                yield os.path.join(root, filename)
+
+
+def compare_signatures(
+    file_path, node, spec_signature, source, errors, warnings, repo_root
+):
+    spec_params = spec_signature["params"]
+    code_params = extract_param_names(node.args)
+    rel_path = os.path.relpath(file_path, repo_root)
+    if len(code_params) != len(spec_params):
+        spec_counter = Counter(spec_params)
+        code_counter = Counter(code_params)
+        missing = []
+        extra = []
+        for name, count in (spec_counter - code_counter).items():
+            missing.append(f"{name} (count: {count})" if count > 1 else name)
+        for name, count in (code_counter - spec_counter).items():
+            extra.append(f"{name} (count: {count})" if count > 1 else name)
+        parts = []
+        if missing:
+            parts.append(f"missing params: {', '.join(missing)}")
+        if extra:
+            parts.append(f"extra params: {', '.join(extra)}")
+        message = "; ".join(parts) or (
+            f"param count mismatch (expected {len(spec_params)}, got {len(code_params)})"
+        )
+        errors.append((rel_path, node.lineno, node.name, message))
+        return
+    if code_params != spec_params:
+        mismatches = [
+            f"{idx + 1}: expected '{spec}', got '{code}'"
+            for idx, (spec, code) in enumerate(zip(spec_params, code_params))
+            if spec != code
+        ]
+        if mismatches:
+            message = "param name mismatch (" + "; ".join(mismatches) + ")"
+            errors.append((rel_path, node.lineno, node.name, message))
+            return
+    spec_return = spec_signature.get("return_type")
+    if spec_return:
+        code_return = format_annotation(node.returns, source)
+        if not code_return:
+            warnings.append(
+                (
+                    rel_path,
+                    node.lineno,
+                    node.name,
+                    f"missing return annotation (expected {spec_return})",
+                )
+            )
+        elif code_return != spec_return:
+            warnings.append(
+                (
+                    rel_path,
+                    node.lineno,
+                    node.name,
+                    f"return type mismatch (expected {spec_return}, got {code_return})",
+                )
+            )
+
+
+def print_warnings(warnings):
+    for rel_path, line, func_name, message in warnings:
+        print(f"WARN: {rel_path}:{line} {func_name} {message}")
+
+
+def main():
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    modules_dir = os.path.join(repo_root, "modules")
+    spec_signatures = load_spec_signatures(repo_root)
+
+    if not os.path.isdir(modules_dir):
+        print("check_signature: PASS")
+        return 0
+
+    errors = []
+    warnings = []
+
+    for file_path in iter_python_files(modules_dir):
+        try:
+            with open(file_path, "r", encoding="utf-8") as source_file:
+                content = source_file.read()
+            tree = ast.parse(content, filename=file_path)
+        except SyntaxError as exc:
+            rel_path = os.path.relpath(file_path, repo_root)
+            errors.append((rel_path, exc.lineno or 0, "SyntaxError", exc.msg))
+            continue
+        except (OSError, UnicodeError) as exc:
+            rel_path = os.path.relpath(file_path, repo_root)
+            errors.append((rel_path, 0, "ReadError", str(exc)))
+            continue
+
+        for node in tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            spec_signature = spec_signatures.get(node.name)
+            if not spec_signature:
+                continue
+            compare_signatures(
+                file_path, node, spec_signature, content, errors, warnings, repo_root
+            )
+
+    if errors:
+        print("check_signature: FAIL")
+        for rel_path, line, func_name, message in errors:
+            print(f"FAIL: {rel_path}:{line} {func_name} {message}")
+        print_warnings(warnings)
+        return 1
+
+    print_warnings(warnings)
+    print("check_signature: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
