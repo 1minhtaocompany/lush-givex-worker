@@ -23,9 +23,10 @@ def add_new_state(state_name: str) -> State:
     if not isinstance(state_name, str):
         raise TypeError("state_name must be a string")
     if state_name not in _ALLOWED_STATES:
-        raise ValueError("state_name is not allowed by FSM rules")
+        allowed_states = ", ".join(sorted(_ALLOWED_STATES))
+        raise ValueError(f"state_name must be one of: {allowed_states}")
     if state_name in _STATE_REGISTRY:
-        raise ValueError("state_name already exists")
+        raise ValueError(f'state_name "{state_name}" already exists')
     state = State(name=state_name)
     _STATE_REGISTRY[state_name] = state
     return state
