@@ -5,9 +5,8 @@ import sys
 from collections import Counter
 
 
-MARKDOWN_FUNCTION_PATTERN = re.compile(
-    r"(?:^|[^A-Za-z0-9_])(?:def\s+)?(?P<name>[A-Za-z_]\w*)\s*\(",
-    re.MULTILINE,
+SIGNATURE_LINE_PATTERN = re.compile(
+    r"^(?:def\s+)?(?P<name>[A-Za-z_]\w*)\s*\("
 )
 
 
@@ -106,12 +105,27 @@ def parse_interface_spec(spec_path):
     except (OSError, UnicodeError):
         return {}
     signatures = {}
-    for match in MARKDOWN_FUNCTION_PATTERN.finditer(content):
+    in_code_block = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        candidate = stripped
+        if not in_code_block:
+            candidate = candidate.lstrip("-*+").strip()
+            if candidate.startswith("`") and candidate.endswith("`"):
+                candidate = candidate.strip("`").strip()
+            elif candidate.startswith("`"):
+                candidate = candidate.strip("`").strip()
+        match = SIGNATURE_LINE_PATTERN.match(candidate)
+        if not match:
+            continue
         name = match.group("name")
-        params_text, close_index = extract_parenthesized(content, match.end() - 1)
+        params_text, close_index = extract_parenthesized(candidate, match.end() - 1)
         if params_text is None:
             continue
-        return_text = extract_return_type(content, close_index)
+        return_text = extract_return_type(candidate, close_index)
         signatures[name] = {
             "params": parse_params_from_text(params_text),
             "return_type": return_text,
