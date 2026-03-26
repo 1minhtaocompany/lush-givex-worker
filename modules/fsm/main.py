@@ -178,3 +178,5 @@ def add_new_state(state_name: str) -> State:
 #line 148
 #line 149
 #line 150
+
+# violate pr_scope line added
