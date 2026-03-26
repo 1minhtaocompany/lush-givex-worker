@@ -217,6 +217,11 @@ def compare_signatures(
             )
 
 
+def print_warnings(warnings):
+    for rel_path, line, func_name, message in warnings:
+        print(f"WARN: {rel_path}:{line} {func_name} {message}")
+
+
 def main():
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     modules_dir = os.path.join(repo_root, "modules")
@@ -263,11 +268,6 @@ def main():
     print_warnings(warnings)
     print("check_signature: PASS")
     return 0
-
-
-def print_warnings(warnings):
-    for rel_path, line, func_name, message in warnings:
-        print(f"WARN: {rel_path}:{line} {func_name} {message}")
 
 
 if __name__ == "__main__":
