@@ -44,6 +44,7 @@ def test_add_new_state_valid_returns_state(fsm_module):
     state_name = _pick_allowed_state(fsm_module)
     state = fsm_module.add_new_state(state_name)
     assert isinstance(state, fsm_module.State)
+    assert state.name == state_name
 
 
 def test_add_new_state_duplicate_raises_value_error(fsm_module):
