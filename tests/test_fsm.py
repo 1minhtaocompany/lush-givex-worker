@@ -10,8 +10,19 @@ def fsm_module():
     return importlib.reload(fsm_main)
 
 
-def _pick_allowed_state(fsm_module):
+def _get_allowed_states(fsm_module):
     allowed_states = getattr(fsm_module, "ALLOWED_STATES", None)
+    if allowed_states is None or isinstance(allowed_states, str):
+        return None
+    try:
+        iter(allowed_states)
+    except TypeError:
+        return None
+    return allowed_states
+
+
+def _pick_allowed_state(fsm_module):
+    allowed_states = _get_allowed_states(fsm_module)
     if allowed_states:
         return next(iter(allowed_states))
     return "success"
@@ -19,7 +30,7 @@ def _pick_allowed_state(fsm_module):
 
 def _pick_disallowed_state(fsm_module, allowed_state):
     candidate = "invalid_state"
-    allowed_states = getattr(fsm_module, "ALLOWED_STATES", None)
+    allowed_states = _get_allowed_states(fsm_module)
     if allowed_states and candidate in allowed_states:
         candidate = f"{allowed_state}_invalid"
     if candidate == allowed_state:
