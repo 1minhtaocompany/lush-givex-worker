@@ -30,7 +30,15 @@ def resolve_import_root(import_name):
     return import_name.split(".")[0]
 
 
-def check_import_statement(current_module, module_names, file_path, tree, errors, repo_root):
+def iter_import_from_targets(node):
+    if node.module == "modules":
+        for alias in node.names:
+            yield f"{node.module}.{alias.name}"
+    else:
+        yield node.module
+
+
+def check_import_statements(current_module, module_names, file_path, tree, errors, repo_root):
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -43,14 +51,7 @@ def check_import_statement(current_module, module_names, file_path, tree, errors
                 continue
             if not node.module:
                 continue
-            targets = []
-            if node.module == "modules":
-                for alias in node.names:
-                    targets.append(f"{node.module}.{alias.name}")
-            else:
-                targets.append(node.module)
-
-            for target in targets:
+            for target in iter_import_from_targets(node):
                 root = resolve_import_root(target)
                 if root in module_names and root != current_module:
                     rel_path = os.path.relpath(file_path, repo_root)
@@ -71,8 +72,8 @@ def main():
         module_path = os.path.join(modules_dir, module_name)
         for file_path in iter_python_files(module_path):
             try:
-                with open(file_path, "r", encoding="utf-8") as handle:
-                    content = handle.read()
+                with open(file_path, "r", encoding="utf-8") as file_handle:
+                    content = file_handle.read()
                 tree = ast.parse(content, filename=file_path)
             except SyntaxError as exc:
                 rel_path = os.path.relpath(file_path, repo_root)
@@ -81,7 +82,7 @@ def main():
                 )
                 continue
 
-            check_import_statement(
+            check_import_statements(
                 module_name, module_names, file_path, tree, errors, repo_root
             )
 
