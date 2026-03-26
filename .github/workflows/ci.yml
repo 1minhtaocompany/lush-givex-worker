@@ -1,5 +1,30 @@
+name: CI
+
 on:
-  push:
-    branches: [ develop, test/e2e-validation-phase2 ]
   pull_request:
-    branches: [ develop ]
+    branches: [develop]
+  push:
+    branches: [develop]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install pytest
+      - name: Check import scope
+        run: python ci/check_import_scope.py
+      - name: Check signature
+        run: python ci/check_signature.py
+      - name: Check PR scope
+        run: python ci/check_pr_scope.py
+      - name: Check spec lock
+        run: python ci/check_spec_lock.py
+      - name: Run tests
+        run: python -m pytest tests/
