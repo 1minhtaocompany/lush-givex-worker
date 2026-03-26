@@ -31,6 +31,8 @@ def resolve_import_root(import_name):
 
 
 def iter_import_from_module_paths(node):
+    if not node.module:
+        return
     if node.module == "modules":
         for alias in node.names:
             yield f"{node.module}.{alias.name}"
@@ -74,7 +76,7 @@ def main():
             try:
                 with open(file_path, "r", encoding="utf-8") as file:
                     content = file.read()
-                tree = ast.parse(content, filename=file_path)
+                    tree = ast.parse(content, filename=file_path)
             except SyntaxError as exc:
                 rel_path = os.path.relpath(file_path, repo_root)
                 errors.append(
