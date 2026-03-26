@@ -24,13 +24,13 @@ def resolve_import_root(import_name):
         return "modules"
     if import_name.startswith("modules."):
         parts = import_name.split(".")
-        if len(parts) > 1:
+        if len(parts) > 1 and parts[1]:
             return parts[1]
         return None
     return import_name.split(".")[0]
 
 
-def iter_import_from_targets(node):
+def iter_import_from_module_paths(node):
     if node.module == "modules":
         for alias in node.names:
             yield f"{node.module}.{alias.name}"
@@ -51,7 +51,7 @@ def check_import_statements(current_module, module_names, file_path, tree, error
                 continue
             if not node.module:
                 continue
-            for target in iter_import_from_targets(node):
+            for target in iter_import_from_module_paths(node):
                 root = resolve_import_root(target)
                 if root in module_names and root != current_module:
                     rel_path = os.path.relpath(file_path, repo_root)
@@ -72,8 +72,8 @@ def main():
         module_path = os.path.join(modules_dir, module_name)
         for file_path in iter_python_files(module_path):
             try:
-                with open(file_path, "r", encoding="utf-8") as file_handle:
-                    content = file_handle.read()
+                with open(file_path, "r", encoding="utf-8") as file:
+                    content = file.read()
                 tree = ast.parse(content, filename=file_path)
             except SyntaxError as exc:
                 rel_path = os.path.relpath(file_path, repo_root)
