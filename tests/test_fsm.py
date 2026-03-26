@@ -12,8 +12,10 @@ def fsm_module():
 
 def _get_allowed_states(fsm_module):
     allowed_states = getattr(fsm_module, "ALLOWED_STATES", None)
-    if allowed_states is None or isinstance(allowed_states, str):
+    if allowed_states is None:
         return None
+    if isinstance(allowed_states, str):
+        return [allowed_states]
     try:
         iter(allowed_states)
     except TypeError:
