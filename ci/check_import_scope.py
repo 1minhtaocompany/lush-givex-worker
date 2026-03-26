@@ -37,24 +37,24 @@ def check_import_statement(current_module, module_names, file_path, tree, errors
                 root = resolve_import_root(alias.name)
                 if root in module_names and root != current_module:
                     rel_path = os.path.relpath(file_path, repo_root)
-                    errors.append((rel_path, node.lineno, alias.name))
+                    errors.append((rel_path, node.lineno, f"imports {alias.name}"))
         elif isinstance(node, ast.ImportFrom):
             if node.level > 0:
                 continue
             if not node.module:
                 continue
+            targets = []
             if node.module == "modules":
                 for alias in node.names:
-                    root = alias.name.split(".")[0]
-                    if root in module_names and root != current_module:
-                        rel_path = os.path.relpath(file_path, repo_root)
-                        import_name = f"{node.module}.{alias.name}"
-                        errors.append((rel_path, node.lineno, import_name))
+                    targets.append(f"{node.module}.{alias.name}")
             else:
-                root = resolve_import_root(node.module)
+                targets.append(node.module)
+
+            for target in targets:
+                root = resolve_import_root(target)
                 if root in module_names and root != current_module:
                     rel_path = os.path.relpath(file_path, repo_root)
-                    errors.append((rel_path, node.lineno, node.module))
+                    errors.append((rel_path, node.lineno, f"imports {target}"))
 
 
 def main():
@@ -76,7 +76,9 @@ def main():
                 tree = ast.parse(content, filename=file_path)
             except SyntaxError as exc:
                 rel_path = os.path.relpath(file_path, repo_root)
-                errors.append((rel_path, exc.lineno or 0, f"syntax error: {exc.msg}"))
+                errors.append(
+                    (rel_path, exc.lineno or 0, f"syntax error: {exc.msg}")
+                )
                 continue
 
             check_import_statement(
@@ -85,8 +87,8 @@ def main():
 
     if errors:
         print("check_import_scope: FAIL")
-        for file_path, line, import_name in errors:
-            print(f"FAIL: {file_path}:{line} imports {import_name}")
+        for file_path, line, message in errors:
+            print(f"FAIL: {file_path}:{line} {message}")
         return 1
 
     print("check_import_scope: PASS")
