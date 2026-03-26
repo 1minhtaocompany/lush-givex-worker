@@ -83,7 +83,8 @@ def parse_interface_spec(spec_path):
     for match in MARKDOWN_FUNCTION_PATTERN.finditer(content):
         name = match.group("name")
         params_text = match.group("params") or ""
-        return_text = normalize_type(match.group("return") or "")
+        return_group = match.group("return")
+        return_text = normalize_type(return_group) if return_group else None
         signatures[name] = {
             "params": parse_params_from_text(params_text),
             "return_type": return_text,
@@ -143,9 +144,9 @@ def compare_signatures(
         missing = []
         extra = []
         for name, count in (spec_counter - code_counter).items():
-            missing.append(f"{name}×{count}" if count > 1 else name)
+            missing.append(f"{name} (count: {count})" if count > 1 else name)
         for name, count in (code_counter - spec_counter).items():
-            extra.append(f"{name}×{count}" if count > 1 else name)
+            extra.append(f"{name} (count: {count})" if count > 1 else name)
         parts = []
         if missing:
             parts.append(f"missing params: {', '.join(missing)}")
