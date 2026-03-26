@@ -1,10 +1,11 @@
 import ast
+from collections import Counter
 import os
 import re
 import sys
 
 
-FUNCTION_PATTERN = re.compile(
+MARKDOWN_FUNCTION_PATTERN = re.compile(
     r"^\s*(?:def\s+)?(?P<name>[A-Za-z_]\w*)\s*"
     r"\((?P<params>[^)]*)\)\s*(?:->\s*(?P<return>[^\n:]+))?",
     re.MULTILINE,
@@ -36,7 +37,7 @@ def parse_params_from_text(param_text):
     if not text:
         return []
     try:
-        tree = ast.parse(f"def _temp_spec_func({text}):\n    pass")
+        tree = ast.parse(f"def _signature_parser_placeholder({text}):\n    pass")
         func = tree.body[0]
         if isinstance(func, ast.FunctionDef):
             return extract_param_names(func.args)
@@ -79,7 +80,7 @@ def parse_interface_spec(spec_path):
     except (OSError, UnicodeError):
         return {}
     signatures = {}
-    for match in FUNCTION_PATTERN.finditer(content):
+    for match in MARKDOWN_FUNCTION_PATTERN.finditer(content):
         name = match.group("name")
         params_text = match.group("params") or ""
         return_text = normalize_type(match.group("return") or "")
@@ -137,16 +138,22 @@ def compare_signatures(
     code_params = extract_param_names(node.args)
     rel_path = os.path.relpath(file_path, repo_root)
     if len(code_params) != len(spec_params):
-        missing = [name for name in spec_params if name not in code_params]
-        extra = [name for name in code_params if name not in spec_params]
+        spec_counter = Counter(spec_params)
+        code_counter = Counter(code_params)
+        missing = []
+        extra = []
+        for name, count in (spec_counter - code_counter).items():
+            missing.append(f"{name}x{count}" if count > 1 else name)
+        for name, count in (code_counter - spec_counter).items():
+            extra.append(f"{name}x{count}" if count > 1 else name)
+        parts = []
         if missing:
-            message = f"missing params: {', '.join(missing)}"
-        elif extra:
-            message = f"extra params: {', '.join(extra)}"
-        else:
-            message = (
-                f"param count mismatch (expected {len(spec_params)}, got {len(code_params)})"
-            )
+            parts.append(f"missing params: {', '.join(missing)}")
+        if extra:
+            parts.append(f"extra params: {', '.join(extra)}")
+        message = "; ".join(parts) or (
+            f"param count mismatch (expected {len(spec_params)}, got {len(code_params)})"
+        )
         errors.append((rel_path, node.lineno, node.name, message))
         return
     if code_params != spec_params:
