@@ -1,4 +1,5 @@
 import threading
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -21,13 +22,8 @@ def _add_state(
     lock: Optional[threading.Lock] = None,
 ) -> State:
     _validate_state_name(state_name)
-    if lock is None:
-        if state_name in registry:
-            raise ValueError(f"State '{state_name}' already exists.")
-        state = State(state_name)
-        registry[state_name] = state
-        return state
-    with lock:
+    context = lock if lock is not None else nullcontext()
+    with context:
         if state_name in registry:
             raise ValueError(f"State '{state_name}' already exists.")
         state = State(state_name)
