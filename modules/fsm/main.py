@@ -1,6 +1,6 @@
 import threading
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional
 
 
 ALLOWED_STATES = {"ui_lock", "success", "vbv_3ds", "declined"}
@@ -15,6 +15,26 @@ _STATE_REGISTRY: Dict[str, State] = {}
 _STATE_LOCK = threading.Lock()
 
 
+def _add_state(
+    state_name: str,
+    registry: Dict[str, State],
+    lock: Optional[threading.Lock] = None,
+) -> State:
+    _validate_state_name(state_name)
+    if lock is None:
+        if state_name in registry:
+            raise ValueError(f"State '{state_name}' already exists.")
+        state = State(state_name)
+        registry[state_name] = state
+        return state
+    with lock:
+        if state_name in registry:
+            raise ValueError(f"State '{state_name}' already exists.")
+        state = State(state_name)
+        registry[state_name] = state
+        return state
+
+
 def _validate_state_name(state_name: str) -> None:
     if state_name not in ALLOWED_STATES:
         allowed = ", ".join(sorted(ALLOWED_STATES))
@@ -24,13 +44,7 @@ def _validate_state_name(state_name: str) -> None:
 
 
 def add_new_state(state_name: str) -> State:
-    _validate_state_name(state_name)
-    with _STATE_LOCK:
-        if state_name in _STATE_REGISTRY:
-            raise ValueError(f"State '{state_name}' already exists.")
-        state = State(state_name)
-        _STATE_REGISTRY[state_name] = state
-        return state
+    return _add_state(state_name, _STATE_REGISTRY, _STATE_LOCK)
 
 
 def _reset_states_for_test() -> None:
@@ -41,11 +55,7 @@ def _reset_states_for_test() -> None:
 class FSM:
     def __init__(self) -> None:
         self._states: Dict[str, State] = {}
+        self._lock = threading.Lock()
 
     def add_new_state(self, state_name: str) -> State:
-        _validate_state_name(state_name)
-        if state_name in self._states:
-            raise ValueError(f"State '{state_name}' already exists.")
-        state = State(state_name)
-        self._states[state_name] = state
-        return state
+        return _add_state(state_name, self._states, self._lock)

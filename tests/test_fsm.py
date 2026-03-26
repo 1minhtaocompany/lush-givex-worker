@@ -19,3 +19,10 @@ class TestAddNewState(unittest.TestCase):
     def test_add_new_state_invalid(self):
         with self.assertRaisesRegex(ValueError, "Allowed states"):
             fsm_main.add_new_state("pending")
+
+    def test_fsm_add_new_state(self):
+        fsm = fsm_main.FSM()
+        state = fsm.add_new_state("declined")
+        self.assertEqual(state.name, "declined")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            fsm.add_new_state("declined")
