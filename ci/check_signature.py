@@ -6,10 +6,36 @@ from collections import Counter
 
 
 MARKDOWN_FUNCTION_PATTERN = re.compile(
-    r"^\s*(?:def\s+)?(?P<name>[A-Za-z_]\w*)\s*"
-    r"\((?P<params>[^)]*)\)\s*(?:->\s*(?P<return>[^\n:]+))?",
+    r"(?:^|[^A-Za-z0-9_])(?:def\s+)?(?P<name>[A-Za-z_]\w*)\s*\(",
     re.MULTILINE,
 )
+
+
+def extract_parenthesized(text, start_index):
+    depth = 0
+    start = None
+    for index in range(start_index, len(text)):
+        char = text[index]
+        if char == "(":
+            depth += 1
+            if depth == 1:
+                start = index + 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0 and start is not None:
+                return text[start:index], index
+    return None, None
+
+
+def extract_return_type(text, close_index):
+    line_end = text.find("\n", close_index + 1)
+    if line_end == -1:
+        line_end = len(text)
+    line_tail = text[close_index + 1 : line_end]
+    match = re.search(r"->\s*([^\n:]+)", line_tail)
+    if not match:
+        return None
+    return normalize_type(match.group(1))
 
 
 def normalize_type(type_text):
@@ -82,9 +108,10 @@ def parse_interface_spec(spec_path):
     signatures = {}
     for match in MARKDOWN_FUNCTION_PATTERN.finditer(content):
         name = match.group("name")
-        params_text = match.group("params") or ""
-        return_group = match.group("return")
-        return_text = normalize_type(return_group) if return_group else None
+        params_text, close_index = extract_parenthesized(content, match.end() - 1)
+        if params_text is None:
+            continue
+        return_text = extract_return_type(content, close_index)
         signatures[name] = {
             "params": parse_params_from_text(params_text),
             "return_type": return_text,
@@ -159,7 +186,7 @@ def compare_signatures(
         return
     if code_params != spec_params:
         mismatches = [
-            f"{idx + 1}: expected {spec} got {code}"
+            f"{idx + 1}: expected '{spec}', got '{code}'"
             for idx, (spec, code) in enumerate(zip(spec_params, code_params))
             if spec != code
         ]
@@ -230,14 +257,17 @@ def main():
         print("check_signature: FAIL")
         for rel_path, line, func_name, message in errors:
             print(f"FAIL: {rel_path}:{line} {func_name} {message}")
-        for rel_path, line, func_name, message in warnings:
-            print(f"WARN: {rel_path}:{line} {func_name} {message}")
+        print_warnings(warnings)
         return 1
 
-    for rel_path, line, func_name, message in warnings:
-        print(f"WARN: {rel_path}:{line} {func_name} {message}")
+    print_warnings(warnings)
     print("check_signature: PASS")
     return 0
+
+
+def print_warnings(warnings):
+    for rel_path, line, func_name, message in warnings:
+        print(f"WARN: {rel_path}:{line} {func_name} {message}")
 
 
 if __name__ == "__main__":
