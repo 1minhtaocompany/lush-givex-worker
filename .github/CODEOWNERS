@@ -1,3 +1,1 @@
-git add .github/CODEOWNERS
-git commit -m "chore: add CODEOWNERS for GPT-5.4 review"
-git push origin test/ci-validation
+* @GPT-5.4
