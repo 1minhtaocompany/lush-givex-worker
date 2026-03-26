@@ -21,7 +21,7 @@ def iter_python_files(module_path):
 
 def resolve_import_root(import_name):
     if import_name == "modules":
-        return None
+        return "modules"
     if import_name.startswith("modules."):
         parts = import_name.split(".")
         if len(parts) > 1:
@@ -39,13 +39,13 @@ def check_import_statement(current_module, module_names, file_path, tree, errors
                     rel_path = os.path.relpath(file_path, repo_root)
                     errors.append((rel_path, node.lineno, alias.name))
         elif isinstance(node, ast.ImportFrom):
-            if node.level and node.level > 0:
+            if node.level > 0:
                 continue
             if not node.module:
                 continue
             if node.module == "modules":
                 for alias in node.names:
-                    root = resolve_import_root(alias.name)
+                    root = alias.name.split(".")[0]
                     if root in module_names and root != current_module:
                         rel_path = os.path.relpath(file_path, repo_root)
                         import_name = f"{node.module}.{alias.name}"
