@@ -1,3 +1,4 @@
+from modules.cdp import main as cdp_main
 from __future__ import annotations
 
 from dataclasses import dataclass
