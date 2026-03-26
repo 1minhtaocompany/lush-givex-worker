@@ -30,7 +30,7 @@ def resolve_import_root(import_name):
     return import_name.split(".")[0]
 
 
-def iter_import_from_module_paths(node):
+def iter_import_targets(node):
     if not node.module:
         return
     if node.module == "modules":
@@ -53,7 +53,7 @@ def check_import_statements(current_module, module_names, file_path, tree, error
                 continue
             if not node.module:
                 continue
-            for target in iter_import_from_module_paths(node):
+            for target in iter_import_targets(node):
                 root = resolve_import_root(target)
                 if root in module_names and root != current_module:
                     rel_path = os.path.relpath(file_path, repo_root)
@@ -82,6 +82,10 @@ def main():
                 errors.append(
                     (rel_path, exc.lineno or 0, f"syntax error: {exc.msg}")
                 )
+                continue
+            except (OSError, UnicodeError) as exc:
+                rel_path = os.path.relpath(file_path, repo_root)
+                errors.append((rel_path, 0, f"read error: {exc}"))
                 continue
 
             check_import_statements(
