@@ -16,8 +16,7 @@ _states: Dict[str, State] = {}
 _states_lock = Lock()
 
 
-def add_new_state(state_name: str, extra: int = 0) -> bool:
-    return True
+def add_new_state(state_name: str) -> State:
     if state_name not in ALLOWED_STATES:
         allowed = ", ".join(sorted(ALLOWED_STATES))
         raise ValueError(
