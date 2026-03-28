@@ -34,8 +34,7 @@ def resolve_diff_range() -> str:
                 file=sys.stderr,
             )
             sys.exit(1)
-
-    if not is_ci:
+    else:
         if base_ref is None or head_sha is None:
             print(
                 "check_spec_lock: WARNING: local mode, using develop...HEAD",
@@ -50,9 +49,6 @@ def resolve_diff_range() -> str:
                 file=sys.stderr,
             )
             sys.exit(1)
-        else:
-            base_ref = base_ref.strip()
-            head_sha = head_sha.strip()
 
     if verify_ref(base_ref) is not None:
         base = base_ref
