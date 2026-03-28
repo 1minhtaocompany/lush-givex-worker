@@ -16,39 +16,56 @@ def verify_ref(ref: str) -> str | None:
 
 
 def resolve_diff_range() -> str:
-    base_ref = os.getenv("GITHUB_BASE_REF")
-    head_sha = os.getenv("GITHUB_HEAD_SHA")
+    base_ref_raw = os.getenv("GITHUB_BASE_REF")
+    head_sha_raw = os.getenv("GITHUB_HEAD_SHA")
 
-    if not base_ref or not head_sha:
-        if os.getenv("GITHUB_ACTIONS") == "true":
+    is_ci = os.getenv("GITHUB_ACTIONS") == "true"
+
+    if is_ci:
+        base_ref = base_ref_raw.strip() if base_ref_raw else ""
+        head_sha = head_sha_raw.strip() if head_sha_raw else ""
+        if not base_ref or not head_sha:
             print(
                 "check_spec_lock: missing GITHUB_BASE_REF or GITHUB_HEAD_SHA; "
                 "cannot determine diff range in CI",
                 file=sys.stderr,
             )
             sys.exit(1)
-        print(
-            "check_spec_lock: WARNING: running in local mode, using diff range "
-            "develop...HEAD",
-            file=sys.stderr,
-        )
-        base_ref = "develop"
-        head_sha = "HEAD"
-
-    if verify_ref(base_ref):
-        base = base_ref
-    elif verify_ref(f"origin/{base_ref}"):
-        base = f"origin/{base_ref}"
     else:
-        print(
-            f"check_spec_lock: base ref '{base_ref}' could not be resolved",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        if base_ref_raw is None or head_sha_raw is None:
+            print(
+                "check_spec_lock: WARNING: local mode, using develop...HEAD",
+                file=sys.stderr,
+            )
+            base_ref = "develop"
+            head_sha = "HEAD"
+        else:
+            base_ref = base_ref_raw.strip()
+            head_sha = head_sha_raw.strip()
+            if not base_ref or not head_sha:
+                print(
+                    "check_spec_lock: ERROR: missing GITHUB_BASE_REF or "
+                    "GITHUB_HEAD_SHA",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
-    if not verify_ref(head_sha):
+    if verify_ref(base_ref) is not None:
+        base = base_ref
+    else:
+        origin_ref = f"origin/{base_ref}"
+        if verify_ref(origin_ref) is not None:
+            base = origin_ref
+        else:
+            print(
+                "check_spec_lock: ERROR: unable to resolve base ref",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    if verify_ref(head_sha) is None:
         print(
-            f"check_spec_lock: head sha '{head_sha}' could not be resolved",
+            f"check_spec_lock: head SHA '{head_sha}' could not be resolved",
             file=sys.stderr,
         )
         sys.exit(1)
