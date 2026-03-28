@@ -41,7 +41,7 @@ def resolve_diff_range() -> str:
         base = base_ref
     else:
         origin_ref = f"origin/{base_ref}"
-        if verify_ref(origin_ref):
+        if verify_ref(origin_ref) is not None:
             base = origin_ref
         else:
             print(
