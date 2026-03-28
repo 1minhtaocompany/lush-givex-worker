@@ -28,7 +28,10 @@ def verify_ref(ref):
         text=True,
     )
     if result.returncode != 0:
-        return None, result.stderr.strip()
+        details = result.stderr.strip() or result.stdout.strip()
+        if details:
+            return None, f"git rev-parse --verify {ref} failed: {details}"
+        return None, f"git rev-parse --verify {ref} failed"
     return result.stdout.strip(), ""
 
 
@@ -49,12 +52,12 @@ def resolve_base_ref(base_ref):
 
 
 def resolve_diff_range():
-    base_ref_raw = os.getenv("GITHUB_BASE_REF") or ""
-    head_sha_raw = os.getenv("GITHUB_HEAD_SHA") or os.getenv("GITHUB_SHA") or ""
+    base_ref_env = os.getenv("GITHUB_BASE_REF") or ""
+    head_sha_env = os.getenv("GITHUB_HEAD_SHA") or os.getenv("GITHUB_SHA") or ""
     is_ci = os.getenv("GITHUB_ACTIONS") == "true"
 
-    base_ref = base_ref_raw.strip()
-    head_sha = head_sha_raw.strip()
+    base_ref = base_ref_env.strip()
+    head_sha = head_sha_env.strip()
 
     if base_ref and head_sha:
         base, base_error = resolve_base_ref(base_ref)
@@ -105,7 +108,23 @@ def resolve_diff_range():
     sys.exit(1)
 
 
+def validate_diff_range(diff_range):
+    if not diff_range or "..." not in diff_range:
+        return False
+    if diff_range.startswith("-"):
+        return False
+    if any(char.isspace() for char in diff_range):
+        return False
+    return True
+
+
 def get_changed_files(diff_range):
+    if not validate_diff_range(diff_range):
+        print(
+            f"check_import_scope: invalid diff range '{diff_range}'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     result = subprocess.run(
         ["git", "diff", "--name-only", diff_range],
         capture_output=True,
