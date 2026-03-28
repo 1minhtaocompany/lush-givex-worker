@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Kiểm tra module có import chéo module khác trong các file thay đổi
+# Check for cross-module imports in changed files
 import ast
 import os
 import subprocess
@@ -21,7 +21,12 @@ def normalize_path(path):
     return normalized
 
 
+def sanitize_ref(ref):
+    return ref.replace("\n", " ").replace("\r", " ").strip()
+
+
 def verify_ref(ref):
+    safe_ref = sanitize_ref(ref)
     result = subprocess.run(
         ["git", "rev-parse", "--verify", ref],
         capture_output=True,
@@ -30,8 +35,8 @@ def verify_ref(ref):
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip()
         if details:
-            return None, f"git rev-parse --verify {ref} failed: {details}"
-        return None, f"git rev-parse --verify {ref} failed"
+            return None, f"git rev-parse --verify {safe_ref} failed: {details}"
+        return None, f"git rev-parse --verify {safe_ref} failed"
     return result.stdout.strip(), ""
 
 
@@ -64,7 +69,7 @@ def resolve_diff_range():
         if base is None:
             print(
                 "check_import_scope: ERROR: unable to resolve base ref "
-                f"'{base_ref}'",
+                f"'{sanitize_ref(base_ref)}'",
                 file=sys.stderr,
             )
             if base_error:
@@ -74,7 +79,8 @@ def resolve_diff_range():
         head_sha_resolved, head_sha_error = verify_ref(head_sha)
         if head_sha_resolved is None:
             print(
-                f"check_import_scope: head SHA '{head_sha}' could not be resolved",
+                "check_import_scope: head SHA "
+                f"'{sanitize_ref(head_sha)}' could not be resolved",
                 file=sys.stderr,
             )
             if head_sha_error:
@@ -109,6 +115,7 @@ def resolve_diff_range():
 
 
 def validate_diff_range(diff_range):
+    # Expected format: <ref>...<ref> with no whitespace or option prefix.
     if not diff_range or "..." not in diff_range:
         return False
     if diff_range.startswith("-"):
@@ -167,6 +174,9 @@ def iter_import_targets(node):
         return
     if node.module == "modules":
         for alias in node.names:
+            if alias.name == "*":
+                yield f"{node.module}.*"
+                continue
             if alias.name:
                 yield f"{node.module}.{alias.name}"
     else:
@@ -187,6 +197,10 @@ def check_import_statements(current_module, module_names, file_path, tree, error
             if not node.module:
                 continue
             for target in iter_import_targets(node):
+                if target == "modules.*":
+                    rel_path = os.path.relpath(file_path, repo_root)
+                    errors.append((rel_path, node.lineno, "imports modules.*"))
+                    continue
                 root = resolve_import_root(target)
                 if root in module_names and root != current_module:
                     rel_path = os.path.relpath(file_path, repo_root)
