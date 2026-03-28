@@ -27,8 +27,8 @@ def sanitize_ref(ref):
 
 def safe_ref_or_error(ref):
     safe_ref = sanitize_ref(ref)
-    if not safe_ref or safe_ref != ref:
-        return None, f"invalid git ref '{safe_ref or ref}'"
+    if not safe_ref:
+        return None, f"invalid git ref '{ref}'"
     if safe_ref.startswith("-") or any(char.isspace() for char in safe_ref):
         return None, f"invalid git ref '{safe_ref}'"
     return safe_ref, ""
@@ -186,11 +186,11 @@ def iter_import_targets(node):
     if node.module == "modules":
         for alias in node.names:
             if alias.name == "*":
-                yield f"{node.module}.*"
+                yield None, True
                 continue
-            yield f"{node.module}.{alias.name}"
+            yield f"{node.module}.{alias.name}", False
     else:
-        yield node.module
+        yield node.module, False
 
 
 def check_import_statements(current_module, module_names, file_path, tree, errors, repo_root):
@@ -206,8 +206,8 @@ def check_import_statements(current_module, module_names, file_path, tree, error
                 continue
             if not node.module:
                 continue
-            for target in iter_import_targets(node):
-                if target == "modules.*":
+            for target, is_wildcard in iter_import_targets(node):
+                if is_wildcard:
                     rel_path = os.path.relpath(file_path, repo_root)
                     errors.append(
                         (
