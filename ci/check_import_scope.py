@@ -25,7 +25,7 @@ def sanitize_ref(ref):
     return ref.replace("\n", " ").replace("\r", " ").strip()
 
 
-def safe_ref_or_error(ref):
+def validate_ref_format(ref):
     safe_ref = sanitize_ref(ref)
     if not safe_ref:
         return None, f"invalid git ref '{ref}'"
@@ -35,7 +35,7 @@ def safe_ref_or_error(ref):
 
 
 def verify_ref(ref):
-    safe_ref, safe_error = safe_ref_or_error(ref)
+    safe_ref, safe_error = validate_ref_format(ref)
     if safe_ref is None:
         return None, safe_error
     result = subprocess.run(
@@ -79,7 +79,7 @@ def resolve_diff_range():
         base, base_error = resolve_base_ref(base_ref)
         if base is None:
             print(
-                "check_import_scope: ERROR: unable to resolve base ref "
+                "check_import_scope: unable to resolve base ref "
                 f"'{sanitize_ref(base_ref)}'",
                 file=sys.stderr,
             )
@@ -126,7 +126,7 @@ def resolve_diff_range():
 
 
 def validate_diff_range(diff_range):
-    # Expected format: <ref>...<ref> with no whitespace or option prefix.
+    # Basic validation: contains "..." without whitespace or option prefix.
     if not diff_range or "..." not in diff_range:
         return False
     if diff_range.startswith("-"):
