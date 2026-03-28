@@ -89,10 +89,12 @@ def resolve_diff_range():
         sys.exit(1)
 
     for candidate in ("origin/develop", "develop"):
-        if verify_ref(candidate)[0] is not None:
+        candidate_sha, _ = verify_ref(candidate)
+        if candidate_sha is not None:
             return f"{candidate}...HEAD"
 
-    if verify_ref("HEAD~1")[0] is not None:
+    head_parent_sha, _ = verify_ref("HEAD~1")
+    if head_parent_sha is not None:
         return "HEAD~1...HEAD"
 
     print(
