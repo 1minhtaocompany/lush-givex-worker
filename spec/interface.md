@@ -1,4 +1,4 @@
-def add_new_state(state_name: str) -> State:
+def add_new_state(state_name: str) -> State: 
 Function: add_new_state
 
 Input:
@@ -8,4 +8,4 @@ Input:
 
 Output:
 
-* boolean (true nếu thêm thành công, false nếu state đã tồn tại)
+* boolean (true nếu thêm thành công, false nếu state đã tồn tại) 
