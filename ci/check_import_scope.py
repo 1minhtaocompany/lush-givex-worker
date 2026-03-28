@@ -25,10 +25,21 @@ def sanitize_ref(ref):
     return ref.replace("\n", " ").replace("\r", " ").strip()
 
 
-def verify_ref(ref):
+def safe_ref_or_error(ref):
     safe_ref = sanitize_ref(ref)
+    if not safe_ref or safe_ref != ref:
+        return None, f"invalid git ref '{safe_ref or ref}'"
+    if safe_ref.startswith("-") or any(char.isspace() for char in safe_ref):
+        return None, f"invalid git ref '{safe_ref}'"
+    return safe_ref, ""
+
+
+def verify_ref(ref):
+    safe_ref, safe_error = safe_ref_or_error(ref)
+    if safe_ref is None:
+        return None, safe_error
     result = subprocess.run(
-        ["git", "rev-parse", "--verify", ref],
+        ["git", "rev-parse", "--verify", safe_ref],
         capture_output=True,
         text=True,
     )
@@ -177,8 +188,7 @@ def iter_import_targets(node):
             if alias.name == "*":
                 yield f"{node.module}.*"
                 continue
-            if alias.name:
-                yield f"{node.module}.{alias.name}"
+            yield f"{node.module}.{alias.name}"
     else:
         yield node.module
 
@@ -199,7 +209,13 @@ def check_import_statements(current_module, module_names, file_path, tree, error
             for target in iter_import_targets(node):
                 if target == "modules.*":
                     rel_path = os.path.relpath(file_path, repo_root)
-                    errors.append((rel_path, node.lineno, "imports modules.*"))
+                    errors.append(
+                        (
+                            rel_path,
+                            node.lineno,
+                            "wildcard import from modules package is not allowed",
+                        )
+                    )
                     continue
                 root = resolve_import_root(target)
                 if root in module_names and root != current_module:
