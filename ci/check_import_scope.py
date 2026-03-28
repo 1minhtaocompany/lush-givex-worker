@@ -145,6 +145,33 @@ class ImportTarget(NamedTuple):
     is_wildcard: bool
 
 
+def resolve_relative_base(current_package, level):
+    if not current_package or level <= 0:
+        return None
+    parts = current_package.split(".")
+    drop = level - 1
+    if drop >= len(parts):
+        return None
+    if drop == 0:
+        return current_package
+    return ".".join(parts[:-drop])
+
+
+def resolve_relative_targets(current_package, node):
+    base = resolve_relative_base(current_package, node.level)
+    if not base:
+        return []
+    if node.module:
+        return [ImportTarget(name=f"{base}.{node.module}", is_wildcard=False)]
+    targets = []
+    for alias in node.names:
+        if alias.name == "*":
+            targets.append(ImportTarget(name=base, is_wildcard=True))
+        else:
+            targets.append(ImportTarget(name=f"{base}.{alias.name}", is_wildcard=False))
+    return targets
+
+
 def get_changed_files(diff_range):
     if not validate_diff_range(diff_range):
         print(
@@ -179,6 +206,18 @@ def module_from_path(path, module_names):
     return None
 
 
+def current_package_from_path(path):
+    normalized = normalize_path(path)
+    if not normalized.endswith(".py"):
+        return ""
+    parts = normalized[:-3].split("/")
+    if not parts:
+        return ""
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
 def resolve_import_root(import_name):
     if import_name == "modules":
         return "modules"
@@ -203,7 +242,15 @@ def iter_import_targets(node):
         yield ImportTarget(name=node.module, is_wildcard=False)
 
 
-def check_import_statements(current_module, module_names, file_path, tree, errors, repo_root):
+def check_import_statements(
+    current_module,
+    current_package,
+    module_names,
+    file_path,
+    tree,
+    errors,
+    repo_root,
+):
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -213,6 +260,24 @@ def check_import_statements(current_module, module_names, file_path, tree, error
                     errors.append((rel_path, node.lineno, f"imports {alias.name}"))
         elif isinstance(node, ast.ImportFrom):
             if node.level > 0:
+                targets = resolve_relative_targets(current_package, node)
+                for target in targets:
+                    if target.is_wildcard and target.name == "modules":
+                        rel_path = os.path.relpath(file_path, repo_root)
+                        errors.append(
+                            (
+                                rel_path,
+                                node.lineno,
+                                "wildcard import from modules package is not allowed",
+                            )
+                        )
+                        continue
+                    if not target.name:
+                        continue
+                    root = resolve_import_root(target.name)
+                    if root in module_names and root != current_module:
+                        rel_path = os.path.relpath(file_path, repo_root)
+                        errors.append((rel_path, node.lineno, f"imports {target.name}"))
                 continue
             if not node.module:
                 continue
@@ -255,6 +320,7 @@ def main():
         module_name = module_from_path(normalized, module_names)
         if not module_name:
             continue
+        current_package = current_package_from_path(normalized)
         file_path = os.path.join(repo_root, normalized)
         if not os.path.isfile(file_path):
             continue
@@ -272,7 +338,13 @@ def main():
             continue
 
         check_import_statements(
-            module_name, module_names, file_path, tree, errors, repo_root
+            module_name,
+            current_package,
+            module_names,
+            file_path,
+            tree,
+            errors,
+            repo_root,
         )
 
     if errors:
