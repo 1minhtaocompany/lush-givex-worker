@@ -2,8 +2,10 @@
 # Check for cross-module imports in changed files
 import ast
 import os
+import re
 import subprocess
 import sys
+from typing import NamedTuple, Optional
 
 
 def find_module_names(modules_dir):
@@ -21,17 +23,22 @@ def normalize_path(path):
     return normalized
 
 
+REF_PATTERN = re.compile(r"^[A-Za-z0-9._/-]+$")
+DIFF_RANGE_PATTERN = re.compile(r"^[A-Za-z0-9._/-]+\\.\\.\\.[A-Za-z0-9._/-]+$")
+
+
 def sanitize_ref(ref):
     return ref.replace("\n", " ").replace("\r", " ").strip()
 
 
 def validate_ref_format(ref):
-    safe_ref = sanitize_ref(ref)
-    if not safe_ref:
-        return None, f"invalid git ref '{ref}'"
-    if safe_ref.startswith("-") or any(char.isspace() for char in safe_ref):
-        return None, f"invalid git ref '{safe_ref}'"
-    return safe_ref, ""
+    if not ref:
+        return None, "invalid git ref"
+    if ref.startswith("-"):
+        return None, f"invalid git ref '{sanitize_ref(ref)}'"
+    if not REF_PATTERN.fullmatch(ref):
+        return None, f"invalid git ref '{sanitize_ref(ref)}'"
+    return ref, ""
 
 
 def verify_ref(ref):
@@ -126,14 +133,13 @@ def resolve_diff_range():
 
 
 def validate_diff_range(diff_range):
-    # Basic validation: contains "..." without whitespace or option prefix.
-    if not diff_range or "..." not in diff_range:
-        return False
-    if diff_range.startswith("-"):
-        return False
-    if any(char.isspace() for char in diff_range):
-        return False
-    return True
+    # Basic validation: safe refs on both sides of "...".
+    return bool(DIFF_RANGE_PATTERN.fullmatch(diff_range))
+
+
+class ImportTarget(NamedTuple):
+    name: Optional[str]
+    is_wildcard: bool
 
 
 def get_changed_files(diff_range):
@@ -186,11 +192,11 @@ def iter_import_targets(node):
     if node.module == "modules":
         for alias in node.names:
             if alias.name == "*":
-                yield None, True
+                yield ImportTarget(name=None, is_wildcard=True)
                 continue
-            yield f"{node.module}.{alias.name}", False
+            yield ImportTarget(name=f"{node.module}.{alias.name}", is_wildcard=False)
     else:
-        yield node.module, False
+        yield ImportTarget(name=node.module, is_wildcard=False)
 
 
 def check_import_statements(current_module, module_names, file_path, tree, errors, repo_root):
@@ -206,8 +212,8 @@ def check_import_statements(current_module, module_names, file_path, tree, error
                 continue
             if not node.module:
                 continue
-            for target, is_wildcard in iter_import_targets(node):
-                if is_wildcard:
+            for target in iter_import_targets(node):
+                if target.is_wildcard:
                     rel_path = os.path.relpath(file_path, repo_root)
                     errors.append(
                         (
@@ -217,10 +223,12 @@ def check_import_statements(current_module, module_names, file_path, tree, error
                         )
                     )
                     continue
-                root = resolve_import_root(target)
+                if not target.name:
+                    continue
+                root = resolve_import_root(target.name)
                 if root in module_names and root != current_module:
                     rel_path = os.path.relpath(file_path, repo_root)
-                    errors.append((rel_path, node.lineno, f"imports {target}"))
+                    errors.append((rel_path, node.lineno, f"imports {target.name}"))
 
 
 def main():
