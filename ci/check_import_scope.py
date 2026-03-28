@@ -214,6 +214,8 @@ def current_package_from_path(path):
     if not parts:
         return ""
     parts = parts[:-1]
+    if not parts:
+        return ""
     return ".".join(parts)
 
 
