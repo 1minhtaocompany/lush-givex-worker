@@ -50,7 +50,7 @@ def resolve_diff_range() -> str:
             )
             sys.exit(1)
 
-    if not verify_ref(head_sha):
+    if verify_ref(head_sha) is None:
         print(
             f"check_spec_lock: head sha '{head_sha}' could not be resolved",
             file=sys.stderr,
