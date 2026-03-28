@@ -1,4 +1,4 @@
-# Kiểm tra module có import từ module khác không
+# Kiß╗âm tra module c├│ import tß╗½ module kh├íc kh├┤ng
 import ast
 import os
 import sys
