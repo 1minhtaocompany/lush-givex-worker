@@ -28,8 +28,7 @@ def resolve_diff_range() -> str:
             )
             sys.exit(1)
         print(
-            "check_spec_lock: WARNING: running in local mode, using diff range "
-            "develop...HEAD",
+            "check_spec_lock: WARNING: local mode, using develop...HEAD",
             file=sys.stderr,
         )
         base_ref = "develop"
@@ -41,7 +40,7 @@ def resolve_diff_range() -> str:
         base = f"origin/{base_ref}"
     else:
         print(
-            f"check_spec_lock: base ref '{base_ref}' could not be resolved",
+            "check_spec_lock: ERROR: unable to resolve base ref",
             file=sys.stderr,
         )
         sys.exit(1)
