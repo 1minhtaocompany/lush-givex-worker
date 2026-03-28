@@ -19,14 +19,16 @@ def resolve_diff_range() -> str:
     base_ref = os.getenv("GITHUB_BASE_REF")
     head_sha = os.getenv("GITHUB_HEAD_SHA")
 
-    if not base_ref or not head_sha:
-        if os.getenv("GITHUB_ACTIONS") == "true":
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        if not base_ref or not head_sha:
             print(
                 "check_spec_lock: missing GITHUB_BASE_REF or GITHUB_HEAD_SHA; "
                 "cannot determine diff range in CI",
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    if base_ref is None or head_sha is None:
         print(
             "check_spec_lock: WARNING: local mode, using develop...HEAD",
             file=sys.stderr,
