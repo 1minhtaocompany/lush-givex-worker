@@ -30,8 +30,8 @@ jobs:
         run: python ci/check_pr_scope.py
 
       - name: Check spec lock
-         run: python ci/check_spec_lock.py
-         env:
+       run: python ci/check_spec_lock.py
+       env:
             GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
             ALLOW_SPEC_MODIFICATION: "true"
       - name: Unit tests
