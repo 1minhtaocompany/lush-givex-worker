@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from threading import Lock
 from typing import Dict
-
-ALLOWED_STATES = {"ui_lock", "success", "vbv_3ds", "declined"}
 
 
 @dataclass(frozen=True)
@@ -16,15 +15,25 @@ _states: Dict[str, State] = {}
 _states_lock = Lock()
 
 
-def add_new_state(state_name: str) -> State:
-    if state_name not in ALLOWED_STATES:
-        allowed = ", ".join(sorted(ALLOWED_STATES))
-        raise ValueError(
-            f"State '{state_name}' is not allowed. Allowed states: {allowed}."
-        )
+_RESERVED_STATE_NAMES = {"initial", "final", "error"}
+_STATE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+def add_new_state(state_name: str) -> bool:
+    if not isinstance(state_name, str) or not state_name:
+        return False
+    if _STATE_NAME_PATTERN.match(state_name) is None:
+        return False
+    normalized_name = state_name.lower()
+    if normalized_name in _RESERVED_STATE_NAMES:
+        return False
     with _states_lock:
         if state_name in _states:
-            raise ValueError(f"State '{state_name}' already exists.")
-        state = State(name=state_name)
-        _states[state_name] = state
-        return state
+            return False
+        _states[state_name] = State(name=state_name)
+        return True
+
+
+def _clear_states() -> None:
+    with _states_lock:
+        _states.clear()
