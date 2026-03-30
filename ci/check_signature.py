@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #!/usr/bin/env python3
 from __future__ import annotations
 
@@ -344,3 +345,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+=======
+# Kiểm tra function trong code có đúng signature theo spec
+print("check_signature: skeleton pass")
+>>>>>>> 52a2008b5fe2cef08bafe3a661fef0e913c0121b

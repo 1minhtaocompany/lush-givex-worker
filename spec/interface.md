@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 Function: add_new_state
 
 Input:
@@ -13,3 +14,15 @@ Error:
 Notes:
   * Thread-safe (Lock)
   * ALLOWED_STATES là tập đóng, định nghĩa tại spec/fsm.md
+=======
+Function: add_new_state
+
+Input:
+
+* state_name: string
+* transitions: list
+
+Output:
+
+* boolean (true nếu thêm thành công, false nếu state đã tồn tại)
+>>>>>>> 52a2008b5fe2cef08bafe3a661fef0e913c0121b

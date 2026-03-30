@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #!/usr/bin/env python3
 import os
 import subprocess
@@ -95,3 +96,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+=======
+# Kiểm tra PR ≤ 200 dòng, chỉ 1 module
+print("check_pr_scope: skeleton pass")
+>>>>>>> 52a2008b5fe2cef08bafe3a661fef0e913c0121b
