@@ -104,12 +104,32 @@ def is_spec_path(path: str) -> bool:
     return normalized == "spec" or normalized.startswith("spec/")
 
 
+def is_spec_change_authorized() -> bool:
+    """Return True when ALLOW_SPEC_MODIFICATION env var is set to 'true'.
+
+    This enables Architect-authorized spec changes to bypass the spec lock
+    CI check.  Any other value (or absence) is treated as unauthorized.
+    """
+    return os.getenv("ALLOW_SPEC_MODIFICATION", "").strip().lower() == "true"
+
+
 def main() -> None:
     diff_range = resolve_diff_range()
     changed_files = get_changed_files(diff_range)
     spec_files = [path for path in changed_files if is_spec_path(path)]
 
     if spec_files:
+        if is_spec_change_authorized():
+            print(
+                "check_spec_lock: WARNING -- spec files modified "
+                "(authorized via ALLOW_SPEC_MODIFICATION):",
+                file=sys.stderr,
+            )
+            for path in spec_files:
+                print(path, file=sys.stderr)
+            print("check_spec_lock: PASS (authorized override)")
+            sys.exit(0)
+
         print("check_spec_lock: spec files modified:", file=sys.stderr)
         for path in spec_files:
             print(path, file=sys.stderr)
