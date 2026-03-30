@@ -8,3 +8,4 @@ Input:
 Output:
 
 * boolean (true nếu thêm thành công, false nếu state đã tồn tại)
+# test: trigger spec lock fail
