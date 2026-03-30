@@ -4,7 +4,7 @@ ci/ and tests/) and touches at most one module under modules/.
 
 Architect Directive (AD-6 amendment):
   ci/ and tests/ are excluded from the line count because CI scripts are
-  infrastructure code and tests should never be penalised against a size
+  infrastructure code and tests should never be penalized against a size
   limit.  This avoids the self-blocking paradox where the enforcement
   script itself would exceed the limit it enforces.
 """
