@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 
-@dataclass
-class State
+@dataclass(frozen=True)
+class State:
     name: str
 
 
