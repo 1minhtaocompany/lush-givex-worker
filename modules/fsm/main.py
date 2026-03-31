@@ -19,6 +19,8 @@ def _load_allowed_states() -> frozenset[str]:
             break
         if in_section and stripped.startswith("- "):
             allowed_states.append(stripped[2:].strip())
+    if not allowed_states:
+        raise ValueError("ALLOWED_STATES section not found in spec/fsm.md")
     return frozenset(allowed_states)
 
 
@@ -32,10 +34,13 @@ def add_new_state(state_name: str) -> State:
     if not isinstance(state_name, str):
         raise ValueError("state_name must be a string")
     if state_name not in ALLOWED_STATES:
-        raise ValueError("state_name is not allowed")
+        allowed_list = ", ".join(sorted(ALLOWED_STATES))
+        raise ValueError(
+            f"state_name '{state_name}' is not allowed. Allowed states: {allowed_list}"
+        )
     with _states_lock:
         if state_name in _states:
-            raise ValueError("state already exists")
+            raise ValueError(f"state '{state_name}' already exists")
         state = State(name=state_name)
         _states[state_name] = state
         return state
