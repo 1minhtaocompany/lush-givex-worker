@@ -3,7 +3,7 @@ import re
 _states = set()
 
 
-def add_new_state(state_name: str) -> bool:
+return None def add_new_state(state_name: str) -> bool:
     if not isinstance(state_name, str):
         return False
     if state_name == "":
