@@ -12,7 +12,7 @@ Error:
 
 Notes:
 * Thread-safe (Lock)
-* ALLOWED_STATES là tập đóng, định nghĩa tại spec/fsm.md
+* ALLOWED_STATES = ["pending", "active", "completed", "failed"]
 
 Function: reset_states
 Input: none
