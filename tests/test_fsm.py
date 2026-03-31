@@ -105,11 +105,13 @@ class AddNewStateTests(unittest.TestCase):
             error_list.append(errors.get())
 
         self.assertCountEqual([state.name for state in result_states], ALLOWED_STATES)
+        self.assertEqual(len(ALLOWED_STATES), len(result_states))
         invalid_results = [
             state for state in result_states if not isinstance(state, State)
         ]
         self.assertEqual([], invalid_results)
-        self.assertEqual(len(ALLOWED_STATES), len(error_list))
+        expected_errors = len(ALLOWED_STATES) * (self.THREADS_PER_STATE - 1)
+        self.assertEqual(expected_errors, len(error_list))
         non_value_errors = [
             error for error in error_list if not isinstance(error, ValueError)
         ]
