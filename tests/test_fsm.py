@@ -1,4 +1,3 @@
-import importlib
 import threading
 import unittest
 from dataclasses import FrozenInstanceError
@@ -53,7 +52,8 @@ class AddNewStateTests(unittest.TestCase):
     THREADS_PER_STATE = 2
 
     def setUp(self):
-        self.fsm = importlib.reload(fsm)
+        self.fsm = fsm
+        self.fsm.reset_states()
 
     def test_add_valid_state(self):
         valid_state = valid_state_name()
