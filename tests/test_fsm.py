@@ -40,6 +40,15 @@ def valid_state_name() -> str:
     return "success" if "success" in ALLOWED_STATES else first_allowed_state()
 
 
+def invalid_state_name() -> str:
+    candidate = "invalid_state"
+    counter = 0
+    while candidate in ALLOWED_STATES:
+        counter += 1
+        candidate = f"invalid_state_{counter}"
+    return candidate
+
+
 class AddNewStateTests(unittest.TestCase):
     THREADS_PER_STATE = 2
 
@@ -64,11 +73,8 @@ class AddNewStateTests(unittest.TestCase):
             self.fsm.add_new_state(valid_state)
 
     def test_add_invalid_state_raises(self):
-        invalid_state = "invalid_state"
-        if invalid_state in ALLOWED_STATES:
-            invalid_state = "not_allowed"
         with self.assertRaises(ValueError):
-            self.fsm.add_new_state(invalid_state)
+            self.fsm.add_new_state(invalid_state_name())
 
     def test_state_is_frozen(self):
         valid_state = valid_state_name()
