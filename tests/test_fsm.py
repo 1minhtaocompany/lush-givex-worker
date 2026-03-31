@@ -1,45 +1,84 @@
 import unittest
 
-from modules.fsm.main import add_new_state, _states
+from modules.fsm.main import (
+    ALLOWED_STATES,
+    add_new_state,
+    get_current_state,
+    reset_states,
+    transition_to,
+)
+from spec.schema import State
 
 
-class AddNewStateTests(unittest.TestCase):
+class FsmStateTests(unittest.TestCase):
     def setUp(self):
-        _states.clear()
+        reset_states()
 
-    def test_add_valid_state(self):
-        self.assertTrue(add_new_state("valid_state"))
+    def test_get_current_state_initially_none(self):
+        self.assertIsNone(get_current_state())
 
-    def test_add_duplicate_state(self):
-        self.assertTrue(add_new_state("duplicate"))
-        self.assertFalse(add_new_state("duplicate"))
+    def test_add_new_state_returns_state(self):
+        state = add_new_state(ALLOWED_STATES[0])
+        self.assertIsInstance(state, State)
+        self.assertEqual(state.name, ALLOWED_STATES[0])
 
-    def test_add_empty_string(self):
-        self.assertFalse(add_new_state(""))
+    def test_add_new_state_invalid_name_raises(self):
+        with self.assertRaises(ValueError):
+            add_new_state("invalid_state")
 
-    def test_add_none(self):
-        self.assertFalse(add_new_state(None))
+    def test_add_new_state_non_string_raises(self):
+        with self.assertRaises(ValueError):
+            add_new_state(None)
 
-    def test_add_invalid_characters(self):
-        self.assertFalse(add_new_state("state!"))
+    def test_add_new_state_duplicate_raises(self):
+        add_new_state(ALLOWED_STATES[1])
+        with self.assertRaises(ValueError):
+            add_new_state(ALLOWED_STATES[1])
 
-    def test_add_initial_case_insensitive(self):
-        self.assertFalse(add_new_state("initial"))
-        self.assertFalse(add_new_state("INITIAL"))
-        self.assertFalse(add_new_state("Initial"))
+    def test_transition_to_missing_state_raises(self):
+        with self.assertRaises(ValueError):
+            transition_to(ALLOWED_STATES[2])
 
-    def test_add_final(self):
-        self.assertFalse(add_new_state("final"))
+    def test_transition_to_invalid_state_name_raises(self):
+        with self.assertRaises(ValueError):
+            transition_to("invalid_state")
 
-    def test_add_error(self):
-        self.assertFalse(add_new_state("error"))
+    def test_transition_to_updates_current_state(self):
+        state = add_new_state(ALLOWED_STATES[2])
+        returned = transition_to(ALLOWED_STATES[2])
+        self.assertEqual(returned, state)
+        self.assertEqual(get_current_state(), state)
 
-    def test_add_after_another_state(self):
-        self.assertTrue(add_new_state("first_state"))
-        self.assertTrue(add_new_state("second_state"))
-        self.assertFalse(add_new_state("first_state"))
+    def test_get_current_state_after_multiple_transitions(self):
+        first = add_new_state(ALLOWED_STATES[0])
+        second = add_new_state(ALLOWED_STATES[3])
+        transition_to(ALLOWED_STATES[0])
+        transition_to(ALLOWED_STATES[3])
+        self.assertEqual(get_current_state(), second)
+        self.assertNotEqual(get_current_state(), first)
+
+    def test_reset_states_clears_current_state(self):
+        add_new_state(ALLOWED_STATES[0])
+        transition_to(ALLOWED_STATES[0])
+        reset_states()
+        self.assertIsNone(get_current_state())
+
+    def test_reset_states_removes_registered_states(self):
+        add_new_state(ALLOWED_STATES[1])
+        reset_states()
+        with self.assertRaises(ValueError):
+            transition_to(ALLOWED_STATES[1])
+
+    def test_add_all_allowed_states(self):
+        states = [add_new_state(name) for name in ALLOWED_STATES]
+        self.assertEqual([state.name for state in states], ALLOWED_STATES)
+
+    def test_add_state_after_reset(self):
+        add_new_state(ALLOWED_STATES[0])
+        reset_states()
+        state = add_new_state(ALLOWED_STATES[0])
+        self.assertEqual(state.name, ALLOWED_STATES[0])
 
 
 if __name__ == "__main__":
     unittest.main()
-# trigger CI
