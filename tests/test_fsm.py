@@ -30,12 +30,18 @@ def load_allowed_states() -> list[str]:
 ALLOWED_STATES = load_allowed_states()
 
 
+def first_allowed_state() -> str:
+    if not ALLOWED_STATES:
+        raise ValueError("ALLOWED_STATES is empty")
+    return next(iter(ALLOWED_STATES))
+
+
 class AddNewStateTests(unittest.TestCase):
     def setUp(self):
         self.fsm = importlib.reload(fsm)
 
     def test_add_valid_state(self):
-        valid_state = "success" if "success" in ALLOWED_STATES else ALLOWED_STATES[0]
+        valid_state = "success" if "success" in ALLOWED_STATES else first_allowed_state()
         result = self.fsm.add_new_state(valid_state)
         self.assertEqual(State(name=valid_state), result)
 
@@ -46,7 +52,7 @@ class AddNewStateTests(unittest.TestCase):
         self.assertCountEqual(results, expected_states)
 
     def test_add_duplicate_raises(self):
-        valid_state = "success" if "success" in ALLOWED_STATES else ALLOWED_STATES[0]
+        valid_state = "success" if "success" in ALLOWED_STATES else first_allowed_state()
         self.fsm.add_new_state(valid_state)
         with self.assertRaises(ValueError):
             self.fsm.add_new_state(valid_state)
@@ -59,7 +65,7 @@ class AddNewStateTests(unittest.TestCase):
             self.fsm.add_new_state(invalid_state)
 
     def test_state_is_frozen(self):
-        valid_state = "success" if "success" in ALLOWED_STATES else ALLOWED_STATES[0]
+        valid_state = "success" if "success" in ALLOWED_STATES else first_allowed_state()
         state = self.fsm.add_new_state(valid_state)
         with self.assertRaises(FrozenInstanceError):
             state.name = "declined"

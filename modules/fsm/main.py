@@ -1,8 +1,28 @@
 import threading
+from pathlib import Path
 
 from spec.schema import State
 
-ALLOWED_STATES = {"ui_lock", "success", "vbv_3ds", "declined"}
+SPEC_FSM_PATH = Path(__file__).resolve().parents[2] / "spec" / "fsm.md"
+
+
+def _load_allowed_states() -> frozenset[str]:
+    lines = SPEC_FSM_PATH.read_text(encoding="utf-8").splitlines()
+    allowed_states: list[str] = []
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## ALLOWED_STATES"):
+            in_section = True
+            continue
+        if in_section and stripped.startswith("## "):
+            break
+        if in_section and stripped.startswith("- "):
+            allowed_states.append(stripped[2:].strip())
+    return frozenset(allowed_states)
+
+
+ALLOWED_STATES = _load_allowed_states()
 
 _states: dict[str, State] = {}
 _states_lock = threading.Lock()
