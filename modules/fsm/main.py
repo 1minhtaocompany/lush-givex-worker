@@ -10,9 +10,11 @@ def _load_allowed_states() -> frozenset[str]:
     lines = SPEC_FSM_PATH.read_text(encoding="utf-8").splitlines()
     allowed_states: list[str] = []
     in_section = False
+    found_section = False
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("## ALLOWED_STATES"):
+            found_section = True
             in_section = True
             continue
         if in_section and stripped.startswith("## "):
@@ -20,7 +22,11 @@ def _load_allowed_states() -> frozenset[str]:
         if in_section and stripped.startswith("- "):
             allowed_states.append(stripped[2:].strip())
     if not allowed_states:
-        raise ValueError("ALLOWED_STATES section not found in spec/fsm.md")
+        if not found_section:
+            raise ValueError("ALLOWED_STATES section not found in spec/fsm.md")
+        raise ValueError(
+            "No allowed states found in ALLOWED_STATES section of spec/fsm.md"
+        )
     return frozenset(allowed_states)
 
 

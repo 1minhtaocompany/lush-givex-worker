@@ -33,7 +33,7 @@ ALLOWED_STATES = load_allowed_states()
 def first_allowed_state() -> str:
     if not ALLOWED_STATES:
         raise ValueError("ALLOWED_STATES is empty")
-    return next(iter(ALLOWED_STATES))
+    return ALLOWED_STATES[0]
 
 
 def valid_state_name() -> str:
@@ -41,6 +41,8 @@ def valid_state_name() -> str:
 
 
 class AddNewStateTests(unittest.TestCase):
+    DUPLICATE_ATTEMPTS = 2
+
     def setUp(self):
         self.fsm = importlib.reload(fsm)
 
@@ -86,7 +88,7 @@ class AddNewStateTests(unittest.TestCase):
 
         threads = []
         for state_name in ALLOWED_STATES:
-            for _ in range(2):
+            for _ in range(self.DUPLICATE_ATTEMPTS):
                 thread = threading.Thread(target=worker, args=(state_name,))
                 threads.append(thread)
                 thread.start()
