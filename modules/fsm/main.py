@@ -23,11 +23,9 @@ def _load_allowed_states() -> frozenset[str]:
             allowed_states.append(stripped[2:].strip())
     if not allowed_states:
         if not found_section:
-            raise ValueError(
-                f"ALLOWED_STATES section not found in {SPEC_FSM_PATH}"
-            )
+            raise ValueError("ALLOWED_STATES section not found in specification file")
         raise ValueError(
-            f"No allowed states found in ALLOWED_STATES section of {SPEC_FSM_PATH}"
+            "No allowed states found in ALLOWED_STATES section of specification file"
         )
     return frozenset(allowed_states)
 

@@ -1,38 +1,18 @@
 import threading
 import unittest
 from dataclasses import FrozenInstanceError
-from pathlib import Path
 from queue import Queue
 
 import modules.fsm.main as fsm
 from spec.schema import State
 
-SPEC_FSM_PATH = Path(__file__).resolve().parents[1] / "spec" / "fsm.md"
-
-
-def load_allowed_states() -> list[str]:
-    lines = SPEC_FSM_PATH.read_text(encoding="utf-8").splitlines()
-    allowed_states: list[str] = []
-    in_section = False
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("## ALLOWED_STATES"):
-            in_section = True
-            continue
-        if in_section and stripped.startswith("## "):
-            break
-        if in_section and stripped.startswith("- "):
-            allowed_states.append(stripped[2:].strip())
-    return allowed_states
-
-
-ALLOWED_STATES = load_allowed_states()
+ALLOWED_STATES = fsm.ALLOWED_STATES
 
 
 def first_allowed_state() -> str:
     if not ALLOWED_STATES:
         raise ValueError("ALLOWED_STATES is empty")
-    return ALLOWED_STATES[0]
+    return next(iter(ALLOWED_STATES))
 
 
 def valid_state_name() -> str:
