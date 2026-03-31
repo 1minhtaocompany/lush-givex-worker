@@ -1,4 +1,5 @@
 import threading
+from functools import lru_cache
 from pathlib import Path
 
 from spec.schema import State
@@ -6,6 +7,7 @@ from spec.schema import State
 SPEC_FSM_PATH = Path(__file__).resolve().parents[2] / "spec" / "fsm.md"
 
 
+@lru_cache(maxsize=1)
 def _load_allowed_states() -> frozenset[str]:
     lines = SPEC_FSM_PATH.read_text(encoding="utf-8").splitlines()
     allowed_states: list[str] = []

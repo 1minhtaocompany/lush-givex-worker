@@ -63,8 +63,9 @@ class AddNewStateTests(unittest.TestCase):
             state.name = "declined"
 
     def test_thread_safety(self):
-        results = Queue()
-        errors = Queue()
+        max_items = len(ALLOWED_STATES) * self.THREADS_PER_STATE
+        results = Queue(maxsize=max_items)
+        errors = Queue(maxsize=max_items)
 
         def worker(state_name: str):
             try:
