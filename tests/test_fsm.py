@@ -41,7 +41,7 @@ def valid_state_name() -> str:
 
 
 class AddNewStateTests(unittest.TestCase):
-    DUPLICATE_ATTEMPTS = 2
+    THREADS_PER_STATE = 2
 
     def setUp(self):
         self.fsm = importlib.reload(fsm)
@@ -88,7 +88,7 @@ class AddNewStateTests(unittest.TestCase):
 
         threads = []
         for state_name in ALLOWED_STATES:
-            for _ in range(self.DUPLICATE_ATTEMPTS):
+            for _ in range(self.THREADS_PER_STATE):
                 thread = threading.Thread(target=worker, args=(state_name,))
                 threads.append(thread)
                 thread.start()

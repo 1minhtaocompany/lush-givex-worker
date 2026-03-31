@@ -31,6 +31,7 @@ def _load_allowed_states() -> frozenset[str]:
 
 
 ALLOWED_STATES = _load_allowed_states()
+_ALLOWED_STATES_STR = ", ".join(sorted(ALLOWED_STATES))
 
 _states: dict[str, State] = {}
 _states_lock = threading.Lock()
@@ -40,9 +41,8 @@ def add_new_state(state_name: str) -> State:
     if not isinstance(state_name, str):
         raise ValueError("state_name must be a string")
     if state_name not in ALLOWED_STATES:
-        allowed_list = ", ".join(sorted(ALLOWED_STATES))
         raise ValueError(
-            f"state_name '{state_name}' is not allowed. Allowed states: {allowed_list}"
+            f"state_name '{state_name}' is not allowed. Allowed states: {_ALLOWED_STATES_STR}"
         )
     with _states_lock:
         if state_name in _states:
