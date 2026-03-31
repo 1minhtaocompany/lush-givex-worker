@@ -14,7 +14,9 @@ def add_new_state(state_name: str) -> State:
     if not isinstance(state_name, str):
         raise ValueError("state_name must be a string")
     if state_name not in ALLOWED_STATES:
-        raise ValueError("state_name is not allowed")
+        raise ValueError(
+            f'state_name "{state_name}" is not allowed. Allowed states: {ALLOWED_STATES}'
+        )
     with _states_lock:
         if state_name in _states:
             raise ValueError("state_name already exists")
@@ -36,11 +38,11 @@ def get_current_state() -> Optional[State]:
 
 
 def transition_to(state_name: str) -> State:
+    global _current_state
     if not isinstance(state_name, str):
         raise ValueError("state_name must be a string")
-    global _current_state
     with _states_lock:
         if state_name not in _states:
-            raise ValueError("state_name does not exist")
+            raise ValueError(f'state_name "{state_name}" does not exist')
         _current_state = _states[state_name]
         return _current_state
