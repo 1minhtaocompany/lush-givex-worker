@@ -40,9 +40,9 @@ def get_current_state() -> Optional[State]:
 def transition_to(target_state: str) -> State:
     global _current_state
     if not isinstance(target_state, str):
-        raise ValueError("state_name must be a string")
+        raise ValueError("target_state must be a string")
     with _states_lock:
         if target_state not in _states:
-            raise ValueError(f'state_name "{target_state}" does not exist')
+            raise ValueError(f'target_state "{target_state}" does not exist')
         _current_state = _states[target_state]
         return _current_state
