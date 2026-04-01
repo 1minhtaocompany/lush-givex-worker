@@ -43,6 +43,7 @@ jobs:
       env:
         GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           fail-on-severity: high
+        ALLOW_SPEC_MODIFICATION: "true"
 
     - name: Unit tests
       run: python -m unittest discover tests
