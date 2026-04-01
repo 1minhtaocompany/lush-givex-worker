@@ -85,10 +85,11 @@ Khi CI quá cứng nhắc (giới hạn dòng, 1 module) gây nghẽn các thay 
 
 **Quy tắc sử dụng:**
 1. Mọi bypass phải được ghi log lý do trong PR description.
-2. `emergency_override` chỉ được Admin kích hoạt.
-3. `spec_sync` tự động kích hoạt khi PR title chứa `[spec-sync]`.
-4. `infra_change` áp dụng khi thay đổi chỉ ảnh hưởng `ci/`, `.github/`, hoặc `spec/`.
-5. `ALLOW_MULTI_MODULE=true` vẫn hoạt động như alias của `spec_sync` để tương thích ngược.
+2. `emergency_override` chỉ được Admin kích hoạt — yêu cầu `CHANGE_CLASS_APPROVED=true` hoặc PR title chứa `[emergency]`.
+3. `spec_sync` yêu cầu PR title chứa `[spec-sync]` hoặc `CHANGE_CLASS_APPROVED=true`.
+4. `infra_change` yêu cầu PR title chứa `[infra]` hoặc `CHANGE_CLASS_APPROVED=true`.
+5. **⚠️ DEPRECATED:** `ALLOW_MULTI_MODULE=true` vẫn hoạt động tạm thời như alias của `spec_sync` nhưng sẽ bị loại bỏ. Mọi workflow mới PHẢI dùng `CHANGE_CLASS=spec_sync`.
+6. CI `check_pr_scope` sẽ từ chối `CHANGE_CLASS` nếu PR title không chứa tag tương ứng (governance enforcement).
 
 ### 7. Spec Versioning System
 
@@ -106,6 +107,20 @@ Hợp đồng giao diện (`spec/interface.md`) được tách thành 2 nhóm:
 
 File `spec/interface.md` gốc vẫn được giữ lại như bản tổng hợp (aggregated) để tương thích ngược.
 CI `check_signature` tự động phát hiện và kiểm tra cả hai nhóm.
+
+**⚠️ DIVERGENCE GUARD:** CI `check_spec_consistency` đảm bảo `spec/interface.md` (aggregated) KHÔNG ĐƯỢC lệch khỏi các file segmented. Nếu lệch → CI FAIL. Khi cập nhật spec, phải cập nhật đồng thời cả segmented files VÀ aggregated file.
+
+### 9. CI Checks (Danh sách đầy đủ)
+
+| Check | Mô tả |
+|-------|-------|
+| `check_import_scope` | Đảm bảo không module nào import từ module khác |
+| `check_signature` | So sánh function signature trong code với spec (multi-file aware, cross-file duplicate detection) |
+| `check_pr_scope` | Kiểm tra scope PR: ≤200 dòng, ≤1 module, governance enforcement cho CHANGE_CLASS |
+| `check_spec_lock` | Đảm bảo không PR nào sửa file trong `/spec/` (trừ Architect) |
+| `check_spec_consistency` | Đảm bảo aggregated spec KHÔNG lệch khỏi segmented files |
+| `check_version_consistency` | Validate spec-version headers nhất quán với VERSIONING.md |
+| Unit tests | `python -m unittest discover tests` |
 
 Hệ thống vận hành theo kiến trúc 3 tầng bản địa, lấy Pull Request (PR) và Issue làm trung tâm điều phối. Tuyệt đối không sử dụng AI bên ngoài (Zero-External AI) để duy trì tính toàn vẹn của Copilot Memory.
 

@@ -5,6 +5,8 @@ import subprocess
 from ci.check_pr_scope import (
     _normalize,
     _is_excluded,
+    _resolve_change_class,
+    _validate_change_class_governance,
     module_from_path,
     get_numstat,
     check,
