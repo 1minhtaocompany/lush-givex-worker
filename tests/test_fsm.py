@@ -1,7 +1,7 @@
 import threading
 import unittest
 
-from spec.schema import State
+from spec.schema import InvalidStateError, InvalidTransitionError, State
 from modules.fsm.main import (
     add_new_state,
     get_current_state,
@@ -23,11 +23,11 @@ class AddNewStateTests(unittest.TestCase):
 
     def test_add_duplicate_state_raises(self):
         add_new_state("success")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidStateError):
             add_new_state("success")
 
     def test_add_invalid_state_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidStateError):
             add_new_state("not_a_real_state")
 
     def test_state_is_frozen(self):
@@ -46,7 +46,7 @@ class AddNewStateTests(unittest.TestCase):
         def worker(name):
             try:
                 add_new_state(name)
-            except ValueError:
+            except InvalidStateError:
                 errors.append(name)
 
         threads = [threading.Thread(target=worker, args=(s,)) for s in ALLOWED_STATES]
@@ -81,11 +81,11 @@ class TransitionToTests(unittest.TestCase):
         self.assertEqual(result.name, "success")
 
     def test_transition_invalid_state_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidStateError):
             transition_to("bogus")
 
     def test_transition_unregistered_state_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InvalidTransitionError):
             transition_to("ui_lock")
 
 
