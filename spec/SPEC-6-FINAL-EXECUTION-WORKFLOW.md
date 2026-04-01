@@ -329,5 +329,5 @@ PR bị REQUEST_CHANGES
 
 | Version | Ngày | Thay đổi |
 |---------|------|----------|
-| 1.0 | 2025-xx | Phiên bản gốc — 6 AI roles, dùng DeepSeek + copy-paste thủ công |
+| 1.0 | 2025-Q1 | Phiên bản gốc — 6 AI roles, dùng DeepSeek + copy-paste thủ công |
 | 2.0 | 2026-04-01 | **Native AI Workflow** — Loại bỏ hoàn toàn DeepSeek, System Coordinator GPT, và mọi quy trình copy-paste. Chuyển sang 3 tầng bản địa (Human → Architect/Reviewer → Coding Agent). Thêm Security Pipeline (Guard 3.9), Circuit Breaker (Rule 3), CI Failure Recovery. Chuẩn hóa tên file bỏ Unicode en-dash. |
