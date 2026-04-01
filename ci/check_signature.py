@@ -12,6 +12,8 @@ from typing import Iterable
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SPEC_PATH = ROOT_DIR / "spec" / "interface.md"
+SPEC_CORE_PATH = ROOT_DIR / "spec" / "core" / "interface.md"
+SPEC_INTEGRATION_PATH = ROOT_DIR / "spec" / "integration" / "interface.md"
 MODULES_DIR = ROOT_DIR / "modules"
 
 INLINE_FUNCTION_DEF_RE = re.compile(r"^(?:async\s+def|def)\s+\w+")
@@ -19,6 +21,7 @@ INLINE_SIGNATURE_CALL_RE = re.compile(r"^[A-Za-z_]\w*\s*\(")
 FUNCTION_RE = re.compile(r"^Function\s*:\s*(?P<name>[A-Za-z_]\w*)\s*$", re.I)
 INPUT_RE = re.compile(r"^Input\s*:\s*(?P<input>.*)$", re.I)
 OUTPUT_RE = re.compile(r"^Output\s*:\s*(?P<output>.*)$", re.I)
+SPEC_VERSION_RE = re.compile(r"^spec-version\s*:\s*(?P<version>\S+)\s*$")
 
 EMPTY_PARAM_VALUES = frozenset({"none", "n/a", "na"})
 
@@ -455,6 +458,125 @@ def validate_signatures(
     return errors
 
 
+def _parse_spec_version(text: str) -> str | None:
+    """Extract the spec-version value from a YAML front-matter block.
+
+    Returns the version string (e.g. '1.0') or None if not found.
+    """
+    in_frontmatter = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "---":
+            if not in_frontmatter:
+                in_frontmatter = True
+                continue
+            else:
+                break
+        if in_frontmatter:
+            m = SPEC_VERSION_RE.match(stripped)
+            if m:
+                return m.group("version")
+    return None
+
+
+def _check_spec_version_consistency() -> None:
+    """Warn (non-fatal) when spec-version headers differ across files.
+
+    Checks spec/interface.md, spec/core/interface.md, and
+    spec/integration/interface.md.  Any divergence in version values is
+    printed to stderr as a WARNING.  See spec/VERSIONING.md for the
+    versioning policy.
+    """
+    paths = {
+        "spec/interface.md": SPEC_PATH,
+        "spec/core/interface.md": SPEC_CORE_PATH,
+        "spec/integration/interface.md": SPEC_INTEGRATION_PATH,
+    }
+    versions: dict[str, str | None] = {}
+    for label, path in paths.items():
+        if not path.exists():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        versions[label] = _parse_spec_version(text)
+
+    if not versions:
+        return
+
+    unique_versions = {v for v in versions.values() if v is not None}
+    if len(unique_versions) > 1:
+        print(
+            "WARNING: spec-version headers are inconsistent across spec files "
+            "(see spec/VERSIONING.md):",
+            file=sys.stderr,
+        )
+        for label, ver in versions.items():
+            print(f"  {label}: {ver}", file=sys.stderr)
+
+
+def _check_aggregated_consistency() -> None:
+    """Warn (non-fatal) when spec/interface.md diverges from segmented files.
+
+    Verifies that the set of functions in spec/interface.md (aggregated)
+    matches the union of functions in spec/core/interface.md and
+    spec/integration/interface.md (segmented).  A WARNING is printed to
+    stderr if divergence is detected; CI is not failed.
+
+    This guard implements the rule: 'aggregated file MUST NOT diverge from
+    segmented files' (see spec/VERSIONING.md).
+    """
+    if not SPEC_CORE_PATH.exists() or not SPEC_INTEGRATION_PATH.exists():
+        return
+    if not SPEC_PATH.exists():
+        print(
+            "WARNING: spec/interface.md (aggregated) is missing while "
+            "segmented spec files exist.",
+            file=sys.stderr,
+        )
+        return
+
+    try:
+        agg_text = SPEC_PATH.read_text(encoding="utf-8")
+        core_text = SPEC_CORE_PATH.read_text(encoding="utf-8")
+        integration_text = SPEC_INTEGRATION_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(
+            f"WARNING: unable to read spec files for consistency check: {exc}",
+            file=sys.stderr,
+        )
+        return
+
+    agg_funcs = set(parse_spec_functions(agg_text).keys())
+    core_funcs = set(parse_spec_functions(core_text).keys())
+    integration_funcs = set(parse_spec_functions(integration_text).keys())
+    segmented_funcs = core_funcs | integration_funcs
+
+    missing_in_aggregated = segmented_funcs - agg_funcs
+    extra_in_aggregated = agg_funcs - segmented_funcs
+
+    if missing_in_aggregated or extra_in_aggregated:
+        print(
+            "WARNING: spec/interface.md (aggregated) diverges from "
+            "segmented spec files (spec/core/ + spec/integration/) — "
+            "see spec/VERSIONING.md rule 4.",
+            file=sys.stderr,
+        )
+        if missing_in_aggregated:
+            print(
+                f"  Missing in aggregated: "
+                f"{', '.join(sorted(missing_in_aggregated))}",
+                file=sys.stderr,
+            )
+        if extra_in_aggregated:
+            print(
+                f"  Extra in aggregated (not in segmented): "
+                f"{', '.join(sorted(extra_in_aggregated))}",
+                file=sys.stderr,
+            )
+
+
 def main() -> int:
     try:
         spec_signatures = parse_spec_signatures(SPEC_PATH)
@@ -463,7 +585,11 @@ def main() -> int:
         print(f"check_signature: {exc}", file=sys.stderr)
         return 1
 
-    compare_signatures(spec_signatures, functions)
+    # compare_signatures is an alternative positional-order checker kept for
+    # debugging purposes.  It is NOT enforced in CI because the spec and module
+    # files are collected in different orders, making positional comparison
+    # misleading.  validate_signatures (below) is the authoritative check.
+    _ = compare_signatures(spec_signatures, functions)
 
     repo_root = Path(__file__).resolve().parents[1]
     spec_path = repo_root / "spec" / "interface.md"
@@ -485,6 +611,10 @@ def main() -> int:
         for error in errors:
             print(error)
         return 1
+
+    # Non-fatal consistency guards
+    _check_aggregated_consistency()
+    _check_spec_version_consistency()
 
     print("check_signature: PASS")
     return 0
