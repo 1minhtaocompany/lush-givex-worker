@@ -1,30 +1,20 @@
-# PROJECT CONTEXT & RULES (MANDATORY)
+## 🤖 NATIVE AI WORKFLOW (GitHub Copilot Business)
 
-## 1. INFRASTRUCTURE & SECURITY (STATIC)
-- **Organization:** 1minhtaocompany
-- **Repo:** lush-givex-worker
-- **Visibility:** Public (Enables GitHub Advanced Security/CodeQL).
-- **Security:** CodeQL, Secret Scanning, and Push Protection are PERMANENTLY active.
+Hệ thống vận hành theo kiến trúc 3 tầng bản địa, lấy Pull Request (PR) và Issue làm trung tâm điều phối. Tuyệt đối không sử dụng AI bên ngoài (Zero-External AI) để duy trì tính toàn vẹn của Copilot Memory.
 
-## 2. GOVERNANCE & CI/CD (STATIC)
-- **Primary Branch:** `main` (Protected).
-- **Merge Flow:** Feature Branch -> Pull Request -> CI Checks -> Manual Approval -> Merge.
-- **Approval Gate:** Human Admin (`delaila5888749dhah`) is the SOLE authority for `production` environment approval.
-- **Constraint:** AI Agents are PROHIBITED from bypassing the Manual Approval gate.
+### 1. Tầng Định hướng (Human)
+* **Vai trò:** Supreme Commander (Chỉ huy tối cao).
+* **Nhiệm vụ:** Chỉ định Task qua Issue/PR, giao việc bằng tag `@github-copilot`, không tự viết Prompt kỹ thuật, ra quyết định `Merge` cuối cùng.
 
-## 3. AGENT ROLES & HIERARCHY (STATIC)
-- **[Architect] Claude Opus 4.6:** High-level design, Spec creation, Interface definition. Final word on structure.
-- **[Developer] GPT-5.2-Codex:** Code implementation, Unit Testing. Must strictly follow Architect's Spec.
-- **[Reviewer] GPT-5.4:** Code audit, Spec-to-Code verification. Issues [APPROVED] or [REJECTED] only.
-- **[Human Admin] delaila5888749dhah:** Final arbiter and Merge authority.
+### 2. Tầng Thiết kế & Kiểm duyệt (GitHub Web)
+* **Architect (Anthropic Claude Opus 4.6):** Kích hoạt qua comment trên giao diện Web. Đọc `AI_CONTEXT.md` từ Memory, phân tích Issue và vạch ra Spec (các bước thực thi chi tiết).
+* **Reviewer (OpenAI GPT-5.4):** Tự động kích hoạt qua Ruleset khi có PR. Sử dụng dữ liệu phân tích từ CodeQL, đối chiếu với Spec để cấp `APPROVED` hoặc `REJECTED`.
+* **Cross-Inspector (Google Gemini 3.1 Pro):** Kích hoạt thủ công trên Web khi có xung đột logic hoặc PR độ khó cao để thanh tra chéo (Cross-check) độc lập.
 
-## 4. DYNAMIC PHASE DISCOVERY (ADAPTIVE)
-- **Instructions to AI:** Do not rely on hardcoded phase numbers in this file. 
-- **How to identify current task:** 1. Scan the title and description of the **currently active Pull Request**.
-  2. Check the **current branch name** (e.g., `phase-1.5-...`).
-  3. Analyze the latest updates in `spec/` directory to understand the current contract.
-- **Rule:** The latest Pull Request metadata is the "Single Source of Truth" for progress.
+### 3. Tầng Thực thi (IDE / Copilot Workspace)
+* **Developer (OpenAI GPT-5.2-Codex):** Kích hoạt bằng `@workspace` trong IDE. Nhận Spec từ Architect, tự động sinh code, refactor và đẩy (Push) thay đổi lên PR.
 
-## 5. TECHNICAL CONSTRAINTS
-- **Indentation:** YAML files must use exactly 2 spaces.
-- **Logic Integrity:** Zero-disruption to existing business logic unless explicitly requested by Human Admin.
+### 4. Giao thức Kết nối & Xử lý Ngoại lệ (Hard Rules)
+* **Rule 1 - Định danh tuyệt đối (Absolute Targeting):** Mọi lệnh giao việc cho Developer (Codex) trong IDE bắt buộc phải gắn kèm ID của Issue/PR. Cú pháp chuẩn: `@workspace Thực thi Spec từ Issue #[ID] do Architect đã chốt`.
+* **Rule 2 - Vòng lặp REJECT (Auto-Fix Loop):** Khi GPT-5.4 đánh `REJECTED`, Human tuyệt đối không copy lỗi thủ công. Human gõ lệnh vào IDE: `@workspace Đọc comment review mới nhất tại PR #[ID] và tự động sửa lỗi`.
+* **Rule 3 - Quy tắc quá tam ba bận (Rule of Three):** Nếu PR bị GPT-5.4 `REJECTED` quá 3 lần vì cùng một lỗi, quy trình tự động dừng. Human triệu hồi **Gemini 3.1 Pro** vào PR đó để phân xử, tìm nguyên nhân gốc rễ và đưa ra mã code chốt hạ.
