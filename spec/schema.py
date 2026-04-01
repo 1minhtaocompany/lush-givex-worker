@@ -36,8 +36,16 @@ class WorkerTask:
 
 
 class SessionFlaggedError(Exception):
-    """Raised when session is flagged (e.g. timeout on total watchdog)."""
+    pass
 
 
 class CycleExhaustedError(Exception):
-    """Raised when all cards in OrderQueue have been exhausted."""
+    pass
+
+
+class InvalidStateError(Exception):
+    pass
+
+
+class InvalidTransitionError(Exception):
+    pass

@@ -1,48 +1,43 @@
-from threading import Lock
-from typing import Dict, Optional
+import threading
 
-from spec.schema import State
+from spec.schema import InvalidStateError, InvalidTransitionError, State
 
-ALLOWED_STATES = ["ui_lock", "success", "vbw_36s", "declined"]
+ALLOWED_STATES = {"ui_lock", "success", "vbv_3ds", "declined"}
 
-_states: Dict[str, State] = {}
-_current_state: Optional[State] = None
-_states_lock = Lock()
+_states = {}
+_states_lock = threading.Lock()
+_current_state = None
 
 
-def add_new_state(state_name: str) -> State:
-    if not isinstance(state_name, str):
-        raise ValueError("state_name must be a string")
+def add_new_state(state_name):
     if state_name not in ALLOWED_STATES:
-        raise ValueError(
-            f'state_name "{state_name}" is not allowed. Allowed states: {ALLOWED_STATES}'
-        )
+        raise InvalidStateError(f"state '{state_name}' is not in ALLOWED_STATES")
     with _states_lock:
         if state_name in _states:
-            raise ValueError("state_name already exists")
+            raise InvalidStateError(f"state '{state_name}' already exists")
         state = State(name=state_name)
         _states[state_name] = state
         return state
 
 
-def reset_states() -> None:
+def get_current_state():
+    with _states_lock:
+        return _current_state
+
+
+def transition_to(target_state):
+    global _current_state
+    if target_state not in ALLOWED_STATES:
+        raise InvalidStateError(f"state '{target_state}' is not in ALLOWED_STATES")
+    with _states_lock:
+        if target_state not in _states:
+            raise InvalidTransitionError(f"state '{target_state}' not registered")
+        _current_state = _states[target_state]
+        return _current_state
+
+
+def reset_states():
     global _current_state
     with _states_lock:
         _states.clear()
         _current_state = None
-
-
-def get_current_state() -> Optional[State]:
-    with _states_lock:
-        return _current_state
-
-
-def transition_to(target_state: str) -> State:
-    global _current_state
-    if not isinstance(target_state, str):
-        raise ValueError("target_state must be a string")
-    with _states_lock:
-        if target_state not in _states:
-            raise ValueError(f'target_state "{target_state}" does not exist')
-        _current_state = _states[target_state]
-        return _current_state
