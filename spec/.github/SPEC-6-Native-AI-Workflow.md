@@ -163,8 +163,10 @@ Khi CI quá cứng nhắc gây nghẽn các thay đổi hợp lệ, sử dụng 
 | `spec_sync` | ❌ | ✅ | Đồng bộ code với spec mới sau khi Architect thay đổi interface |
 | `infra_change` | ✅ | ❌ | Thay đổi CI scripts, cấu hình infrastructure |
 
-**Governance:**
-- `emergency_override` bắt buộc có PR label `emergency` hoặc title prefix `[emergency]`. CI tự validate qua `PR_TITLE`/`PR_LABELS` env vars.
+**Governance Enforcement (CI `check_pr_scope`):**
+- `emergency_override`: yêu cầu `CHANGE_CLASS_APPROVED=true` (admin set) hoặc PR title chứa `[emergency]`.
+- `spec_sync`: yêu cầu PR title chứa `[spec-sync]` hoặc `CHANGE_CLASS_APPROVED=true`.
+- `infra_change`: yêu cầu PR title chứa `[infra]` hoặc `CHANGE_CLASS_APPROVED=true`.
 - Mọi bypass ghi log lý do trong PR description.
 - `ALLOW_MULTI_MODULE` đã **DEPRECATED** — sử dụng `CHANGE_CLASS=spec_sync` thay thế.
 
@@ -172,6 +174,7 @@ Khi CI quá cứng nhắc gây nghẽn các thay đổi hợp lệ, sử dụng 
 - Mỗi file spec chứa header `spec-version: MAJOR.MINOR`
 - MAJOR bump = breaking change → CI fail → cần `CHANGE_CLASS=spec_sync`
 - MINOR bump = additive → CI phát hiện stub thiếu → Agent tự implement
+- CI `check_version_consistency` kiểm tra tính nhất quán giữa file headers và VERSIONING.md
 - Chi tiết: [spec/VERSIONING.md](../../spec/VERSIONING.md)
 
 ### Guard 3.12 — Contract Segmentation (Tách biệt hợp đồng)
@@ -179,6 +182,7 @@ Khi CI quá cứng nhắc gây nghẽn các thay đổi hợp lệ, sử dụng 
 - `spec/integration/interface.md` — Watchdog, Billing, CDP (integration)
 - `spec/interface.md` — Bản tổng hợp tương thích ngược
 - CI `check_signature` đọc cả segmented và fallback files
+- **CI `check_spec_consistency` đảm bảo aggregated file KHÔNG lệch khỏi segmented files**
 - **Divergence Guard:** CI tự động so sánh function list giữa segmented và aggregated files. WARNING nếu phát hiện lệch.
 
 ---
@@ -273,9 +277,11 @@ Khi CI quá cứng nhắc gây nghẽn các thay đổi hợp lệ, sử dụng 
 | Check | Mô tả |
 |-------|-------|
 | `check_import_scope` | Đảm bảo không module nào import từ module khác |
-| `check_signature` | So sánh function signature trong code với spec |
-| `check_pr_scope` | Kiểm tra số dòng thay đổi (≤200) và module bị ảnh hưởng (≤1) |
+| `check_signature` | So sánh function signature trong code với spec (multi-file aware, cross-file duplicate detection) |
+| `check_pr_scope` | Kiểm tra scope PR: ≤200 dòng, ≤1 module, governance enforcement cho CHANGE_CLASS |
 | `check_spec_lock` | Đảm bảo không PR nào sửa file trong `/spec/` (trừ Architect) |
+| `check_spec_consistency` | Đảm bảo `spec/interface.md` (aggregated) không lệch khỏi segmented files |
+| `check_version_consistency` | Validate `spec-version` headers nhất quán với VERSIONING.md |
 | Unit tests | `python -m unittest discover tests` |
 
 ### 5.4 — Security Automation (Copilot Business)
