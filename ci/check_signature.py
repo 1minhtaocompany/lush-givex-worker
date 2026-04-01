@@ -455,26 +455,109 @@ def validate_signatures(
     return errors
 
 
+def _check_aggregated_consistency(
+    segmented_spec_functions: dict[str, list[list[str]]],
+    aggregated_functions: dict[str, list[list[str]]],
+) -> None:
+    """Warn when segmented spec files diverge from the aggregated fallback.
+
+    This is non-fatal — it prints a WARNING to stderr so developers are
+    alerted to keep spec/interface.md in sync with the segmented files.
+    The aggregated file MUST NOT diverge silently; if it does, CI may
+    pass on stale data.
+    """
+    seg_names = set(segmented_spec_functions)
+    agg_names = set(aggregated_functions)
+
+    only_in_seg = seg_names - agg_names
+    only_in_agg = agg_names - seg_names
+
+    if only_in_seg or only_in_agg:
+        print(
+            "WARNING: spec/interface.md (aggregated) diverges from segmented "
+            "files (spec/core/interface.md, spec/integration/interface.md). "
+            "Keep these files in sync to prevent false CI results.",
+            file=sys.stderr,
+        )
+        for name in sorted(only_in_seg):
+            print(f"  only in segmented: {name}", file=sys.stderr)
+        for name in sorted(only_in_agg):
+            print(f"  only in aggregated: {name}", file=sys.stderr)
+
+
 def main() -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    modules_dir = repo_root / "modules"
+
+    # ── Determine spec source: segmented files > aggregated fallback ──
+    seg_core = repo_root / "spec" / "core" / "interface.md"
+    seg_integration = repo_root / "spec" / "integration" / "interface.md"
+    agg_path = repo_root / "spec" / "interface.md"
+
+    use_segmented = seg_core.exists() or seg_integration.exists()
+
+    if use_segmented:
+        # Collect signatures and function specs from segmented files
+        spec_signatures: list[SignatureRecord] = []
+        combined_spec_text_parts: list[str] = []
+        for seg_path in (seg_core, seg_integration):
+            if not seg_path.exists():
+                continue
+            try:
+                sigs = parse_spec_signatures(seg_path)
+                spec_signatures.extend(sigs)
+            except SpecParseError as exc:
+                print(f"check_signature: {exc}", file=sys.stderr)
+                return 1
+            combined_spec_text_parts.append(seg_path.read_text(encoding="utf-8"))
+
+        combined_spec_text = "\n".join(combined_spec_text_parts)
+        spec_functions = parse_spec_functions(combined_spec_text)
+
+        # Consistency guard: warn if aggregated file has diverged
+        if agg_path.exists():
+            agg_text = agg_path.read_text(encoding="utf-8")
+            agg_functions = parse_spec_functions(agg_text)
+            _check_aggregated_consistency(spec_functions, agg_functions)
+    else:
+        # Fall back to aggregated spec
+        if not agg_path.exists():
+            print(
+                "check_signature: no spec file found "
+                "(expected spec/core/interface.md, spec/integration/interface.md, "
+                "or spec/interface.md)",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            spec_signatures = parse_spec_signatures(agg_path)
+        except SpecParseError as exc:
+            print(f"check_signature: {exc}", file=sys.stderr)
+            return 1
+        spec_functions = parse_spec_functions(agg_path.read_text(encoding="utf-8"))
+
+    if not spec_functions:
+        print("check_signature: no functions found in spec")
+        return 1
+
+    # ── collect module functions ───────────────────────────────────
     try:
-        spec_signatures = parse_spec_signatures(SPEC_PATH)
-        functions = collect_module_functions(MODULES_DIR)
-    except (SpecParseError, ModuleParseError) as exc:
+        module_sigs = collect_module_functions(modules_dir)
+    except ModuleParseError as exc:
         print(f"check_signature: {exc}", file=sys.stderr)
         return 1
 
-    compare_signatures(spec_signatures, functions)
+    # compare_signatures provides informational diff; report but do not fail
+    sig_warnings = compare_signatures(spec_signatures, module_sigs)
+    if sig_warnings:
+        print(
+            "check_signature: signature comparison warnings (informational):",
+            file=sys.stderr,
+        )
+        for warning in sig_warnings:
+            print(f"  {warning}", file=sys.stderr)
 
-    repo_root = Path(__file__).resolve().parents[1]
-    spec_path = repo_root / "spec" / "interface.md"
-    modules_dir = repo_root / "modules"
-
-    spec_text = spec_path.read_text(encoding="utf-8")
-    spec_functions = parse_spec_functions(spec_text)
-    if not spec_functions:
-        print("check_signature: no functions found in spec/interface.md")
-        return 1
-
+    # ── authoritative validation: Function:/Input: block format ───
     code_functions, code_errors = parse_code_functions(modules_dir)
     if code_errors:
         for error in code_errors:

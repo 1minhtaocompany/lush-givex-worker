@@ -7,6 +7,16 @@ Architect Directive (AD-6 amendment):
   infrastructure code and tests should never be penalized against a size
   limit.  This avoids the self-blocking paradox where the enforcement
   script itself would exceed the limit it enforces.
+
+Exception framework (CHANGE_CLASS):
+  Set the CHANGE_CLASS env var to bypass specific limits with governance:
+    emergency_override  – bypass all limits; requires PR governance
+                          (label 'emergency' OR title prefix '[emergency]')
+    spec_sync           – bypass module-count limit only (multi-module OK)
+    infra_change        – bypass line-count limit only
+
+  ALLOW_MULTI_MODULE=true is a DEPRECATED alias for CHANGE_CLASS=spec_sync.
+  It still works for backward compatibility but prints a deprecation warning.
 """
 
 import os
@@ -17,6 +27,9 @@ import sys
 # ── configuration ──────────────────────────────────────────────────
 MAX_CHANGED_LINES = 200
 EXCLUDED_PREFIXES = ("tests/", "ci/")
+
+# ── CHANGE_CLASS exception framework ──────────────────────────────
+CHANGE_CLASS_VALUES = frozenset({"emergency_override", "spec_sync", "infra_change"})
 
 # ── git helpers ────────────────────────────────────────────────────
 
@@ -193,33 +206,115 @@ def check(diff_range: str) -> int:
     return 0
 
 
+def _check_emergency_governance() -> tuple[bool, str]:
+    """Verify emergency_override has PR-level governance.
+
+    Returns (ok, error_message).  ok is True when governance is satisfied.
+    Governance passes when the PR has label 'emergency' OR a title that
+    starts with '[emergency]' (case-insensitive).
+    """
+    pr_title = os.environ.get("PR_TITLE", "").strip()
+    pr_labels_raw = os.environ.get("PR_LABELS", "").strip()
+    pr_labels = {lbl.strip().lower() for lbl in pr_labels_raw.split(",") if lbl.strip()}
+
+    has_emergency_label = "emergency" in pr_labels
+    has_emergency_title = pr_title.lower().startswith("[emergency]")
+
+    if has_emergency_label or has_emergency_title:
+        return True, ""
+    return False, (
+        "CHANGE_CLASS=emergency_override requires governance: "
+        "PR must have label 'emergency' OR title prefix '[emergency]'"
+    )
+
+
 def main() -> int:
+    change_class = os.environ.get("CHANGE_CLASS", "").strip().lower()
     allow_multi = os.environ.get("ALLOW_MULTI_MODULE", "").strip().lower()
+
+    # Handle ALLOW_MULTI_MODULE backward compatibility
     if allow_multi == "true":
-        print("WARNING: Multi-module scope check bypassed by "
-              "ALLOW_MULTI_MODULE", file=sys.stderr)
-        diff_range = resolve_diff_range()
-        entries = get_numstat(diff_range)
-        total_lines = 0
-        excluded_lines = 0
-        for added, deleted, filepath in entries:
-            changed = added + deleted
-            if _is_excluded(filepath):
-                excluded_lines += changed
-            else:
-                total_lines += changed
-        if total_lines > MAX_CHANGED_LINES:
-            print("check_pr_scope: FAIL")
-            print(f"  total lines changed ({total_lines}) exceeds "
-                  f"{MAX_CHANGED_LINES} (excluding "
-                  f"{', '.join(EXCLUDED_PREFIXES)})")
+        if not change_class:
+            print(
+                "DEPRECATION WARNING: ALLOW_MULTI_MODULE=true is deprecated. "
+                "Use CHANGE_CLASS=spec_sync instead.",
+                file=sys.stderr,
+            )
+            change_class = "spec_sync"
+        else:
+            print(
+                "WARNING: Both CHANGE_CLASS and ALLOW_MULTI_MODULE are set. "
+                "CHANGE_CLASS takes precedence. ALLOW_MULTI_MODULE is deprecated.",
+                file=sys.stderr,
+            )
+
+    # Validate CHANGE_CLASS value
+    if change_class and change_class not in CHANGE_CLASS_VALUES:
+        print(
+            f"check_pr_scope: invalid CHANGE_CLASS '{change_class}'. "
+            f"Valid values: {', '.join(sorted(CHANGE_CLASS_VALUES))}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Governance gate for emergency_override
+    if change_class == "emergency_override":
+        ok, err = _check_emergency_governance()
+        if not ok:
+            print(f"check_pr_scope: FAIL\n  {err}", file=sys.stderr)
             return 1
-        print(f"check_pr_scope: PASS ({total_lines} lines changed"
-              + (f", {excluded_lines} excluded" if excluded_lines else "")
-              + ", multi-module allowed)")
-        return 0
+
+    # Determine which limits to skip
+    skip_module_limit = change_class in ("emergency_override", "spec_sync")
+    skip_line_limit = change_class in ("emergency_override", "infra_change")
+
+    if not skip_module_limit and not skip_line_limit:
+        diff_range = resolve_diff_range()
+        return check(diff_range)
+
+    # Custom check when one or both limits are bypassed
     diff_range = resolve_diff_range()
-    return check(diff_range)
+    entries = get_numstat(diff_range)
+    total_lines = 0
+    excluded_lines = 0
+    modules_touched: set[str] = set()
+
+    for added, deleted, filepath in entries:
+        changed = added + deleted
+        mod = module_from_path(filepath)
+        if mod:
+            modules_touched.add(mod)
+        if _is_excluded(filepath):
+            excluded_lines += changed
+        else:
+            total_lines += changed
+
+    errors: list[str] = []
+    if not skip_line_limit and total_lines > MAX_CHANGED_LINES:
+        errors.append(
+            f"total lines changed ({total_lines}) exceeds "
+            f"{MAX_CHANGED_LINES} (excluding {', '.join(EXCLUDED_PREFIXES)})"
+        )
+    if not skip_module_limit and len(modules_touched) > 1:
+        errors.append(
+            f"PR touches {len(modules_touched)} modules "
+            f"({', '.join(sorted(modules_touched))}); max 1 allowed"
+        )
+
+    if errors:
+        print("check_pr_scope: FAIL", file=sys.stderr)
+        for err in errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
+
+    label = f"CHANGE_CLASS={change_class}" if change_class else ""
+    print(
+        f"check_pr_scope: PASS ({total_lines} lines changed"
+        + (f", {excluded_lines} excluded" if excluded_lines else "")
+        + (f", {label}" if label else "")
+        + ")"
+    )
+    return 0
 
 
 if __name__ == "__main__":
