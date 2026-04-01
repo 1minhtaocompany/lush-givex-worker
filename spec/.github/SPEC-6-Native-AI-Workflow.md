@@ -13,7 +13,7 @@
 3. **Runtime Checkpoint = Xác thực cuối cùng** — Mọi logic đều phải được chạy thực tế trước khi phê duyệt.
 4. **Cách ly tuyệt đối** — Mỗi module độc lập, không phụ thuộc chéo.
 5. **Mỗi tác vụ = Một phạm vi nhỏ** — Không suy diễn, không thêm chức năng ngoài yêu cầu.
-6. **Zero-External AI** — Tuyệt đối không sử dụng AI bên ngoài hệ sinh thái GitHub Copilot (không DeepSeek, không ChatGPT Web, không copy-paste thủ công). Mọi thao tác AI đều đi qua GitHub native pipeline.
+6. **Zero-Unapproved External AI** — Tuyệt đối không sử dụng AI bên ngoài hệ sinh thái GitHub Copilot, ngoại trừ các công cụ đã được Architect phê duyệt rõ ràng trong spec (ví dụ: Gemini 3.1 Pro cho bước Cross-Inspector). Không được dùng DeepSeek, ChatGPT Web hoặc copy-paste thủ công. Mọi thao tác AI chính (soạn code, review, autofix) bắt buộc đi qua GitHub native pipeline.
 7. **Single Source of Truth** — Issue/PR là trung tâm điều phối duy nhất. Không dùng kênh ngoài (Slack, email, file local) để truyền tải Spec hoặc review.
 
 ---
