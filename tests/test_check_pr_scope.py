@@ -6,7 +6,8 @@ from ci.check_pr_scope import (
     _normalize,
     _is_excluded,
     _resolve_change_class,
-    _validate_change_class_governance,
+    _check_authorization,
+    _check_context_binding,
     module_from_path,
     get_numstat,
     check,
@@ -138,89 +139,154 @@ class ConstantsTests(unittest.TestCase):
         self.assertIn("ci/", EXCLUDED_PREFIXES)
 
 
-class AllowMultiModuleTests(unittest.TestCase):
-    """Test the ALLOW_MULTI_MODULE env var deprecation and mapping to spec_sync."""
+class ResolveChangeClassTests(unittest.TestCase):
+    """Test _resolve_change_class — CHANGE_CLASS is single source of truth."""
 
-    @patch("ci.check_pr_scope.get_numstat")
-    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
-    @patch.dict("os.environ", {
-        "ALLOW_MULTI_MODULE": "true",
-        "PR_TITLE": "[spec-sync] migrate modules",
-    })
-    def test_bypass_allows_multi_module(self, mock_resolve, mock_numstat):
-        mock_numstat.return_value = [
-            (10, 5, "modules/fsm/main.py"),
-            (10, 5, "modules/watchdog/main.py"),
-            (10, 5, "modules/billing/main.py"),
-            (10, 5, "modules/cdp/main.py"),
-        ]
-        self.assertEqual(main(), 0)
+    @patch.dict("os.environ", {}, clear=True)
+    def test_defaults_to_normal(self):
+        self.assertEqual(_resolve_change_class(), "normal")
 
-    @patch("ci.check_pr_scope.get_numstat")
-    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
-    @patch.dict("os.environ", {
-        "ALLOW_MULTI_MODULE": "true",
-        "PR_TITLE": "[spec-sync] migrate modules",
-    })
-    def test_bypass_still_enforces_line_limit(self, mock_resolve, mock_numstat):
-        mock_numstat.return_value = [
-            (150, 60, "modules/fsm/main.py"),
-        ]
-        self.assertEqual(main(), 1)
+    @patch.dict("os.environ", {"CHANGE_CLASS": "emergency_override"}, clear=True)
+    def test_reads_change_class(self):
+        self.assertEqual(_resolve_change_class(), "emergency_override")
 
-    @patch("ci.check_pr_scope.get_numstat")
-    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
-    @patch.dict("os.environ", {"ALLOW_MULTI_MODULE": "false"})
-    def test_no_bypass_when_false(self, mock_resolve, mock_numstat):
-        mock_numstat.return_value = [
-            (10, 5, "modules/fsm/main.py"),
-            (10, 5, "modules/watchdog/main.py"),
-        ]
-        self.assertEqual(main(), 1)
+    @patch.dict("os.environ", {"CHANGE_CLASS": "  Spec_Sync  "}, clear=True)
+    def test_normalizes_whitespace_and_case(self):
+        self.assertEqual(_resolve_change_class(), "spec_sync")
 
-    @patch.dict("os.environ", {"ALLOW_MULTI_MODULE": "true", "PR_TITLE": ""}, clear=False)
-    def test_deprecation_maps_to_spec_sync(self):
-        """ALLOW_MULTI_MODULE=true should resolve to spec_sync."""
-        result = _resolve_change_class()
-        self.assertEqual(result, "spec_sync")
-
-    @patch.dict("os.environ", {
-        "ALLOW_MULTI_MODULE": "true",
-        "CHANGE_CLASS": "emergency_override",
-    }, clear=False)
-    def test_change_class_takes_precedence(self):
-        """When both are set, CHANGE_CLASS wins over ALLOW_MULTI_MODULE."""
-        result = _resolve_change_class()
-        self.assertEqual(result, "emergency_override")
+    @patch.dict("os.environ", {"ALLOW_MULTI_MODULE": "true"}, clear=True)
+    def test_legacy_allow_multi_module_ignored(self):
+        """ALLOW_MULTI_MODULE is no longer recognized."""
+        self.assertEqual(_resolve_change_class(), "normal")
 
 
-class ChangeClassTests(unittest.TestCase):
-    """Test the CHANGE_CLASS exception framework."""
+class AuthorizationTests(unittest.TestCase):
+    """Test _check_authorization — override requires approval signal."""
+
+    def test_normal_needs_no_authorization(self):
+        self.assertEqual(_check_authorization("normal"), [])
+
+    @patch.dict("os.environ", {"PR_LABELS": "", "CHANGE_CLASS_APPROVED": ""}, clear=True)
+    def test_override_without_approval_fails(self):
+        errors = _check_authorization("emergency_override")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("requires explicit authorization", errors[0])
+
+    @patch.dict("os.environ", {"PR_LABELS": "approved-override,bug"}, clear=True)
+    def test_pr_label_grants_authorization(self):
+        self.assertEqual(_check_authorization("spec_sync"), [])
+
+    @patch.dict("os.environ", {"CHANGE_CLASS_APPROVED": "true", "PR_LABELS": ""}, clear=True)
+    def test_admin_approved_grants_authorization(self):
+        self.assertEqual(_check_authorization("infra_change"), [])
+
+    @patch.dict("os.environ", {"PR_LABELS": "Approved-Override"}, clear=True)
+    def test_label_check_is_case_insensitive(self):
+        self.assertEqual(_check_authorization("emergency_override"), [])
+
+
+class ContextBindingTests(unittest.TestCase):
+    """Test _check_context_binding — CHANGE_CLASS must match PR content."""
+
+    @patch.dict("os.environ", {"PR_TITLE": "[emergency] hotfix"}, clear=True)
+    def test_emergency_with_correct_title(self):
+        self.assertEqual(
+            _check_context_binding("emergency_override", ["modules/fsm/main.py"]),
+            [],
+        )
+
+    @patch.dict("os.environ", {"PR_TITLE": "normal PR"}, clear=True)
+    def test_emergency_without_title_tag_fails(self):
+        errors = _check_context_binding("emergency_override", ["modules/fsm/main.py"])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("[emergency]", errors[0])
+
+    @patch.dict("os.environ", {"PR_TITLE": "update spec"}, clear=True)
+    def test_spec_sync_with_spec_changes(self):
+        self.assertEqual(
+            _check_context_binding("spec_sync", ["spec/fsm.md", "modules/fsm/main.py"]),
+            [],
+        )
+
+    @patch.dict("os.environ", {"PR_TITLE": "update code"}, clear=True)
+    def test_spec_sync_without_spec_changes_fails(self):
+        errors = _check_context_binding("spec_sync", ["modules/fsm/main.py"])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("spec/", errors[0])
+
+    @patch.dict("os.environ", {"PR_TITLE": "update CI"}, clear=True)
+    def test_infra_change_with_ci_changes(self):
+        self.assertEqual(
+            _check_context_binding("infra_change", ["ci/check_pr_scope.py"]),
+            [],
+        )
+
+    @patch.dict("os.environ", {"PR_TITLE": "update CI"}, clear=True)
+    def test_infra_change_with_github_changes(self):
+        self.assertEqual(
+            _check_context_binding("infra_change", [".github/workflows/ci.yml"]),
+            [],
+        )
+
+    @patch.dict("os.environ", {"PR_TITLE": "update code"}, clear=True)
+    def test_infra_change_without_ci_changes_fails(self):
+        errors = _check_context_binding("infra_change", ["modules/fsm/main.py"])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("ci/", errors[0])
+
+    def test_normal_always_passes(self):
+        self.assertEqual(_check_context_binding("normal", []), [])
+
+
+class ChangeClassIntegrationTests(unittest.TestCase):
+    """End-to-end tests for CHANGE_CLASS through main()."""
 
     @patch("ci.check_pr_scope.get_numstat")
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
         "CHANGE_CLASS": "emergency_override",
         "PR_TITLE": "[emergency] hotfix",
+        "PR_LABELS": "approved-override",
     }, clear=False)
-    def test_emergency_override_bypasses_all(self, mock_resolve, mock_numstat):
+    def test_emergency_override_full_bypass(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
             (200, 100, "modules/fsm/main.py"),
             (200, 100, "modules/watchdog/main.py"),
         ]
         self.assertEqual(main(), 0)
 
+    @patch.dict("os.environ", {
+        "CHANGE_CLASS": "emergency_override",
+        "PR_TITLE": "[emergency] hotfix",
+        "PR_LABELS": "",
+        "CHANGE_CLASS_APPROVED": "",
+    }, clear=False)
+    def test_emergency_without_authorization_fails(self):
+        self.assertEqual(main(), 1)
+
+    @patch.dict("os.environ", {
+        "CHANGE_CLASS": "emergency_override",
+        "PR_TITLE": "normal PR",
+        "PR_LABELS": "approved-override",
+        "CHANGE_CLASS_APPROVED": "",
+    }, clear=False)
+    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
+    @patch("ci.check_pr_scope.get_numstat", return_value=[(10, 5, "modules/fsm/main.py")])
+    def test_emergency_without_title_tag_fails(self, mock_numstat, mock_resolve):
+        self.assertEqual(main(), 1)
+
     @patch("ci.check_pr_scope.get_numstat")
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
         "CHANGE_CLASS": "spec_sync",
-        "PR_TITLE": "[spec-sync] update interfaces",
+        "PR_TITLE": "update interfaces",
+        "CHANGE_CLASS_APPROVED": "true",
     }, clear=False)
-    def test_spec_sync_bypasses_module_limit(self, mock_resolve, mock_numstat):
+    def test_spec_sync_with_spec_files(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
+            (10, 5, "spec/fsm.md"),
             (10, 5, "modules/fsm/main.py"),
             (10, 5, "modules/watchdog/main.py"),
-            (10, 5, "modules/billing/main.py"),
         ]
         self.assertEqual(main(), 0)
 
@@ -228,11 +294,27 @@ class ChangeClassTests(unittest.TestCase):
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
         "CHANGE_CLASS": "spec_sync",
-        "PR_TITLE": "[spec-sync] update",
+        "PR_TITLE": "update interfaces",
+        "CHANGE_CLASS_APPROVED": "true",
+    }, clear=False)
+    def test_spec_sync_without_spec_files_fails(self, mock_resolve, mock_numstat):
+        mock_numstat.return_value = [
+            (10, 5, "modules/fsm/main.py"),
+            (10, 5, "modules/watchdog/main.py"),
+        ]
+        self.assertEqual(main(), 1)
+
+    @patch("ci.check_pr_scope.get_numstat")
+    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
+    @patch.dict("os.environ", {
+        "CHANGE_CLASS": "spec_sync",
+        "PR_TITLE": "update",
+        "PR_LABELS": "approved-override",
     }, clear=False)
     def test_spec_sync_still_enforces_line_limit(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
-            (150, 60, "modules/fsm/main.py"),
+            (150, 60, "spec/fsm.md"),
+            (10, 5, "modules/fsm/main.py"),
         ]
         self.assertEqual(main(), 1)
 
@@ -240,11 +322,12 @@ class ChangeClassTests(unittest.TestCase):
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
         "CHANGE_CLASS": "infra_change",
-        "PR_TITLE": "[infra] update CI scripts",
+        "PR_TITLE": "update CI scripts",
+        "PR_LABELS": "approved-override",
     }, clear=False)
-    def test_infra_change_bypasses_line_limit(self, mock_resolve, mock_numstat):
+    def test_infra_bypasses_line_limit(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
-            (300, 200, "modules/fsm/main.py"),
+            (300, 200, "ci/check_pr_scope.py"),
         ]
         self.assertEqual(main(), 0)
 
@@ -252,10 +335,12 @@ class ChangeClassTests(unittest.TestCase):
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
         "CHANGE_CLASS": "infra_change",
-        "PR_TITLE": "[infra] update CI",
+        "PR_TITLE": "update CI",
+        "PR_LABELS": "approved-override",
     }, clear=False)
-    def test_infra_change_still_enforces_module_limit(self, mock_resolve, mock_numstat):
+    def test_infra_still_enforces_module_limit(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
+            (10, 5, "ci/check_pr_scope.py"),
             (10, 5, "modules/fsm/main.py"),
             (10, 5, "modules/watchdog/main.py"),
         ]
@@ -265,41 +350,33 @@ class ChangeClassTests(unittest.TestCase):
     def test_invalid_change_class_fails(self):
         self.assertEqual(main(), 1)
 
-    def test_valid_change_classes_constant(self):
-        self.assertIn("emergency_override", VALID_CHANGE_CLASSES)
-        self.assertIn("spec_sync", VALID_CHANGE_CLASSES)
-        self.assertIn("infra_change", VALID_CHANGE_CLASSES)
-
     @patch("ci.check_pr_scope.get_numstat")
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
         "CHANGE_CLASS": "emergency_override",
         "PR_TITLE": "[emergency] hotfix",
-    }, clear=False)
-    def test_emergency_override_with_title_prefix(self, mock_resolve, mock_numstat):
-        mock_numstat.return_value = [
-            (200, 100, "modules/fsm/main.py"),
-        ]
-        self.assertEqual(main(), 0)
-
-    @patch.dict("os.environ", {
-        "CHANGE_CLASS": "emergency_override",
-        "PR_TITLE": "normal PR",
-    }, clear=False)
-    def test_emergency_override_without_governance_fails(self):
-        self.assertEqual(main(), 1)
-
-    @patch("ci.check_pr_scope.get_numstat")
-    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
-    @patch.dict("os.environ", {
-        "CHANGE_CLASS": "emergency_override",
         "CHANGE_CLASS_APPROVED": "true",
     }, clear=False)
-    def test_emergency_override_with_admin_approval(self, mock_resolve, mock_numstat):
+    def test_admin_approved_grants_access(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
             (200, 100, "modules/fsm/main.py"),
         ]
         self.assertEqual(main(), 0)
+
+
+class ConstantsTests(unittest.TestCase):
+    def test_max_lines(self):
+        self.assertEqual(MAX_CHANGED_LINES, 200)
+
+    def test_excluded_prefixes(self):
+        self.assertIn("tests/", EXCLUDED_PREFIXES)
+        self.assertIn("ci/", EXCLUDED_PREFIXES)
+
+    def test_valid_change_classes_includes_normal(self):
+        self.assertIn("normal", VALID_CHANGE_CLASSES)
+        self.assertIn("emergency_override", VALID_CHANGE_CLASSES)
+        self.assertIn("spec_sync", VALID_CHANGE_CLASSES)
+        self.assertIn("infra_change", VALID_CHANGE_CLASSES)
 
 
 if __name__ == "__main__":

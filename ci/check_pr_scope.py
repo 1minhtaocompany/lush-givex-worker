@@ -8,13 +8,31 @@ Architect Directive (AD-6 amendment):
   limit.  This avoids the self-blocking paradox where the enforcement
   script itself would exceed the limit it enforces.
 
-Change Classification (Exception Framework):
-  Set CHANGE_CLASS env var to one of:
+Change Classification (Exception Framework — Governance Hardened):
+  CHANGE_CLASS is the SINGLE source of truth for override behaviour.
+  All legacy flags (ALLOW_MULTI_MODULE) have been removed.
+
+  Values:
+    normal             — default, no overrides
     emergency_override — bypass both line limit and module limit
     spec_sync          — bypass module limit (keep line limit)
     infra_change       — bypass line limit (keep module limit)
+
+  Authorization:
+    Any non-normal CHANGE_CLASS requires an explicit approval signal:
+      - PR label "approved-override" in PR_LABELS, OR
+      - CHANGE_CLASS_APPROVED=true (set via repo variable by admin)
+
+  Context Binding:
+    - emergency_override: PR title MUST contain "[emergency]"
+    - spec_sync:          changed files MUST include spec/
+    - infra_change:       changed files MUST include ci/ or .github/
+
+  Audit:
+    All override usage is logged as structured JSON to CI output.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -24,6 +42,7 @@ import sys
 MAX_CHANGED_LINES = 200
 EXCLUDED_PREFIXES = ("tests/", "ci/")
 VALID_CHANGE_CLASSES = frozenset({
+    "normal",
     "emergency_override",
     "spec_sync",
     "infra_change",
@@ -212,146 +231,195 @@ def check(diff_range: str) -> int:
 
 
 def _resolve_change_class() -> str:
-    """Resolve CHANGE_CLASS from env, with ALLOW_MULTI_MODULE deprecation.
+    """Resolve CHANGE_CLASS from env.
 
-    If ALLOW_MULTI_MODULE is set and CHANGE_CLASS is not, map it to
-    spec_sync and emit a deprecation warning.  If both are set,
-    CHANGE_CLASS takes precedence and a deprecation warning is emitted.
+    CHANGE_CLASS is the single source of truth. Legacy flags
+    (ALLOW_MULTI_MODULE) are no longer supported and are ignored.
+    Defaults to "normal" when not set.
     """
     change_class = os.environ.get("CHANGE_CLASS", "").strip().lower()
-    allow_multi = os.environ.get("ALLOW_MULTI_MODULE", "").strip().lower()
-
-    if allow_multi == "true":
-        print(
-            "DEPRECATION WARNING: ALLOW_MULTI_MODULE is deprecated and "
-            "will be removed in a future release. Use "
-            "CHANGE_CLASS=spec_sync instead.",
-            file=sys.stderr,
-        )
-        if not change_class:
-            change_class = "spec_sync"
-
-    return change_class
+    return change_class if change_class else "normal"
 
 
-def _validate_change_class_governance(change_class: str) -> list[str]:
-    """Validate that CHANGE_CLASS usage is backed by PR-level governance.
+def _check_authorization(change_class: str) -> list[str]:
+    """Validate that a non-normal CHANGE_CLASS has explicit approval.
 
-    Returns a list of error strings (empty if valid).
-    Rules:
-      - emergency_override: requires PR title containing [emergency] or
-        CHANGE_CLASS_APPROVED=true env var (set by admin workflow).
-      - spec_sync: requires PR title containing [spec-sync].
-      - infra_change: requires changed files to be limited to ci/, .github/,
-        or spec/ (validated elsewhere; here we check PR title [infra]).
+    Approval signals (any one is sufficient):
+      - PR label "approved-override" present in PR_LABELS
+      - CHANGE_CLASS_APPROVED=true (repo variable set by admin)
+
+    Returns list of error strings (empty if authorized).
     """
-    errors: list[str] = []
-    pr_title = os.environ.get("PR_TITLE", "").strip().lower()
+    if change_class == "normal":
+        return []
+
+    pr_labels = {
+        label.strip().lower()
+        for label in os.environ.get("PR_LABELS", "").split(",")
+        if label.strip()
+    }
     admin_approved = (
         os.environ.get("CHANGE_CLASS_APPROVED", "").strip().lower() == "true"
     )
 
+    if admin_approved or "approved-override" in pr_labels:
+        return []
+
+    return [
+        f"CHANGE_CLASS={change_class} requires explicit authorization: "
+        f"PR label 'approved-override' or CHANGE_CLASS_APPROVED=true. "
+        f"Current labels: {sorted(pr_labels) if pr_labels else '<none>'}"
+    ]
+
+
+def _check_context_binding(
+    change_class: str,
+    changed_paths: list[str],
+) -> list[str]:
+    """Validate that CHANGE_CLASS matches the PR content.
+
+    Rules:
+      - emergency_override: PR title MUST contain "[emergency]"
+      - spec_sync:          changed files MUST include spec/
+      - infra_change:       changed files MUST include ci/ or .github/
+
+    Returns list of error strings (empty if valid).
+    """
+    if change_class == "normal":
+        return []
+
+    errors: list[str] = []
+    pr_title = os.environ.get("PR_TITLE", "").strip().lower()
+    normalized_paths = [_normalize(p) for p in changed_paths]
+
     if change_class == "emergency_override":
-        if not admin_approved and "[emergency]" not in pr_title:
+        if "[emergency]" not in pr_title:
             errors.append(
-                f"CHANGE_CLASS=emergency_override requires admin approval "
-                f"(CHANGE_CLASS_APPROVED=true) or PR title containing "
-                f"'[emergency]'. PR title: '{pr_title or '<not set>'}'"
+                f"CHANGE_CLASS=emergency_override requires PR title "
+                f"containing '[emergency]'. "
+                f"PR title: '{pr_title or '<not set>'}'"
             )
+
     elif change_class == "spec_sync":
-        if "[spec-sync]" not in pr_title and not admin_approved:
+        has_spec = any(p.startswith("spec/") for p in normalized_paths)
+        if not has_spec:
             errors.append(
-                f"CHANGE_CLASS=spec_sync requires PR title containing "
-                f"'[spec-sync]' or admin approval "
-                f"(CHANGE_CLASS_APPROVED=true). "
-                f"PR title: '{pr_title or '<not set>'}'"
+                f"CHANGE_CLASS=spec_sync requires changes in spec/ but "
+                f"none found. Changed paths: "
+                f"{sorted(set(p.split('/')[0] for p in normalized_paths))}"
             )
+
     elif change_class == "infra_change":
-        if "[infra]" not in pr_title and not admin_approved:
+        has_ci = any(
+            p.startswith("ci/") or p.startswith(".github/")
+            for p in normalized_paths
+        )
+        if not has_ci:
             errors.append(
-                f"CHANGE_CLASS=infra_change requires PR title containing "
-                f"'[infra]' or admin approval "
-                f"(CHANGE_CLASS_APPROVED=true). "
-                f"PR title: '{pr_title or '<not set>'}'"
+                f"CHANGE_CLASS=infra_change requires changes in ci/ or "
+                f".github/ but none found. Changed paths: "
+                f"{sorted(set(p.split('/')[0] for p in normalized_paths))}"
             )
 
     return errors
 
 
+def _emit_audit_log(
+    change_class: str,
+    authorization_result: str,
+    context_result: str,
+    validation_result: str,
+) -> None:
+    """Emit a structured JSON audit log line for override usage."""
+    if change_class == "normal":
+        return
+
+    log_entry = {
+        "event": "change_class_override",
+        "change_class": change_class,
+        "pr_title": os.environ.get("PR_TITLE", ""),
+        "pr_labels": os.environ.get("PR_LABELS", ""),
+        "authorization": authorization_result,
+        "context_binding": context_result,
+        "validation": validation_result,
+    }
+    print(f"AUDIT_LOG: {json.dumps(log_entry)}", file=sys.stderr)
+
+
 def main() -> int:
     change_class = _resolve_change_class()
 
-    # Validate CHANGE_CLASS if provided
-    if change_class and change_class not in VALID_CHANGE_CLASSES:
+    # Validate CHANGE_CLASS value
+    if change_class not in VALID_CHANGE_CLASSES:
         print(f"check_pr_scope: invalid CHANGE_CLASS '{change_class}'; "
               f"valid values: {', '.join(sorted(VALID_CHANGE_CLASSES))}",
               file=sys.stderr)
         return 1
 
-    # Governance validation: CHANGE_CLASS must be backed by PR metadata
-    if change_class:
-        governance_errors = _validate_change_class_governance(change_class)
-        if governance_errors:
-            print("check_pr_scope: FAIL — CHANGE_CLASS governance violation",
-                  file=sys.stderr)
-            for err in governance_errors:
-                print(f"  {err}", file=sys.stderr)
-            return 1
+    # For normal PRs, skip governance checks entirely
+    if change_class == "normal":
+        diff_range = resolve_diff_range()
+        return check(diff_range)
 
+    # ── Override path: authorization + context binding ──────────
+    auth_errors = _check_authorization(change_class)
+    if auth_errors:
+        _emit_audit_log(change_class, "DENIED", "SKIPPED", "FAIL")
+        print("check_pr_scope: FAIL — override authorization denied",
+              file=sys.stderr)
+        for err in auth_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
+
+    diff_range = resolve_diff_range()
+    entries = get_numstat(diff_range)
+    total_lines, excluded_lines, modules_touched = _analyze_entries(entries)
+    changed_paths = [filepath for _, _, filepath in entries]
+
+    context_errors = _check_context_binding(change_class, changed_paths)
+    if context_errors:
+        _emit_audit_log(change_class, "OK", "MISMATCH", "FAIL")
+        print("check_pr_scope: FAIL — CHANGE_CLASS context mismatch",
+              file=sys.stderr)
+        for err in context_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
+
+    # ── Apply override logic ───────────────────────────────────
     skip_line_limit = change_class in ("emergency_override", "infra_change")
     skip_module_limit = change_class in ("emergency_override", "spec_sync")
 
-    if change_class:
-        print(f"WARNING: CHANGE_CLASS={change_class} active",
-              file=sys.stderr)
-
-    if skip_line_limit and skip_module_limit:
-        # emergency_override — bypass everything
-        diff_range = resolve_diff_range()
-        entries = get_numstat(diff_range)
-        total_lines, excluded_lines, _ = _analyze_entries(entries)
-        print(f"check_pr_scope: PASS ({total_lines} lines changed"
-              + (f", {excluded_lines} excluded" if excluded_lines else "")
-              + f", change_class={change_class})")
-        return 0
-
-    if skip_module_limit:
-        print(f"WARNING: Module scope check bypassed by "
-              f"CHANGE_CLASS={change_class}", file=sys.stderr)
-        diff_range = resolve_diff_range()
-        entries = get_numstat(diff_range)
-        total_lines, excluded_lines, _ = _analyze_entries(entries)
-        if total_lines > MAX_CHANGED_LINES:
-            print("check_pr_scope: FAIL")
-            print(f"  total lines changed ({total_lines}) exceeds "
-                  f"{MAX_CHANGED_LINES} (excluding "
-                  f"{', '.join(EXCLUDED_PREFIXES)})")
-            return 1
-        print(f"check_pr_scope: PASS ({total_lines} lines changed"
-              + (f", {excluded_lines} excluded" if excluded_lines else "")
-              + ", multi-module allowed)")
-        return 0
-
-    if skip_line_limit:
-        print(f"WARNING: Line limit bypassed by "
-              f"CHANGE_CLASS={change_class}", file=sys.stderr)
-        diff_range = resolve_diff_range()
-        entries = get_numstat(diff_range)
-        total_lines, excluded_lines, modules_touched = _analyze_entries(
-            entries
+    errors: list[str] = []
+    if not skip_line_limit and total_lines > MAX_CHANGED_LINES:
+        errors.append(
+            f"total lines changed ({total_lines}) exceeds "
+            f"{MAX_CHANGED_LINES} (excluding {', '.join(EXCLUDED_PREFIXES)})"
         )
-        if len(modules_touched) > 1:
-            print("check_pr_scope: FAIL")
-            print(f"  PR touches {len(modules_touched)} modules "
-                  f"({', '.join(sorted(modules_touched))}); max 1 allowed")
-            return 1
-        print(f"check_pr_scope: PASS ({total_lines} lines changed"
-              + (f", {excluded_lines} excluded" if excluded_lines else "")
-              + f", line limit bypassed by {change_class})")
-        return 0
+    if not skip_module_limit and len(modules_touched) > 1:
+        errors.append(
+            f"PR touches {len(modules_touched)} modules "
+            f"({', '.join(sorted(modules_touched))}); max 1 allowed"
+        )
 
-    diff_range = resolve_diff_range()
-    return check(diff_range)
+    if errors:
+        _emit_audit_log(change_class, "OK", "OK", "FAIL")
+        print("check_pr_scope: FAIL")
+        for err in errors:
+            print(f"  {err}")
+        return 1
+
+    _emit_audit_log(change_class, "OK", "OK", "PASS")
+    bypassed = []
+    if skip_line_limit:
+        bypassed.append("line_limit")
+    if skip_module_limit:
+        bypassed.append("module_limit")
+    print(f"check_pr_scope: PASS ({total_lines} lines changed"
+          + (f", {excluded_lines} excluded" if excluded_lines else "")
+          + f", change_class={change_class}"
+          + (f", bypassed=[{','.join(bypassed)}]" if bypassed else "")
+          + ")")
+    return 0
 
 
 if __name__ == "__main__":

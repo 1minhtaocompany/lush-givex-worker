@@ -73,28 +73,32 @@ Issue (Human tạo)
   3. Nếu fail do infrastructure (flaky test, runner issue): Human re-run workflow thủ công.
   4. Nếu fail do security gate: Xử lý theo Rule 4, **không** bypass bằng force-merge.
 
-### 6. Exception Framework & Change Classification (Chống System Freeze)
+### 6. Exception Framework & Change Classification (Governance Hardened)
 
-Khi CI quá cứng nhắc (giới hạn dòng, 1 module) gây nghẽn các thay đổi hợp lệ, sử dụng env var `CHANGE_CLASS` trong CI workflow:
+`CHANGE_CLASS` là **SINGLE source of truth** cho mọi override trong CI. Tất cả legacy flags (`ALLOW_MULTI_MODULE`) đã bị loại bỏ hoàn toàn.
 
 | Change Class | Bypass Line Limit | Bypass Module Limit | Use Case |
 |-------------|-------------------|--------------------|----|
+| `normal` | ❌ | ❌ | Default — không override |
 | `emergency_override` | ✅ | ✅ | Hotfix production, security patch khẩn cấp |
 | `spec_sync` | ❌ | ✅ | Đồng bộ code với spec mới sau khi Architect thay đổi interface |
 | `infra_change` | ✅ | ❌ | Thay đổi CI scripts, cấu hình infrastructure |
 
-**Quy tắc sử dụng (Governance):**
-1. Mọi bypass phải được ghi log lý do trong PR description.
-2. `emergency_override` chỉ được Admin kích hoạt — yêu cầu `CHANGE_CLASS_APPROVED=true` hoặc PR title chứa `[emergency]`.
-3. `spec_sync` yêu cầu PR title chứa `[spec-sync]` hoặc `CHANGE_CLASS_APPROVED=true`.
-4. `infra_change` yêu cầu PR title chứa `[infra]` hoặc `CHANGE_CLASS_APPROVED=true`.
-5. **⚠️ DEPRECATED:** `ALLOW_MULTI_MODULE=true` vẫn hoạt động tạm thời như alias của `spec_sync` nhưng sẽ bị loại bỏ. Mọi workflow mới PHẢI dùng `CHANGE_CLASS=spec_sync`.
-6. CI `check_pr_scope` sẽ từ chối `CHANGE_CLASS` nếu PR title không chứa tag tương ứng (governance enforcement).
-2. `emergency_override` **bắt buộc** có PR label `emergency` hoặc title prefix `[emergency]`. CI tự kiểm tra qua `PR_TITLE`/`PR_LABELS` env var.
-3. `spec_sync` tự động kích hoạt khi PR title chứa `[spec-sync]`.
-4. `infra_change` áp dụng khi thay đổi chỉ ảnh hưởng `ci/`, `.github/`, hoặc `spec/`.
+**Authorization (Bắt buộc cho mọi non-normal CHANGE_CLASS):**
+- Phải có ít nhất 1 trong 2 tín hiệu:
+  1. PR label `approved-override` (machine-verifiable qua `PR_LABELS` env var)
+  2. `CHANGE_CLASS_APPROVED=true` (repo variable do Admin set)
+- Nếu không có tín hiệu → CI **FAIL**
 
-**⚠️ DEPRECATED:** `ALLOW_MULTI_MODULE=true` vẫn hoạt động tạm thời như alias của `spec_sync` nhưng sẽ bị loại bỏ trong phiên bản tương lai. Mọi sử dụng mới phải dùng `CHANGE_CLASS=spec_sync`.
+**Context Binding (CHANGE_CLASS phải khớp nội dung PR):**
+- `emergency_override`: PR title **MUST** chứa `[emergency]`
+- `spec_sync`: Changed files **MUST** bao gồm `spec/`
+- `infra_change`: Changed files **MUST** bao gồm `ci/` hoặc `.github/`
+- Nếu mismatch → CI **FAIL**
+
+**Audit Trail:**
+- Mọi override usage được log dạng structured JSON (`AUDIT_LOG: {...}`) trong CI output
+- Log bao gồm: `change_class`, `pr_title`, `pr_labels`, `authorization`, `context_binding`, `validation`
 
 ### 7. Spec Versioning System
 

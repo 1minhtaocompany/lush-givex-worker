@@ -6,7 +6,7 @@ from modules.fsm.main import (
     reset_states,
     transition_to,
 )
-from spec.schema import InvalidStateError, InvalidTransitionError, State
+from spec.schema import DuplicateStateError, InvalidStateError, InvalidTransitionError, State
 
 
 class FSMTests(unittest.TestCase):
@@ -18,9 +18,9 @@ class FSMTests(unittest.TestCase):
         self.assertIsInstance(result, State)
         self.assertEqual(result.name, "ui_lock")
 
-    def test_add_new_state_duplicate_raises_value_error(self):
+    def test_add_new_state_duplicate_raises_duplicate_state_error(self):
         add_new_state("success")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(DuplicateStateError):
             add_new_state("success")
 
     def test_add_new_state_invalid_raises_invalid_state_error(self):
@@ -37,6 +37,10 @@ class FSMTests(unittest.TestCase):
     def test_transition_to_invalid_raises_invalid_transition_error(self):
         with self.assertRaises(InvalidTransitionError):
             transition_to("ui_lock")
+
+    def test_transition_to_bogus_state_raises_invalid_state_error(self):
+        with self.assertRaises(InvalidStateError):
+            transition_to("bogus")
 
     def test_reset_states_clears_all(self):
         add_new_state("ui_lock")
