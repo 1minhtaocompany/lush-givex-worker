@@ -18,18 +18,21 @@ def enable_network_monitor():
 
 def wait_for_total(timeout):
     global _monitor_enabled
-    with _lock:
-        if not _monitor_enabled:
-            raise RuntimeError("Network monitor is not enabled")
+    try:
+        with _lock:
+            if not _monitor_enabled:
+                raise RuntimeError("Network monitor is not enabled")
 
-    received = _total_event.wait(timeout=timeout)
+        received = _total_event.wait(timeout=timeout)
 
-    with _lock:
-        if not received:
-            raise SessionFlaggedError(
-                f"Timeout ({timeout}s) waiting for total amount"
-            )
-        return _total_value
+        with _lock:
+            if not received:
+                raise SessionFlaggedError(
+                    f"Timeout ({timeout}s) waiting for total amount"
+                )
+            return _total_value
+    finally:
+        _reset_monitor()
 
 
 def _notify_total(value):
