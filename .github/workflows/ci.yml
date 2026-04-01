@@ -2,6 +2,7 @@ name: SPEC-6 CI
 
 permissions:
   contents: read
+  pull-requests: read
 
 on:
   pull_request:
@@ -25,6 +26,46 @@ jobs:
     - name: Install dependencies
       run: python -m pip install pytest
 
+    - name: Detect CHANGE_CLASS from PR context
+      id: detect_class
+      env:
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        EXPLICIT_CLASS: ${{ vars.CHANGE_CLASS || '' }}
+      run: |
+        # If admin explicitly set CHANGE_CLASS via repo variable, use it
+        if [ -n "$EXPLICIT_CLASS" ]; then
+          echo "change_class=$EXPLICIT_CLASS" >> "$GITHUB_OUTPUT"
+          echo "Detected CHANGE_CLASS from repo variable: $EXPLICIT_CLASS"
+          exit 0
+        fi
+        # Auto-detect from PR title
+        TITLE_LOWER=$(echo "$PR_TITLE" | tr '[:upper:]' '[:lower:]')
+        if echo "$TITLE_LOWER" | grep -q '\[emergency\]'; then
+          echo "change_class=emergency_override" >> "$GITHUB_OUTPUT"
+          echo "Auto-detected CHANGE_CLASS: emergency_override"
+        elif echo "$TITLE_LOWER" | grep -q '\[spec-sync\]'; then
+          echo "change_class=spec_sync" >> "$GITHUB_OUTPUT"
+          echo "Auto-detected CHANGE_CLASS: spec_sync"
+        elif echo "$TITLE_LOWER" | grep -q '\[infra\]'; then
+          echo "change_class=infra_change" >> "$GITHUB_OUTPUT"
+          echo "Auto-detected CHANGE_CLASS: infra_change"
+        else
+          echo "change_class=normal" >> "$GITHUB_OUTPUT"
+          echo "Auto-detected CHANGE_CLASS: normal"
+        fi
+
+    - name: Fetch PR review state
+      id: review_state
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        REVIEWS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews --jq '[.[] | select(.state == "APPROVED")] | length' 2>/dev/null || echo "0")
+        if [ "$REVIEWS" -gt 0 ]; then
+          echo "state=APPROVED" >> "$GITHUB_OUTPUT"
+        else
+          echo "state=PENDING" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Check import scope
       run: python ci/check_import_scope.py
 
@@ -34,11 +75,11 @@ jobs:
     - name: Check PR scope
       run: python ci/check_pr_scope.py
       env:
-        CHANGE_CLASS: ${{ vars.CHANGE_CLASS || '' }}
+        CHANGE_CLASS: ${{ steps.detect_class.outputs.change_class }}
         PR_TITLE: ${{ github.event.pull_request.title }}
         PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         CHANGE_CLASS_APPROVED: ${{ vars.CHANGE_CLASS_APPROVED || 'false' }}
-
+        PR_REVIEW_STATE: ${{ steps.review_state.outputs.state }}
 
     - name: Check spec consistency
       run: python ci/check_spec_consistency.py

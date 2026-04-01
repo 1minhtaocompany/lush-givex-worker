@@ -164,11 +164,13 @@ Khi CI quá cứng nhắc gây nghẽn các thay đổi hợp lệ, sử dụng 
 | `infra_change` | ✅ | ❌ | Thay đổi CI scripts, cấu hình infrastructure |
 
 **Governance Enforcement (CI `check_pr_scope`):**
-- `emergency_override`: yêu cầu `CHANGE_CLASS_APPROVED=true` (admin set) hoặc PR title chứa `[emergency]`.
-- `spec_sync`: yêu cầu PR title chứa `[spec-sync]` hoặc `CHANGE_CLASS_APPROVED=true`.
-- `infra_change`: yêu cầu PR title chứa `[infra]` hoặc `CHANGE_CLASS_APPROVED=true`.
-- Mọi bypass ghi log lý do trong PR description.
-- `ALLOW_MULTI_MODULE` đã **DEPRECATED** — sử dụng `CHANGE_CLASS=spec_sync` thay thế.
+- `CHANGE_CLASS` là **REQUIRED** cho mọi PR. Nếu thiếu → CI **FAIL**.
+- CI workflow auto-detect từ PR title: `[emergency]` → `emergency_override`, `[spec-sync]` → `spec_sync`, `[infra]` → `infra_change`, mặc định → `normal`.
+- Non-normal CHANGE_CLASS yêu cầu: PR label `approved-override` HOẶC `CHANGE_CLASS_APPROVED=true`.
+- `emergency_override` bổ sung yêu cầu: ít nhất 1 APPROVED review + PR title chứa `[emergency]`.
+- `spec_sync` yêu cầu: changed files phải bao gồm `spec/`.
+- `infra_change` yêu cầu: changed files phải bao gồm `ci/` hoặc `.github/`.
+- `ALLOW_MULTI_MODULE` đã bị **LOẠI BỎ HOÀN TOÀN** — không còn được nhận diện.
 
 ### Guard 3.11 — Spec Versioning (Kiểm soát phiên bản đặc tả)
 - Mỗi file spec chứa header `spec-version: MAJOR.MINOR`

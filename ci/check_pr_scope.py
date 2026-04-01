@@ -8,25 +8,28 @@ Architect Directive (AD-6 amendment):
   limit.  This avoids the self-blocking paradox where the enforcement
   script itself would exceed the limit it enforces.
 
-Change Classification (Exception Framework — Governance Hardened):
-  CHANGE_CLASS is the SINGLE source of truth for override behaviour.
-  All legacy flags (ALLOW_MULTI_MODULE) have been removed.
+Change Classification (Exception Framework — Final Architecture):
+  CHANGE_CLASS is REQUIRED for every PR.  It is the SINGLE source of
+  truth for CI policy selection.  There are NO legacy flags, NO implicit
+  bypasses, and NO environment-only overrides.
 
   Values:
-    normal             — default, no overrides
-    emergency_override — bypass both line limit and module limit
-    spec_sync          — bypass module limit (keep line limit)
-    infra_change       — bypass line limit (keep module limit)
+    normal             — ≤200 lines, single module
+    spec_sync          — skip line limit, skip module limit; MUST touch spec/
+    infra_change       — skip line limit, keep module limit; MUST touch ci/ or .github/
+    emergency_override — bypass ALL limits; MUST have [emergency] title + approval
 
-  Authorization:
-    Any non-normal CHANGE_CLASS requires an explicit approval signal:
-      - PR label "approved-override" in PR_LABELS, OR
-      - CHANGE_CLASS_APPROVED=true (set via repo variable by admin)
+  Authorization (non-normal):
+    Requires at least one of:
+      - PR label "approved-override" in PR_LABELS
+      - CHANGE_CLASS_APPROVED=true (repo variable set by admin)
+    emergency_override additionally requires:
+      - PR_REVIEW_STATE == "APPROVED" (at least 1 approved review)
 
   Context Binding:
-    - emergency_override: PR title MUST contain "[emergency]"
     - spec_sync:          changed files MUST include spec/
     - infra_change:       changed files MUST include ci/ or .github/
+    - emergency_override: PR title MUST contain "[emergency]"
 
   Audit:
     All override usage is logged as structured JSON to CI output.
@@ -230,23 +233,26 @@ def check(diff_range: str) -> int:
     return 0
 
 
-def _resolve_change_class() -> str:
+def _resolve_change_class() -> str | None:
     """Resolve CHANGE_CLASS from env.
 
-    CHANGE_CLASS is the single source of truth. Legacy flags
-    (ALLOW_MULTI_MODULE) are no longer supported and are ignored.
-    Defaults to "normal" when not set.
+    CHANGE_CLASS is REQUIRED for every PR.  Returns None if not set,
+    which the caller treats as a hard failure.  Legacy flags
+    (ALLOW_MULTI_MODULE) are not recognized.
     """
     change_class = os.environ.get("CHANGE_CLASS", "").strip().lower()
-    return change_class if change_class else "normal"
+    return change_class if change_class else None
 
 
 def _check_authorization(change_class: str) -> list[str]:
     """Validate that a non-normal CHANGE_CLASS has explicit approval.
 
-    Approval signals (any one is sufficient):
+    Approval signals (any one is sufficient for spec_sync/infra_change):
       - PR label "approved-override" present in PR_LABELS
       - CHANGE_CLASS_APPROVED=true (repo variable set by admin)
+
+    emergency_override additionally requires:
+      - At least one APPROVED review (PR_REVIEW_STATE contains "APPROVED")
 
     Returns list of error strings (empty if authorized).
     """
@@ -262,14 +268,25 @@ def _check_authorization(change_class: str) -> list[str]:
         os.environ.get("CHANGE_CLASS_APPROVED", "").strip().lower() == "true"
     )
 
-    if admin_approved or "approved-override" in pr_labels:
-        return []
+    errors: list[str] = []
 
-    return [
-        f"CHANGE_CLASS={change_class} requires explicit authorization: "
-        f"PR label 'approved-override' or CHANGE_CLASS_APPROVED=true. "
-        f"Current labels: {sorted(pr_labels) if pr_labels else '<none>'}"
-    ]
+    if not admin_approved and "approved-override" not in pr_labels:
+        errors.append(
+            f"CHANGE_CLASS={change_class} requires explicit authorization: "
+            f"PR label 'approved-override' or CHANGE_CLASS_APPROVED=true. "
+            f"Current labels: {sorted(pr_labels) if pr_labels else '<none>'}"
+        )
+
+    if change_class == "emergency_override":
+        review_state = os.environ.get("PR_REVIEW_STATE", "").strip().upper()
+        if review_state != "APPROVED":
+            errors.append(
+                f"CHANGE_CLASS=emergency_override requires at least one "
+                f"APPROVED review. Current review state: "
+                f"'{review_state or '<not set>'}'"
+            )
+
+    return errors
 
 
 def _check_context_binding(
@@ -349,9 +366,17 @@ def _emit_audit_log(
 def main() -> int:
     change_class = _resolve_change_class()
 
+    # CHANGE_CLASS is REQUIRED
+    if change_class is None:
+        print("check_pr_scope: FAIL — CHANGE_CLASS env var is required. "
+              "Set to one of: "
+              f"{', '.join(sorted(VALID_CHANGE_CLASSES))}",
+              file=sys.stderr)
+        return 1
+
     # Validate CHANGE_CLASS value
     if change_class not in VALID_CHANGE_CLASSES:
-        print(f"check_pr_scope: invalid CHANGE_CLASS '{change_class}'; "
+        print(f"check_pr_scope: FAIL — invalid CHANGE_CLASS '{change_class}'; "
               f"valid values: {', '.join(sorted(VALID_CHANGE_CLASSES))}",
               file=sys.stderr)
         return 1
@@ -385,9 +410,17 @@ def main() -> int:
             print(f"  {err}", file=sys.stderr)
         return 1
 
-    # ── Apply override logic ───────────────────────────────────
-    skip_line_limit = change_class in ("emergency_override", "infra_change")
-    skip_module_limit = change_class in ("emergency_override", "spec_sync")
+    # ── Policy matrix ──────────────────────────────────────────
+    # normal:             line_limit=ON,  module_limit=ON
+    # spec_sync:          line_limit=OFF, module_limit=OFF
+    # infra_change:       line_limit=OFF, module_limit=ON
+    # emergency_override: line_limit=OFF, module_limit=OFF
+    skip_line_limit = change_class in (
+        "emergency_override", "spec_sync", "infra_change",
+    )
+    skip_module_limit = change_class in (
+        "emergency_override", "spec_sync",
+    )
 
     errors: list[str] = []
     if not skip_line_limit and total_lines > MAX_CHANGED_LINES:

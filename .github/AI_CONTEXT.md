@@ -73,22 +73,31 @@ Issue (Human tạo)
   3. Nếu fail do infrastructure (flaky test, runner issue): Human re-run workflow thủ công.
   4. Nếu fail do security gate: Xử lý theo Rule 4, **không** bypass bằng force-merge.
 
-### 6. Exception Framework & Change Classification (Governance Hardened)
+### 6. Exception Framework & Change Classification (Final Architecture)
 
-`CHANGE_CLASS` là **SINGLE source of truth** cho mọi override trong CI. Tất cả legacy flags (`ALLOW_MULTI_MODULE`) đã bị loại bỏ hoàn toàn.
+`CHANGE_CLASS` là **REQUIRED** cho mọi PR.  Nếu thiếu → CI **FAIL** ngay lập tức.
+Đây là **SINGLE source of truth** cho CI policy selection.
+Tất cả legacy flags (`ALLOW_MULTI_MODULE`) đã bị loại bỏ hoàn toàn.
+
+**Auto-detection:** CI workflow tự detect `CHANGE_CLASS` từ PR title:
+- `[emergency]` → `emergency_override`
+- `[spec-sync]` → `spec_sync`
+- `[infra]` → `infra_change`
+- Mặc định → `normal`
 
 | Change Class | Bypass Line Limit | Bypass Module Limit | Use Case |
 |-------------|-------------------|--------------------|----|
-| `normal` | ❌ | ❌ | Default — không override |
-| `emergency_override` | ✅ | ✅ | Hotfix production, security patch khẩn cấp |
-| `spec_sync` | ❌ | ✅ | Đồng bộ code với spec mới sau khi Architect thay đổi interface |
+| `normal` | ❌ | ❌ | Default — PR thông thường |
+| `spec_sync` | ✅ | ✅ | Đồng bộ code với spec mới (architectural refactor) |
 | `infra_change` | ✅ | ❌ | Thay đổi CI scripts, cấu hình infrastructure |
+| `emergency_override` | ✅ | ✅ | Hotfix production, security patch khẩn cấp |
 
 **Authorization (Bắt buộc cho mọi non-normal CHANGE_CLASS):**
 - Phải có ít nhất 1 trong 2 tín hiệu:
   1. PR label `approved-override` (machine-verifiable qua `PR_LABELS` env var)
   2. `CHANGE_CLASS_APPROVED=true` (repo variable do Admin set)
-- Nếu không có tín hiệu → CI **FAIL**
+- `emergency_override` **bổ sung yêu cầu**: phải có ít nhất 1 APPROVED review
+- Nếu thiếu bất kỳ tín hiệu nào → CI **FAIL**
 
 **Context Binding (CHANGE_CLASS phải khớp nội dung PR):**
 - `emergency_override`: PR title **MUST** chứa `[emergency]`

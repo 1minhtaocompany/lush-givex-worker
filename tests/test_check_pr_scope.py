@@ -140,11 +140,15 @@ class ConstantsTests(unittest.TestCase):
 
 
 class ResolveChangeClassTests(unittest.TestCase):
-    """Test _resolve_change_class — CHANGE_CLASS is single source of truth."""
+    """Test _resolve_change_class — CHANGE_CLASS is REQUIRED."""
 
     @patch.dict("os.environ", {}, clear=True)
-    def test_defaults_to_normal(self):
-        self.assertEqual(_resolve_change_class(), "normal")
+    def test_missing_returns_none(self):
+        self.assertIsNone(_resolve_change_class())
+
+    @patch.dict("os.environ", {"CHANGE_CLASS": ""}, clear=True)
+    def test_empty_returns_none(self):
+        self.assertIsNone(_resolve_change_class())
 
     @patch.dict("os.environ", {"CHANGE_CLASS": "emergency_override"}, clear=True)
     def test_reads_change_class(self):
@@ -157,7 +161,7 @@ class ResolveChangeClassTests(unittest.TestCase):
     @patch.dict("os.environ", {"ALLOW_MULTI_MODULE": "true"}, clear=True)
     def test_legacy_allow_multi_module_ignored(self):
         """ALLOW_MULTI_MODULE is no longer recognized."""
-        self.assertEqual(_resolve_change_class(), "normal")
+        self.assertIsNone(_resolve_change_class())
 
 
 class AuthorizationTests(unittest.TestCase):
@@ -166,23 +170,40 @@ class AuthorizationTests(unittest.TestCase):
     def test_normal_needs_no_authorization(self):
         self.assertEqual(_check_authorization("normal"), [])
 
-    @patch.dict("os.environ", {"PR_LABELS": "", "CHANGE_CLASS_APPROVED": ""}, clear=True)
+    @patch.dict("os.environ", {"PR_LABELS": "", "CHANGE_CLASS_APPROVED": "", "PR_REVIEW_STATE": ""}, clear=True)
     def test_override_without_approval_fails(self):
-        errors = _check_authorization("emergency_override")
+        errors = _check_authorization("spec_sync")
         self.assertEqual(len(errors), 1)
         self.assertIn("requires explicit authorization", errors[0])
 
-    @patch.dict("os.environ", {"PR_LABELS": "approved-override,bug"}, clear=True)
+    @patch.dict("os.environ", {"PR_LABELS": "approved-override,bug", "PR_REVIEW_STATE": ""}, clear=True)
     def test_pr_label_grants_authorization(self):
         self.assertEqual(_check_authorization("spec_sync"), [])
 
-    @patch.dict("os.environ", {"CHANGE_CLASS_APPROVED": "true", "PR_LABELS": ""}, clear=True)
+    @patch.dict("os.environ", {"CHANGE_CLASS_APPROVED": "true", "PR_LABELS": "", "PR_REVIEW_STATE": ""}, clear=True)
     def test_admin_approved_grants_authorization(self):
         self.assertEqual(_check_authorization("infra_change"), [])
 
-    @patch.dict("os.environ", {"PR_LABELS": "Approved-Override"}, clear=True)
+    @patch.dict("os.environ", {"PR_LABELS": "Approved-Override", "PR_REVIEW_STATE": ""}, clear=True)
     def test_label_check_is_case_insensitive(self):
+        self.assertEqual(_check_authorization("spec_sync"), [])
+
+    @patch.dict("os.environ", {"PR_LABELS": "approved-override", "PR_REVIEW_STATE": ""}, clear=True)
+    def test_emergency_without_review_fails(self):
+        errors = _check_authorization("emergency_override")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("APPROVED review", errors[0])
+
+    @patch.dict("os.environ", {"PR_LABELS": "approved-override", "PR_REVIEW_STATE": "APPROVED"}, clear=True)
+    def test_emergency_with_review_passes(self):
         self.assertEqual(_check_authorization("emergency_override"), [])
+
+    @patch.dict("os.environ", {"PR_LABELS": "", "CHANGE_CLASS_APPROVED": "", "PR_REVIEW_STATE": "APPROVED"}, clear=True)
+    def test_emergency_without_label_or_admin_fails(self):
+        """Even with review, still needs label or admin approval."""
+        errors = _check_authorization("emergency_override")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("requires explicit authorization", errors[0])
 
 
 class ContextBindingTests(unittest.TestCase):
@@ -241,12 +262,44 @@ class ContextBindingTests(unittest.TestCase):
 class ChangeClassIntegrationTests(unittest.TestCase):
     """End-to-end tests for CHANGE_CLASS through main()."""
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_missing_change_class_fails(self):
+        """CHANGE_CLASS is REQUIRED — missing = FAIL."""
+        self.assertEqual(main(), 1)
+
+    @patch.dict("os.environ", {"CHANGE_CLASS": ""}, clear=True)
+    def test_empty_change_class_fails(self):
+        self.assertEqual(main(), 1)
+
+    @patch("ci.check_pr_scope.get_numstat")
+    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
+    @patch.dict("os.environ", {
+        "CHANGE_CLASS": "normal",
+    }, clear=False)
+    def test_normal_enforces_both_limits(self, mock_resolve, mock_numstat):
+        mock_numstat.return_value = [
+            (150, 60, "modules/fsm/main.py"),
+        ]
+        self.assertEqual(main(), 1)
+
+    @patch("ci.check_pr_scope.get_numstat")
+    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
+    @patch.dict("os.environ", {
+        "CHANGE_CLASS": "normal",
+    }, clear=False)
+    def test_normal_passes_under_limit(self, mock_resolve, mock_numstat):
+        mock_numstat.return_value = [
+            (50, 10, "modules/fsm/main.py"),
+        ]
+        self.assertEqual(main(), 0)
+
     @patch("ci.check_pr_scope.get_numstat")
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
         "CHANGE_CLASS": "emergency_override",
         "PR_TITLE": "[emergency] hotfix",
         "PR_LABELS": "approved-override",
+        "PR_REVIEW_STATE": "APPROVED",
     }, clear=False)
     def test_emergency_override_full_bypass(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
@@ -260,8 +313,18 @@ class ChangeClassIntegrationTests(unittest.TestCase):
         "PR_TITLE": "[emergency] hotfix",
         "PR_LABELS": "",
         "CHANGE_CLASS_APPROVED": "",
+        "PR_REVIEW_STATE": "APPROVED",
     }, clear=False)
-    def test_emergency_without_authorization_fails(self):
+    def test_emergency_without_label_fails(self):
+        self.assertEqual(main(), 1)
+
+    @patch.dict("os.environ", {
+        "CHANGE_CLASS": "emergency_override",
+        "PR_TITLE": "[emergency] hotfix",
+        "PR_LABELS": "approved-override",
+        "PR_REVIEW_STATE": "PENDING",
+    }, clear=False)
+    def test_emergency_without_review_fails(self):
         self.assertEqual(main(), 1)
 
     @patch.dict("os.environ", {
@@ -269,6 +332,7 @@ class ChangeClassIntegrationTests(unittest.TestCase):
         "PR_TITLE": "normal PR",
         "PR_LABELS": "approved-override",
         "CHANGE_CLASS_APPROVED": "",
+        "PR_REVIEW_STATE": "APPROVED",
     }, clear=False)
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch("ci.check_pr_scope.get_numstat", return_value=[(10, 5, "modules/fsm/main.py")])
@@ -282,9 +346,10 @@ class ChangeClassIntegrationTests(unittest.TestCase):
         "PR_TITLE": "update interfaces",
         "CHANGE_CLASS_APPROVED": "true",
     }, clear=False)
-    def test_spec_sync_with_spec_files(self, mock_resolve, mock_numstat):
+    def test_spec_sync_bypasses_both_limits(self, mock_resolve, mock_numstat):
+        """spec_sync skips line limit AND module limit."""
         mock_numstat.return_value = [
-            (10, 5, "spec/fsm.md"),
+            (200, 100, "spec/fsm.md"),
             (10, 5, "modules/fsm/main.py"),
             (10, 5, "modules/watchdog/main.py"),
         ]
@@ -307,25 +372,11 @@ class ChangeClassIntegrationTests(unittest.TestCase):
     @patch("ci.check_pr_scope.get_numstat")
     @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
     @patch.dict("os.environ", {
-        "CHANGE_CLASS": "spec_sync",
-        "PR_TITLE": "update",
-        "PR_LABELS": "approved-override",
-    }, clear=False)
-    def test_spec_sync_still_enforces_line_limit(self, mock_resolve, mock_numstat):
-        mock_numstat.return_value = [
-            (150, 60, "spec/fsm.md"),
-            (10, 5, "modules/fsm/main.py"),
-        ]
-        self.assertEqual(main(), 1)
-
-    @patch("ci.check_pr_scope.get_numstat")
-    @patch("ci.check_pr_scope.resolve_diff_range", return_value="fake...range")
-    @patch.dict("os.environ", {
         "CHANGE_CLASS": "infra_change",
         "PR_TITLE": "update CI scripts",
         "PR_LABELS": "approved-override",
     }, clear=False)
-    def test_infra_bypasses_line_limit(self, mock_resolve, mock_numstat):
+    def test_infra_bypasses_line_limit_only(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
             (300, 200, "ci/check_pr_scope.py"),
         ]
@@ -356,6 +407,7 @@ class ChangeClassIntegrationTests(unittest.TestCase):
         "CHANGE_CLASS": "emergency_override",
         "PR_TITLE": "[emergency] hotfix",
         "CHANGE_CLASS_APPROVED": "true",
+        "PR_REVIEW_STATE": "APPROVED",
     }, clear=False)
     def test_admin_approved_grants_access(self, mock_resolve, mock_numstat):
         mock_numstat.return_value = [
