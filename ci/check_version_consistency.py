@@ -4,7 +4,8 @@
 Validates:
 1. Every spec file has a spec-version header.
 2. Version format is MAJOR.MINOR.
-3. Versions across segmented files and aggregated file are consistent.
+3. Each tracked spec file's spec-version header is present for all files
+   referenced in VERSIONING.md.
 4. VERSIONING.md current versions table matches actual file headers.
 """
 from __future__ import annotations
