@@ -3,7 +3,6 @@ import unittest
 from ci.check_version_consistency import (
     _extract_version,
     check_versions,
-    ROOT_DIR,
     SPEC_DIR,
 )
 
