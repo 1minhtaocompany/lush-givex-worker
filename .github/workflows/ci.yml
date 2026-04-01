@@ -25,6 +25,19 @@ jobs:
 
     - name: Install dependencies
       run: python -m pip install pytest
+    - name: Detect CHANGE_CLASS
+      id: detect_class
+      run: |
+        CLASS=$(python ci/detect_change_class.py)
+        echo "CHANGE_CLASS=$CLASS" >> $GITHUB_ENV
+        echo "Detected class: $CLASS"
+
+    - name: Check PR scope
+      run: python ci/check_pr_scope.py
+      env:
+        # CHANGE_CLASS giờ đây lấy trực tiếp từ GITHUB_ENV đã set ở trên
+        CHANGE_CLASS: ${{ env.CHANGE_CLASS }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
 
     - name: Detect CHANGE_CLASS from PR context
       id: detect_class
