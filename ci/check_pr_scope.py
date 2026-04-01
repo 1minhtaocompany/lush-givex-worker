@@ -233,12 +233,12 @@ def check(diff_range: str) -> int:
     return 0
 
 
-def _resolve_change_class() -> str:
+def _resolve_change_class() -> str | None:
     """Lấy CHANGE_CLASS từ môi trường (do detect_change_class.py thiết lập)."""
     change_class = os.environ.get("CHANGE_CLASS", "").strip().lower()
     if not change_class:
         print("FAIL: CHANGE_CLASS environment variable not set")
-        sys.exit(1)
+        return None
     print(f"Detected Change Class: {change_class}")
     return change_class
 
