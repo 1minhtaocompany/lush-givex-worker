@@ -364,14 +364,6 @@ def _emit_audit_log(
 def main() -> int:
     change_class = _resolve_change_class()
 
-    # CHANGE_CLASS is REQUIRED
-    if change_class is None:
-        print("check_pr_scope: FAIL — CHANGE_CLASS env var is required. "
-              "Set to one of: "
-              f"{', '.join(sorted(VALID_CHANGE_CLASSES))}",
-              file=sys.stderr)
-        return 1
-
     # Validate CHANGE_CLASS value
     if change_class not in VALID_CHANGE_CLASSES:
         print(f"check_pr_scope: FAIL — invalid CHANGE_CLASS '{change_class}'; "
