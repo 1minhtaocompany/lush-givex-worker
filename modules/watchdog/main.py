@@ -25,7 +25,6 @@ def wait_for_total(timeout):
     received = _total_event.wait(timeout=timeout)
 
     with _lock:
-        _monitor_enabled = False
         if not received:
             raise SessionFlaggedError(
                 f"Timeout ({timeout}s) waiting for total amount"
