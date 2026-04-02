@@ -32,7 +32,11 @@ def _reset_state():
 def _normalize_zip(zip_code):
     if zip_code is None:
         return ""
-    return str(zip_code).strip()
+    if isinstance(zip_code, bool):
+        raise ValueError("zip_code must be str or int")
+    if isinstance(zip_code, (int, str)):
+        return str(zip_code).strip()
+    raise ValueError("zip_code must be str or int")
 
 
 def _parse_profile_line(line):
