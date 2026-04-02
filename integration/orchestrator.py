@@ -7,7 +7,7 @@ this file is the single integration point that wires them together.
 
 import threading
 
-from modules.common.exceptions import CycleExhaustedError, SessionFlaggedError
+from modules.common.exceptions import SessionFlaggedError
 from modules.common.types import WorkerTask
 from modules.billing import main as billing
 from modules.cdp import main as cdp
