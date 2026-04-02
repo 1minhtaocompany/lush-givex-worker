@@ -80,7 +80,6 @@ def _load_profiles_locked():
     if profiles:
         _profiles = profiles
         _cursor = 0
-        _initialized = True
 
 
 def _generate_email(first_name, last_name):
