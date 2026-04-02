@@ -7,6 +7,12 @@ Architect Directive (AD-6 amendment):
   infrastructure code and tests should never be penalized against a size
   limit.  This avoids the self-blocking paradox where the enforcement
   script itself would exceed the limit it enforces.
+
+Change Classification (Exception Framework):
+  Set CHANGE_CLASS env var to one of:
+    emergency_override — bypass both line limit and module limit
+    spec_sync          — bypass module limit (keep line limit)
+    infra_change       — bypass line limit (keep module limit)
 """
 
 import os
@@ -17,6 +23,11 @@ import sys
 # ── configuration ──────────────────────────────────────────────────
 MAX_CHANGED_LINES = 200
 EXCLUDED_PREFIXES = ("tests/", "ci/")
+VALID_CHANGE_CLASSES = frozenset({
+    "emergency_override",
+    "spec_sync",
+    "infra_change",
+})
 
 # ── git helpers ────────────────────────────────────────────────────
 
@@ -149,13 +160,13 @@ def module_from_path(path: str) -> str | None:
 
 # ── main ───────────────────────────────────────────────────────────
 
-def check(diff_range: str) -> int:
-    """Run scope checks.  Returns 0 on PASS, 1 on FAIL."""
-    entries = get_numstat(diff_range)
+def _analyze_entries(
+    entries: list[tuple[int, int, str]],
+) -> tuple[int, int, set[str]]:
+    """Compute total_lines, excluded_lines, and modules_touched."""
     total_lines = 0
-    modules_touched: set[str] = set()
     excluded_lines = 0
-
+    modules_touched: set[str] = set()
     for added, deleted, filepath in entries:
         changed = added + deleted
         mod = module_from_path(filepath)
@@ -165,6 +176,13 @@ def check(diff_range: str) -> int:
             excluded_lines += changed
         else:
             total_lines += changed
+    return total_lines, excluded_lines, modules_touched
+
+
+def check(diff_range: str) -> int:
+    """Run scope checks.  Returns 0 on PASS, 1 on FAIL."""
+    entries = get_numstat(diff_range)
+    total_lines, excluded_lines, modules_touched = _analyze_entries(entries)
 
     errors: list[str] = []
     if total_lines > MAX_CHANGED_LINES:
@@ -194,20 +212,66 @@ def check(diff_range: str) -> int:
 
 
 def main() -> int:
+    change_class = os.environ.get("CHANGE_CLASS", "").strip().lower()
     allow_multi = os.environ.get("ALLOW_MULTI_MODULE", "").strip().lower()
-    if allow_multi == "true":
-        print("WARNING: Multi-module scope check bypassed by "
-              "ALLOW_MULTI_MODULE", file=sys.stderr)
+
+    # Validate CHANGE_CLASS if provided
+    if change_class and change_class not in VALID_CHANGE_CLASSES:
+        print(f"check_pr_scope: invalid CHANGE_CLASS '{change_class}'; "
+              f"valid values: {', '.join(sorted(VALID_CHANGE_CLASSES))}",
+              file=sys.stderr)
+        return 1
+
+    # Deprecation: ALLOW_MULTI_MODULE is superseded by CHANGE_CLASS=spec_sync
+    if allow_multi == "true" and not change_class:
+        print("DEPRECATED: ALLOW_MULTI_MODULE=true is deprecated; "
+              "use CHANGE_CLASS=spec_sync instead. "
+              "ALLOW_MULTI_MODULE will be removed in a future version.",
+              file=sys.stderr)
+
+    # Governance: emergency_override requires PR label or title prefix
+    if change_class == "emergency_override":
+        pr_title = os.environ.get("PR_TITLE", "").strip()
+        pr_labels = os.environ.get("PR_LABELS", "").strip().lower()
+        has_label = "emergency" in pr_labels
+        has_prefix = pr_title.lower().startswith("[emergency]")
+        if not has_label and not has_prefix:
+            print("check_pr_scope: CHANGE_CLASS=emergency_override requires "
+                  "PR label 'emergency' or title prefix '[emergency]'. "
+                  "Set PR_TITLE / PR_LABELS env vars in CI workflow.",
+                  file=sys.stderr)
+            return 1
+
+    skip_line_limit = change_class in ("emergency_override", "infra_change")
+    skip_module_limit = (
+        change_class in ("emergency_override", "spec_sync")
+        or allow_multi == "true"
+    )
+
+    if change_class:
+        print(f"WARNING: CHANGE_CLASS={change_class} active",
+              file=sys.stderr)
+
+    if skip_line_limit and skip_module_limit:
+        # emergency_override — bypass everything
         diff_range = resolve_diff_range()
         entries = get_numstat(diff_range)
-        total_lines = 0
-        excluded_lines = 0
-        for added, deleted, filepath in entries:
-            changed = added + deleted
-            if _is_excluded(filepath):
-                excluded_lines += changed
-            else:
-                total_lines += changed
+        total_lines, excluded_lines, _ = _analyze_entries(entries)
+        print(f"check_pr_scope: PASS ({total_lines} lines changed"
+              + (f", {excluded_lines} excluded" if excluded_lines else "")
+              + f", change_class={change_class})")
+        return 0
+
+    if skip_module_limit:
+        if change_class:
+            print(f"WARNING: Module scope check bypassed by "
+                  f"CHANGE_CLASS={change_class}", file=sys.stderr)
+        elif allow_multi == "true":
+            print("WARNING: Multi-module scope check bypassed by "
+                  "ALLOW_MULTI_MODULE", file=sys.stderr)
+        diff_range = resolve_diff_range()
+        entries = get_numstat(diff_range)
+        total_lines, excluded_lines, _ = _analyze_entries(entries)
         if total_lines > MAX_CHANGED_LINES:
             print("check_pr_scope: FAIL")
             print(f"  total lines changed ({total_lines}) exceeds "
@@ -218,6 +282,25 @@ def main() -> int:
               + (f", {excluded_lines} excluded" if excluded_lines else "")
               + ", multi-module allowed)")
         return 0
+
+    if skip_line_limit:
+        print(f"WARNING: Line limit bypassed by "
+              f"CHANGE_CLASS={change_class}", file=sys.stderr)
+        diff_range = resolve_diff_range()
+        entries = get_numstat(diff_range)
+        total_lines, excluded_lines, modules_touched = _analyze_entries(
+            entries
+        )
+        if len(modules_touched) > 1:
+            print("check_pr_scope: FAIL")
+            print(f"  PR touches {len(modules_touched)} modules "
+                  f"({', '.join(sorted(modules_touched))}); max 1 allowed")
+            return 1
+        print(f"check_pr_scope: PASS ({total_lines} lines changed"
+              + (f", {excluded_lines} excluded" if excluded_lines else "")
+              + f", line limit bypassed by {change_class})")
+        return 0
+
     diff_range = resolve_diff_range()
     return check(diff_range)
 

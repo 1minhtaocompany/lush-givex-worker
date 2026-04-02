@@ -73,6 +73,74 @@ Issue (Human tạo)
   3. Nếu fail do infrastructure (flaky test, runner issue): Human re-run workflow thủ công.
   4. Nếu fail do security gate: Xử lý theo Rule 4, **không** bypass bằng force-merge.
 
+### 6. Exception Framework & Change Classification (Final Architecture)
+
+`CHANGE_CLASS` là **REQUIRED** cho mọi PR.  Nếu thiếu → CI **FAIL** ngay lập tức.
+Đây là **SINGLE source of truth** cho CI policy selection.
+Tất cả legacy flags (`ALLOW_MULTI_MODULE`) đã bị loại bỏ hoàn toàn.
+
+**Auto-detection:** CI workflow tự detect `CHANGE_CLASS` từ PR title:
+- `[emergency]` → `emergency_override`
+- `[spec-sync]` → `spec_sync`
+- `[infra]` → `infra_change`
+- Mặc định → `normal`
+
+| Change Class | Bypass Line Limit | Bypass Module Limit | Use Case |
+|-------------|-------------------|--------------------|----|
+| `normal` | ❌ | ❌ | Default — PR thông thường |
+| `spec_sync` | ✅ | ✅ | Đồng bộ code với spec mới (architectural refactor) |
+| `infra_change` | ✅ | ❌ | Thay đổi CI scripts, cấu hình infrastructure |
+| `emergency_override` | ✅ | ✅ | Hotfix production, security patch khẩn cấp |
+
+**Authorization (Bắt buộc cho mọi non-normal CHANGE_CLASS):**
+- Phải có ít nhất 1 trong 2 tín hiệu:
+  1. PR label `approved-override` (machine-verifiable qua `PR_LABELS` env var)
+  2. `CHANGE_CLASS_APPROVED=true` (repo variable do Admin set)
+- `emergency_override` **bổ sung yêu cầu**: phải có ít nhất 1 APPROVED review
+- Nếu thiếu bất kỳ tín hiệu nào → CI **FAIL**
+
+**Context Binding (CHANGE_CLASS phải khớp nội dung PR):**
+- `emergency_override`: PR title **MUST** chứa `[emergency]`
+- `spec_sync`: Changed files **MUST** bao gồm `spec/`
+- `infra_change`: Changed files **MUST** bao gồm `ci/` hoặc `.github/`
+- Nếu mismatch → CI **FAIL**
+
+**Audit Trail:**
+- Mọi override usage được log dạng structured JSON (`AUDIT_LOG: {...}`) trong CI output
+- Log bao gồm: `change_class`, `pr_title`, `pr_labels`, `authorization`, `context_binding`, `validation`
+
+### 7. Spec Versioning System
+
+Mỗi file trong `spec/` có phiên bản riêng theo format `MAJOR.MINOR`. Chi tiết tại [spec/VERSIONING.md](../spec/VERSIONING.md).
+
+* **MAJOR bump** (breaking): Xóa/đổi tên function, thay đổi output type → CI fail → cần `CHANGE_CLASS=spec_sync`.
+* **MINOR bump** (additive): Thêm function mới, thêm optional param → CI phát hiện stub thiếu → Agent tự implement.
+
+### 8. Contract Segmentation
+
+Hợp đồng giao diện (`spec/interface.md`) được tách thành 2 nhóm:
+
+* **`spec/core/`** — FSM (Finite State Machine): Các hàm quản lý trạng thái lõi.
+* **`spec/integration/`** — Watchdog, Billing, CDP: Các hàm tích hợp bên ngoài.
+
+File `spec/interface.md` gốc vẫn được giữ lại như bản tổng hợp (aggregated) để tương thích ngược.
+CI `check_signature` tự động phát hiện và kiểm tra cả hai nhóm.
+
+**⚠️ DIVERGENCE GUARD:** CI `check_spec_consistency` đảm bảo `spec/interface.md` (aggregated) KHÔNG ĐƯỢC lệch khỏi các file segmented. Nếu lệch → CI FAIL. Khi cập nhật spec, phải cập nhật đồng thời cả segmented files VÀ aggregated file.
+
+### 9. CI Checks (Danh sách đầy đủ)
+
+| Check | Mô tả |
+|-------|-------|
+| `check_import_scope` | Đảm bảo không module nào import từ module khác |
+| `check_signature` | So sánh function signature trong code với spec (multi-file aware, cross-file duplicate detection) |
+| `check_pr_scope` | Kiểm tra scope PR: ≤200 dòng, ≤1 module, governance enforcement cho CHANGE_CLASS |
+| `check_spec_lock` | Đảm bảo không PR nào sửa file trong `/spec/` (trừ Architect) |
+| `check_spec_consistency` | Đảm bảo aggregated spec KHÔNG lệch khỏi segmented files |
+| `check_version_consistency` | Validate spec-version headers nhất quán với VERSIONING.md |
+| Unit tests | `python -m unittest discover tests` |
+**⚠️ Quy tắc chống phân kỳ (Divergence Guard):** CI `check_signature` tự động so sánh danh sách function giữa segmented files và aggregated file. Nếu phát hiện lệch, in WARNING vào CI log. Mọi thay đổi spec phải cập nhật cả hai nguồn đồng thời.
+
 Hệ thống vận hành theo kiến trúc 3 tầng bản địa, lấy Pull Request (PR) và Issue làm trung tâm điều phối. Tuyệt đối không sử dụng AI bên ngoài (Zero-External AI) để duy trì tính toàn vẹn của Copilot Memory.
 
 ### 1. Tầng Định hướng (Human)

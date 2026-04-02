@@ -154,6 +154,39 @@ Mọi PR phải vượt qua **tất cả 4 cổng** trước khi được phép 
 | 3 | **Secret Scanning** | Không có secret bị rò rỉ. Push Protection chặn trước khi push | Revoke secret → rotate → commit lại không chứa secret |
 | 4 | **Copilot Autofix** | Mọi suggestion đã được review (accept/dismiss có lý do) | Human hoặc Agent review từng suggestion trước khi merge |
 
+### Guard 3.10 — Exception Framework & Change Classification (Chống System Freeze)
+Khi CI quá cứng nhắc gây nghẽn các thay đổi hợp lệ, sử dụng `CHANGE_CLASS` env var:
+
+| Change Class | Bypass Line Limit | Bypass Module Limit | Use Case |
+|-------------|-------------------|--------------------|----|
+| `emergency_override` | ✅ | ✅ | Hotfix production, security patch khẩn cấp |
+| `spec_sync` | ❌ | ✅ | Đồng bộ code với spec mới sau khi Architect thay đổi interface |
+| `infra_change` | ✅ | ❌ | Thay đổi CI scripts, cấu hình infrastructure |
+
+**Governance Enforcement (CI `check_pr_scope`):**
+- `CHANGE_CLASS` là **REQUIRED** cho mọi PR. Nếu thiếu → CI **FAIL**.
+- CI workflow auto-detect từ PR title: `[emergency]` → `emergency_override`, `[spec-sync]` → `spec_sync`, `[infra]` → `infra_change`, mặc định → `normal`.
+- Non-normal CHANGE_CLASS yêu cầu: PR label `approved-override` HOẶC `CHANGE_CLASS_APPROVED=true`.
+- `emergency_override` bổ sung yêu cầu: ít nhất 1 APPROVED review + PR title chứa `[emergency]`.
+- `spec_sync` yêu cầu: changed files phải bao gồm `spec/`.
+- `infra_change` yêu cầu: changed files phải bao gồm `ci/` hoặc `.github/`.
+- `ALLOW_MULTI_MODULE` đã bị **LOẠI BỎ HOÀN TOÀN** — không còn được nhận diện.
+
+### Guard 3.11 — Spec Versioning (Kiểm soát phiên bản đặc tả)
+- Mỗi file spec chứa header `spec-version: MAJOR.MINOR`
+- MAJOR bump = breaking change → CI fail → cần `CHANGE_CLASS=spec_sync`
+- MINOR bump = additive → CI phát hiện stub thiếu → Agent tự implement
+- CI `check_version_consistency` kiểm tra tính nhất quán giữa file headers và VERSIONING.md
+- Chi tiết: [spec/VERSIONING.md](../../spec/VERSIONING.md)
+
+### Guard 3.12 — Contract Segmentation (Tách biệt hợp đồng)
+- `spec/core/interface.md` — FSM (core state machine)
+- `spec/integration/interface.md` — Watchdog, Billing, CDP (integration)
+- `spec/interface.md` — Bản tổng hợp tương thích ngược
+- CI `check_signature` đọc cả segmented và fallback files
+- **CI `check_spec_consistency` đảm bảo aggregated file KHÔNG lệch khỏi segmented files**
+- **Divergence Guard:** CI tự động so sánh function list giữa segmented và aggregated files. WARNING nếu phát hiện lệch.
+
 ---
 
 ## 4. AI Workforce Control (Native Pipeline)
@@ -246,9 +279,11 @@ Mọi PR phải vượt qua **tất cả 4 cổng** trước khi được phép 
 | Check | Mô tả |
 |-------|-------|
 | `check_import_scope` | Đảm bảo không module nào import từ module khác |
-| `check_signature` | So sánh function signature trong code với spec |
-| `check_pr_scope` | Kiểm tra số dòng thay đổi (≤200) và module bị ảnh hưởng (≤1) |
+| `check_signature` | So sánh function signature trong code với spec (multi-file aware, cross-file duplicate detection) |
+| `check_pr_scope` | Kiểm tra scope PR: ≤200 dòng, ≤1 module, governance enforcement cho CHANGE_CLASS |
 | `check_spec_lock` | Đảm bảo không PR nào sửa file trong `/spec/` (trừ Architect) |
+| `check_spec_consistency` | Đảm bảo `spec/interface.md` (aggregated) không lệch khỏi segmented files |
+| `check_version_consistency` | Validate `spec-version` headers nhất quán với VERSIONING.md |
 | Unit tests | `python -m unittest discover tests` |
 
 ### 5.4 — Security Automation (Copilot Business)

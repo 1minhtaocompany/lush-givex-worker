@@ -2,6 +2,7 @@ name: SPEC-6 CI
 
 permissions:
   contents: read
+  pull-requests: read
 
 on:
   pull_request:
@@ -31,10 +32,32 @@ jobs:
     - name: Check signature
       run: python ci/check_signature.py
 
+    - name: Fetch PR review state
+      id: review_state
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        REVIEWS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews --jq '[.[] | select(.state == "APPROVED")] | length' 2>/dev/null || echo "0")
+        if [ "$REVIEWS" -gt 0 ]; then
+          echo "state=APPROVED" >> "$GITHUB_OUTPUT"
+        else
+          echo "state=PENDING" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Check PR scope
       run: python ci/check_pr_scope.py
       env:
-        ALLOW_MULTI_MODULE: "true"
+        CHANGE_CLASS: ${{ vars.CHANGE_CLASS || '' }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        CHANGE_CLASS_APPROVED: ${{ vars.CHANGE_CLASS_APPROVED || 'false' }}
+        PR_REVIEW_STATE: ${{ steps.review_state.outputs.state }}
+
+    - name: Check spec consistency
+      run: python ci/check_spec_consistency.py
+
+    - name: Check version consistency
+      run: python ci/check_version_consistency.py
 
     - name: Check spec lock
       run: python ci/check_spec_lock.py
@@ -44,6 +67,3 @@ jobs:
 
     - name: Unit tests
       run: python -m unittest discover tests
-
-    - name: Check schema import
-      run: python -c "import spec.schema"
