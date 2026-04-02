@@ -14,7 +14,7 @@
 | `spec/schema.py` | N/A | DEPRECATED — use modules.common instead |
 | `spec/.github/SPEC-6-Native-AI-Workflow.md` | 2.0 | Phases, AI tiers, security gates |
 
-**Consistency:** Headers match VERSIONING.md. Aggregated matches segmented. v2.0 migration complete (types/exceptions → modules.common).
+**Consistency:** For versioned spec files tracked by `ci/check_version_consistency.py`, headers match `spec/VERSIONING.md`. Aggregated matches segmented. v2.0 migration complete (types/exceptions → modules.common).
 
 ## Modules Status
 | Module | Implementation | Thread-Safe | Notes |
@@ -38,7 +38,7 @@
 | 6 | `ci/check_spec_lock.py` | Blocks spec/ mods unless spec_sync authorized |
 | 7 | `python -m unittest discover tests` | Unit tests |
 
-**Note:** `check_signature.py` discards `compare_signatures()` return (line 578). Only `validate_signatures()` enforced.
+**Note:** In `check_signature.py`, the return value from `compare_signatures()` in the main execution path is discarded; only `validate_signatures()` is enforced.
 
 ## Test Status
 | Test File | Target | Status |
