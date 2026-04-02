@@ -5,6 +5,7 @@ import subprocess
 from ci.check_pr_scope import (
     _normalize,
     _is_excluded,
+    _parse_labels,
     _resolve_change_class,
     _auto_detect_change_class,
     _check_authorization,
@@ -59,6 +60,43 @@ class ModuleFromPathTests(unittest.TestCase):
 
     def test_spec(self):
         self.assertIsNone(module_from_path("spec/schema.py"))
+
+
+class ParseLabelsTests(unittest.TestCase):
+    """Test _parse_labels — security-critical exact match parsing."""
+
+    def test_single_label(self):
+        self.assertEqual(_parse_labels("approved-override"), {"approved-override"})
+
+    def test_multiple_labels(self):
+        result = _parse_labels("approved-override,bug,critical")
+        self.assertEqual(result, {"approved-override", "bug", "critical"})
+
+    def test_whitespace_stripped(self):
+        result = _parse_labels("  approved-override , bug ")
+        self.assertEqual(result, {"approved-override", "bug"})
+
+    def test_case_normalized(self):
+        result = _parse_labels("Approved-Override,BUG")
+        self.assertEqual(result, {"approved-override", "bug"})
+
+    def test_empty_string(self):
+        self.assertEqual(_parse_labels(""), set())
+
+    def test_empty_entries_ignored(self):
+        result = _parse_labels("approved-override,,,,bug")
+        self.assertEqual(result, {"approved-override", "bug"})
+
+    def test_exact_match_security(self):
+        """Substring 'approved-override' inside longer label must NOT match."""
+        labels = _parse_labels("not-approved-override")
+        self.assertNotIn("approved-override", labels)
+        self.assertIn("not-approved-override", labels)
+
+    def test_suffix_attack(self):
+        """'approved-override-requested' must NOT grant access."""
+        labels = _parse_labels("approved-override-requested")
+        self.assertNotIn("approved-override", labels)
 
 
 class CheckTests(unittest.TestCase):
@@ -245,6 +283,20 @@ class AuthorizationTests(unittest.TestCase):
     def test_emergency_without_label_or_admin_fails(self):
         """Even with review, still needs label or admin approval."""
         errors = _check_authorization("emergency_override")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("requires explicit authorization", errors[0])
+
+    @patch.dict("os.environ", {"PR_LABELS": "not-approved-override", "PR_REVIEW_STATE": ""}, clear=True)
+    def test_substring_attack_rejected(self):
+        """Label 'not-approved-override' must NOT grant access (exact match)."""
+        errors = _check_authorization("infra_change")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("requires explicit authorization", errors[0])
+
+    @patch.dict("os.environ", {"PR_LABELS": "approved-override-requested", "PR_REVIEW_STATE": ""}, clear=True)
+    def test_suffix_attack_rejected(self):
+        """Label 'approved-override-requested' must NOT grant access."""
+        errors = _check_authorization("infra_change")
         self.assertEqual(len(errors), 1)
         self.assertIn("requires explicit authorization", errors[0])
 

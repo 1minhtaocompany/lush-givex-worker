@@ -11,11 +11,15 @@ Exception Framework (AI_CONTEXT.md §6):
   Context binding ensures CHANGE_CLASS matches PR content.
   All override usage is logged as structured JSON audit trail.
 
-Change Classes:
+Change Classes & Bypass Table (AI_CONTEXT.md §6):
   normal             — no bypasses (default)
-  spec_sync          — bypass line + module limit (spec refactor)
-  infra_change       — bypass line limit only (CI/infra changes)
-  emergency_override — bypass line + module limit (hotfix/security)
+  spec_sync          — bypass line + module limit; requires authorization
+  infra_change       — bypass line limit only; requires authorization
+  emergency_override — bypass line + module limit; requires authorization
+                       + APPROVED review
+
+Authorization (required for ALL non-normal):
+  PR label 'approved-override' (exact match) OR CHANGE_CLASS_APPROVED=true
 """
 
 import json
@@ -156,13 +160,17 @@ def get_numstat(diff_range: str) -> list[tuple[int, int, str]]:
 
 
 def _get_changed_files(diff_range: str) -> list[str]:
-    """Return list of changed file paths from git diff --name-only."""
+    """Return list of changed file paths.  Exits on git failure."""
     result = subprocess.run(
         ["git", "diff", "--name-only", diff_range],
         capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0:
-        return []
+        print("check_pr_scope: git diff --name-only failed",
+              file=sys.stderr)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        sys.exit(1)
     return [f for f in result.stdout.splitlines() if f.strip()]
 
 
@@ -172,6 +180,18 @@ def module_from_path(path: str) -> str | None:
         return None
     parts = norm.split("/")
     return parts[1] if len(parts) >= 2 and parts[1] else None
+
+
+# ── label parsing (security: exact match only) ────────────────────
+
+def _parse_labels(raw: str) -> set[str]:
+    """Parse comma-separated labels into a normalized set.
+
+    Uses exact match after strip+lower to prevent substring bypass
+    attacks (e.g. 'not-approved-override' must NOT grant access).
+    """
+    return {label.strip().lower() for label in raw.split(",")
+            if label.strip()}
 
 
 # ── change classification (deterministic, rule-based) ──────────────
@@ -231,11 +251,11 @@ def _check_authorization(change_class: str) -> list[str]:
     if change_class == "normal":
         return []
 
-    pr_labels = os.environ.get("PR_LABELS", "").strip().lower()
+    labels = _parse_labels(os.environ.get("PR_LABELS", ""))
     admin_approved = (
         os.environ.get("CHANGE_CLASS_APPROVED", "").strip().lower()
     )
-    has_label = "approved-override" in pr_labels
+    has_label = "approved-override" in labels
     has_admin = admin_approved == "true"
 
     if not has_label and not has_admin:
@@ -331,7 +351,11 @@ def _emit_audit_log(
     context_binding: str,
     validation: str,
 ) -> None:
-    """Emit structured audit trail for override usage."""
+    """Emit structured audit trail for override usage.
+
+    stdout: pure JSON (machine-readable)
+    stderr: diagnostics (human-readable)
+    """
     if change_class == "normal":
         return
     log = {
@@ -342,7 +366,7 @@ def _emit_audit_log(
         "context_binding": context_binding,
         "validation": validation,
     }
-    print(f"AUDIT_LOG: {json.dumps(log)}")
+    print(json.dumps(log))
 
 
 def check(diff_range: str) -> int:
