@@ -9,7 +9,6 @@ from modules.common.types import BillingProfile
 _lock = threading.Lock()
 _profiles = []
 _cursor = 0
-_initialized = False
 
 _EMAIL_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "icloud.com")
 _PHONE_FIRST_DIGITS = "23456789"
@@ -24,11 +23,10 @@ def _pool_dir():
 
 
 def _reset_state():
-    global _profiles, _cursor, _initialized
+    global _profiles, _cursor
     with _lock:
         _profiles = []
         _cursor = 0
-        _initialized = False
 
 
 def _normalize_zip(zip_code):
@@ -62,8 +60,8 @@ def _parse_profile_line(line):
 
 
 def _load_profiles_locked():
-    global _profiles, _cursor, _initialized
-    if _initialized:
+    global _profiles, _cursor
+    if _profiles:
         return
     pool_dir = _pool_dir()
     profiles = []
@@ -80,7 +78,6 @@ def _load_profiles_locked():
     random.shuffle(profiles)
     _profiles = profiles
     _cursor = 0
-    _initialized = True
 
 
 def _generate_phone():
