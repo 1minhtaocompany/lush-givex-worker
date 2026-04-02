@@ -6,7 +6,7 @@
 |-----------|---------|-------|
 | `spec/core/interface.md` | 2.0 | Core FSM — 4 functions |
 | `spec/integration/interface.md` | 2.0 | Integration — 7 functions (watchdog, billing, cdp) |
-| `spec/interface.md` (aggregated) | 2.0 | Aggregation of core + integration, 10 functions |
+| `spec/interface.md` (aggregated) | 2.0 | Aggregation of core + integration, 11 functions |
 | `spec/fsm.md` | 1.0 | ALLOWED_STATES: ui_lock, success, vbv_3ds, declined |
 | `spec/watchdog.md` | 1.0 | Total Watchdog lifecycle, threading model |
 | `spec/VERSIONING.md` | 1.0 | MAJOR.MINOR versioning rules |
