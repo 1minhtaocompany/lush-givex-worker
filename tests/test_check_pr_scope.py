@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import patch, MagicMock
 import subprocess
 
+import tempfile
+
 from ci.check_pr_scope import (
     _normalize,
     _is_excluded,
@@ -10,6 +12,7 @@ from ci.check_pr_scope import (
     _auto_detect_change_class,
     _check_authorization,
     _check_context_binding,
+    _export_to_github_env,
     module_from_path,
     get_numstat,
     check,
@@ -601,6 +604,27 @@ class ConstantsTests(unittest.TestCase):
         self.assertIn("emergency_override", VALID_CHANGE_CLASSES)
         self.assertIn("spec_sync", VALID_CHANGE_CLASSES)
         self.assertIn("infra_change", VALID_CHANGE_CLASSES)
+
+
+class ExportToGithubEnvTests(unittest.TestCase):
+    """Tests for _export_to_github_env()."""
+
+    def test_writes_to_github_env_file(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env",
+                                         delete=False) as f:
+            env_file = f.name
+        with patch.dict("os.environ", {"GITHUB_ENV": env_file}):
+            _export_to_github_env("CHANGE_CLASS", "spec_sync")
+        with open(env_file) as f:
+            content = f.read()
+        self.assertIn("CHANGE_CLASS=spec_sync\n", content)
+        import os
+        os.unlink(env_file)
+
+    def test_no_op_when_github_env_not_set(self):
+        with patch.dict("os.environ", {}, clear=True):
+            # Should not raise
+            _export_to_github_env("CHANGE_CLASS", "normal")
 
 
 if __name__ == "__main__":

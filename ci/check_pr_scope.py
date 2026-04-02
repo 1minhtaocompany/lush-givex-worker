@@ -401,9 +401,21 @@ def check(diff_range: str) -> int:
     return 0
 
 
+def _export_to_github_env(name: str, value: str) -> None:
+    """Write a variable to $GITHUB_ENV for subsequent workflow steps."""
+    github_env = os.environ.get("GITHUB_ENV")
+    if github_env:
+        with open(github_env, "a", encoding="utf-8") as f:
+            f.write(f"{name}={value}\n")
+
+
 def main() -> int:
     diff_range = resolve_diff_range()
     change_class = _resolve_change_class(diff_range)
+
+    # Export resolved CHANGE_CLASS to GITHUB_ENV so downstream steps
+    # (e.g. check_spec_lock) receive the same value.
+    _export_to_github_env("CHANGE_CLASS", change_class)
 
     # Validate CHANGE_CLASS
     if change_class not in VALID_CHANGE_CLASSES:
