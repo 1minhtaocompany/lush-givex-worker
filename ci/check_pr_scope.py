@@ -171,7 +171,11 @@ def _get_changed_files(diff_range: str) -> list[str]:
         if result.stderr:
             print(result.stderr, file=sys.stderr)
         sys.exit(1)
-    return [f for f in result.stdout.splitlines() if f.strip()]
+    files = [f for f in result.stdout.splitlines() if f.strip()]
+    if not files:
+        print("check_pr_scope: no changed files detected", file=sys.stderr)
+        sys.exit(1)
+    return files
 
 
 def module_from_path(path: str) -> str | None:
