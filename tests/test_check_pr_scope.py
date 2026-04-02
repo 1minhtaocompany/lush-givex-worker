@@ -208,6 +208,48 @@ class AutoDetectChangeClassTests(unittest.TestCase):
             "spec_sync",
         )
 
+    def test_spec_sync_from_title_tag(self):
+        """[spec-sync] in PR title maps to spec_sync regardless of file set."""
+        self.assertEqual(
+            _auto_detect_change_class("[spec-sync] bump interface version", ["modules/fsm/main.py"]),
+            "spec_sync",
+        )
+
+    def test_infra_from_title_tag(self):
+        """[infra] in PR title maps to infra_change regardless of file set."""
+        self.assertEqual(
+            _auto_detect_change_class("[infra] update workflows", ["modules/fsm/main.py"]),
+            "infra_change",
+        )
+
+    def test_title_tag_spec_sync_overrides_file_based_detection(self):
+        """[spec-sync] title tag wins over ci/ files (title priority #2 > file priority #4)."""
+        self.assertEqual(
+            _auto_detect_change_class("[spec-sync] sync spec", ["ci/check_pr_scope.py"]),
+            "spec_sync",
+        )
+
+    def test_title_infra_yields_to_emergency(self):
+        """[emergency] title tag must still win over [infra] (priority #1)."""
+        self.assertEqual(
+            _auto_detect_change_class("[emergency] [infra] hotfix", ["ci/check.py"]),
+            "emergency_override",
+        )
+
+    def test_title_spec_sync_case_insensitive(self):
+        """[spec-sync] detection is case-insensitive."""
+        self.assertEqual(
+            _auto_detect_change_class("[SPEC-SYNC] update", ["modules/fsm/main.py"]),
+            "spec_sync",
+        )
+
+    def test_title_infra_case_insensitive(self):
+        """[infra] detection is case-insensitive."""
+        self.assertEqual(
+            _auto_detect_change_class("[INFRA] update", ["modules/fsm/main.py"]),
+            "infra_change",
+        )
+
     def test_fallback_to_normal(self):
         self.assertEqual(
             _auto_detect_change_class("simple fix", ["modules/fsm/main.py"]),
