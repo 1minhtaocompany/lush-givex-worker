@@ -1,4 +1,13 @@
-# Interface Contract
+# Interface Contract (Aggregated)
+
+spec-version: 1.0
+
+> **Contract Segmentation (v1.0):** Interface contracts have been split into
+> two separate groups. This file aggregates both groups to maintain backward
+> compatibility with the CI pipeline.
+>
+> - **Core (FSM):** [spec/core/interface.md](core/interface.md)
+> - **Integration (Watchdog, Billing, CDP):** [spec/integration/interface.md](integration/interface.md)
 
 ## Module: fsm
 
@@ -6,6 +15,9 @@ Function: add_new_state
 Input:
   - state_name
 Output: State
+Error:
+  - Raise InvalidStateError if state_name is not in ALLOWED_STATES
+  - Raise ValueError if state_name already exists in registry
 
 Function: get_current_state
 Input: None
@@ -15,10 +27,17 @@ Function: transition_to
 Input:
   - target_state
 Output: State
+Error:
+  - Raise InvalidStateError if target_state is not in ALLOWED_STATES
+  - Raise InvalidTransitionError if target_state is not registered
 
 Function: reset_states
 Input: None
 Output: None
+Notes:
+  - Clears registry (_states.clear())
+  - Resets current_state to None
+  - After reset, transition_to will raise InvalidTransitionError
 
 ## Module: watchdog
 

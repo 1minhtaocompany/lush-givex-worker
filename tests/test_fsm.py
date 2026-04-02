@@ -38,6 +38,10 @@ class FSMTests(unittest.TestCase):
         with self.assertRaises(InvalidTransitionError):
             transition_to("ui_lock")
 
+    def test_transition_to_bogus_state_raises_invalid_state_error(self):
+        with self.assertRaises(InvalidStateError):
+            transition_to("bogus")
+
     def test_reset_states_clears_all(self):
         add_new_state("ui_lock")
         transition_to("ui_lock")
