@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch, MagicMock
 import subprocess
@@ -618,7 +619,6 @@ class ExportToGithubEnvTests(unittest.TestCase):
         with open(env_file) as f:
             content = f.read()
         self.assertIn("CHANGE_CLASS=spec_sync\n", content)
-        import os
         os.unlink(env_file)
 
     def test_no_op_when_github_env_not_set(self):
