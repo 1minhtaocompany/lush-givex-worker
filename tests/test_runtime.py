@@ -10,6 +10,7 @@ from integration.runtime import (
     _apply_scale,
     get_active_workers,
     get_status,
+    get_trace_id,
     is_running,
     reset,
     start,
@@ -283,6 +284,77 @@ class TestReset(RuntimeResetMixin, unittest.TestCase):
         self.assertEqual(get_active_workers(), [])
         status = get_status()
         self.assertEqual(status["worker_count"], 0)
+
+
+# ── Observability — trace_id lifecycle ────────────────────────────
+
+
+class TestTraceIdLifecycle(RuntimeResetMixin, unittest.TestCase):
+    def test_trace_id_none_before_start(self):
+        self.assertIsNone(get_trace_id())
+
+    def test_trace_id_generated_on_start(self):
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        tid = get_trace_id()
+        self.assertIsNotNone(tid)
+        self.assertIsInstance(tid, str)
+        self.assertGreater(len(tid), 0)
+        stop(timeout=2)
+
+    def test_trace_id_in_status(self):
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        status = get_status()
+        self.assertIn("trace_id", status)
+        self.assertEqual(status["trace_id"], get_trace_id())
+        stop(timeout=2)
+
+    def test_trace_id_persists_through_stop(self):
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        tid = get_trace_id()
+        stop(timeout=2)
+        self.assertEqual(get_trace_id(), tid)
+
+    def test_trace_id_cleared_on_reset(self):
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        self.assertIsNotNone(get_trace_id())
+        reset()
+        self.assertIsNone(get_trace_id())
+
+    def test_new_trace_id_on_restart(self):
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        tid1 = get_trace_id()
+        stop(timeout=2)
+        reset()
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        tid2 = get_trace_id()
+        self.assertNotEqual(tid1, tid2)
+        stop(timeout=2)
+
+
+class TestStructuredLogFormat(RuntimeResetMixin, unittest.TestCase):
+    def test_log_contains_trace_id(self):
+        with patch.object(runtime._logger, "info") as mock_info:
+            start(lambda _: time.sleep(0.5), interval=0.05)
+            tid = get_trace_id()
+            stop(timeout=2)
+        logged_trace_ids = [
+            call.args[3] for call in mock_info.call_args_list
+            if len(call.args) >= 4
+        ]
+        self.assertTrue(
+            any(tid == t for t in logged_trace_ids),
+            f"trace_id {tid!r} not found in logged args",
+        )
+
+    def test_log_has_six_fields(self):
+        """_log_event produces the 6-field spec format."""
+        with patch.object(runtime._logger, "info") as mock_info:
+            start(lambda _: time.sleep(0.5), interval=0.05)
+            stop(timeout=2)
+        for call in mock_info.call_args_list:
+            fmt = call.args[0]
+            # Format string has 6 %s placeholders
+            self.assertEqual(fmt.count("%s"), 6, f"Expected 6 fields, got: {fmt}")
 
 
 if __name__ == "__main__":
