@@ -361,6 +361,9 @@ class TestFailureModeAudit(RuntimeResetMixin, unittest.TestCase):
         self.assertFalse(result)
         with runtime._lock:
             self.assertNotIn("ghost-1", runtime._stop_requests)
+            # Worker remains in _workers (cleanup happens when thread runs);
+            # manually remove since this thread will never start.
+            runtime._workers.pop("ghost-1", None)
 
     def test_unexpected_exception_logged(self):
         """An unexpected exception in the worker loop must be logged, not silent."""
