@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 import unittest
@@ -73,7 +74,14 @@ class TestStopWorker(RuntimeResetMixin, unittest.TestCase):
 
     def test_stop_running_worker_timeout_keeps_worker_active(self):
         barrier = threading.Event()
-        wid = start_worker(lambda _: barrier.wait(timeout=WORKER_BLOCK_TIMEOUT))
+        started = threading.Event()
+
+        def blocking_task(_):
+            started.set()
+            barrier.wait(timeout=WORKER_BLOCK_TIMEOUT)
+
+        wid = start_worker(blocking_task)
+        started.wait(timeout=2)
         try:
             self.assertFalse(stop_worker(wid, timeout=INSUFFICIENT_TIMEOUT))
             self.assertIn(wid, get_active_workers())
@@ -283,6 +291,202 @@ class TestReset(RuntimeResetMixin, unittest.TestCase):
         self.assertEqual(get_active_workers(), [])
         status = get_status()
         self.assertEqual(status["worker_count"], 0)
+
+
+# ── Phase 6 hardening audit ──────────────────────────────────────
+
+
+class TestHardeningRaceCondition(RuntimeResetMixin, unittest.TestCase):
+    """Verify no race conditions remain in worker lifecycle."""
+
+    def test_concurrent_start_stop_no_crash(self):
+        """Rapid start/stop cycles must not raise RuntimeError."""
+        from integration import runtime
+        runtime._running = True
+        errors = []
+
+        def start_stop():
+            try:
+                wid = start_worker(lambda _: time.sleep(0.01))
+                stop_worker(wid, timeout=1)
+            except RuntimeError as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=start_stop) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        runtime._running = False
+        time.sleep(0.1)
+        self.assertEqual(errors, [], f"Race condition errors: {errors}")
+
+    def test_start_worker_thread_started_under_lock(self):
+        """Thread must be started before the lock is released."""
+        barrier = threading.Event()
+        wid = start_worker(lambda _: barrier.wait(timeout=1))
+        # Thread should already be alive immediately after start_worker
+        with runtime._lock:
+            thread = runtime._workers.get(wid)
+        self.assertIsNotNone(thread)
+        self.assertTrue(thread.is_alive())
+        barrier.set()
+        time.sleep(0.1)
+
+
+class TestHardeningZombieWorker(RuntimeResetMixin, unittest.TestCase):
+    """Verify no zombie workers after crash or stop."""
+
+    def test_crashed_worker_fully_deregistered(self):
+        """A crashed worker must not remain in _workers or _stop_requests."""
+        from integration import runtime
+        runtime._running = True
+        crash_done = threading.Event()
+
+        def crash_fn(_):
+            crash_done.set()
+            raise RuntimeError("crash")
+
+        start_worker(crash_fn)
+        crash_done.wait(timeout=2)
+        time.sleep(0.1)
+        runtime._running = False
+        with runtime._lock:
+            self.assertEqual(len(runtime._workers), 0)
+            self.assertEqual(len(runtime._stop_requests), 0)
+
+    def test_stopped_worker_fully_deregistered(self):
+        """A normally stopped worker must not remain in _workers."""
+        barrier = threading.Event()
+        wid = start_worker(lambda _: barrier.wait(timeout=1))
+        barrier.set()
+        stop_worker(wid, timeout=2)
+        with runtime._lock:
+            self.assertNotIn(wid, runtime._workers)
+            self.assertNotIn(wid, runtime._stop_requests)
+
+
+class TestHardeningLifecycleDeterministic(RuntimeResetMixin, unittest.TestCase):
+    """Validate lifecycle transitions are deterministic."""
+
+    def test_start_stop_start_cycle(self):
+        """Runtime must support clean start → stop → start cycles."""
+        task = lambda _: time.sleep(0.5)
+        self.assertTrue(start(task, interval=0.05))
+        self.assertTrue(is_running())
+        self.assertTrue(stop(timeout=2))
+        self.assertFalse(is_running())
+        # Second cycle
+        self.assertTrue(start(task, interval=0.05))
+        self.assertTrue(is_running())
+        self.assertTrue(stop(timeout=2))
+        self.assertFalse(is_running())
+
+    def test_reset_enables_clean_restart(self):
+        """After reset, all state must be cleared for a clean start."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(0.1)
+        reset()
+        status = get_status()
+        self.assertFalse(status["running"])
+        self.assertEqual(status["worker_count"], 0)
+        self.assertEqual(status["consecutive_rollbacks"], 0)
+        self.assertEqual(get_active_workers(), [])
+
+
+class TestHardeningSilentFailure(RuntimeResetMixin, unittest.TestCase):
+    """Confirm no silent failures exist."""
+
+    def test_task_error_is_recorded(self):
+        """Errors in task_fn must be recorded by monitor."""
+        from integration import runtime
+        runtime._running = True
+        done = threading.Event()
+
+        def failing_fn(_):
+            done.set()
+            raise ValueError("test error")
+
+        monitor.reset()
+        start_worker(failing_fn)
+        done.wait(timeout=2)
+        time.sleep(0.1)
+        runtime._running = False
+        metrics = monitor.get_metrics()
+        self.assertGreater(metrics["error_count"], 0)
+
+    def test_log_event_failure_does_not_crash_worker(self):
+        """If _log_event fails in finally, worker cleanup still completes."""
+        from integration import runtime
+        runtime._running = True
+        done = threading.Event()
+
+        original_log = runtime._log_event
+
+        def broken_log(*args, **kwargs):
+            # Fail on the "stopped" event in finally block
+            if len(args) >= 3 and args[1] == "stopped" and args[2] == "stop":
+                raise RuntimeError("log broken")
+            return original_log(*args, **kwargs)
+
+        def task_fn(_):
+            done.set()
+            raise RuntimeError("exit task")
+
+        with patch("integration.runtime._log_event", side_effect=broken_log):
+            wid = start_worker(task_fn)
+            done.wait(timeout=2)
+            time.sleep(0.2)
+
+        runtime._running = False
+        # Worker must still be cleaned up despite log failure
+        self.assertNotIn(wid, get_active_workers())
+
+
+class TestHardeningLogging(RuntimeResetMixin, unittest.TestCase):
+    """Review logging format and traceability."""
+
+    def test_log_event_format(self):
+        """_log_event must produce structured log output."""
+        import logging
+        handler = logging.handlers.MemoryHandler(capacity=100) if hasattr(logging, 'handlers') else logging.StreamHandler()
+        # Use a simple approach: capture log output
+        records = []
+        test_handler = logging.Handler()
+        test_handler.emit = lambda record: records.append(record)
+        logger = logging.getLogger("integration.runtime")
+        logger.addHandler(test_handler)
+        logger.setLevel(logging.DEBUG)
+        try:
+            runtime._log_event("test-worker", "running", "start", {"key": "val"})
+            self.assertEqual(len(records), 1)
+            msg = records[0].getMessage()
+            self.assertIn("test-worker", msg)
+            self.assertIn("running", msg)
+            self.assertIn("start", msg)
+            # Verify pipe-separated format
+            self.assertGreaterEqual(msg.count("|"), 3)
+        finally:
+            logger.removeHandler(test_handler)
+
+    def test_stop_worker_logs_stop_requested(self):
+        """stop_worker must log a stop_requested event on success."""
+        records = []
+        test_handler = logging.Handler()
+        test_handler.emit = lambda record: records.append(record)
+        logger = logging.getLogger("integration.runtime")
+        logger.addHandler(test_handler)
+        logger.setLevel(logging.DEBUG)
+        try:
+            barrier = threading.Event()
+            wid = start_worker(lambda _: barrier.wait(timeout=1))
+            barrier.set()
+            stop_worker(wid, timeout=2)
+            msgs = [r.getMessage() for r in records]
+            stop_msgs = [m for m in msgs if "stop_requested" in m]
+            self.assertGreater(len(stop_msgs), 0)
+        finally:
+            logger.removeHandler(test_handler)
 
 
 if __name__ == "__main__":
