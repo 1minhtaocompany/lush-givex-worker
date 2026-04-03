@@ -7,8 +7,10 @@ from integration import runtime
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 from integration.runtime import (
+    ALLOWED_STATES,
     _apply_scale,
     get_active_workers,
+    get_state,
     get_status,
     is_running,
     reset,
@@ -92,29 +94,29 @@ class TestApplyScale(RuntimeResetMixin, unittest.TestCase):
 
     def test_scale_up(self):
         from integration import runtime
-        runtime._running = True
+        runtime._state = "RUNNING"
         _apply_scale(3, self._noop)
         self.assertEqual(len(get_active_workers()), 3)
-        runtime._running = False
+        runtime._state = "STOPPED"
         time.sleep(0.1)
 
     def test_scale_down(self):
         from integration import runtime
-        runtime._running = True
+        runtime._state = "RUNNING"
         _apply_scale(3, self._noop)
         self.assertEqual(len(get_active_workers()), 3)
         _apply_scale(1, self._noop)
         self.assertEqual(len(get_active_workers()), 1)
-        runtime._running = False
+        runtime._state = "STOPPED"
         time.sleep(0.1)
 
     def test_scale_to_zero(self):
         from integration import runtime
-        runtime._running = True
+        runtime._state = "RUNNING"
         _apply_scale(2, self._noop)
         _apply_scale(0, self._noop)
         self.assertEqual(len(get_active_workers()), 0)
-        runtime._running = False
+        runtime._state = "STOPPED"
 
 
 # ── Worker crash handling ────────────────────────────────────────
@@ -130,17 +132,17 @@ class TestWorkerCrash(RuntimeResetMixin, unittest.TestCase):
             raise RuntimeError("boom")
 
         from integration import runtime
-        runtime._running = True
+        runtime._state = "RUNNING"
         start_worker(crashing_fn)
         crash_event.wait(timeout=2)
         time.sleep(0.1)
-        runtime._running = False
+        runtime._state = "STOPPED"
         self.assertEqual(get_active_workers(), [])
 
     def test_crash_does_not_stop_other_workers(self):
         """One crashing worker must not kill another."""
         from integration import runtime
-        runtime._running = True
+        runtime._state = "RUNNING"
         good_barrier = threading.Event()
         start_worker(lambda _: good_barrier.wait(timeout=2))
 
@@ -152,7 +154,7 @@ class TestWorkerCrash(RuntimeResetMixin, unittest.TestCase):
         # Good worker should still be in the active list
         self.assertGreaterEqual(len(get_active_workers()), 1)
         good_barrier.set()
-        runtime._running = False
+        runtime._state = "STOPPED"
         time.sleep(0.1)
 
 
@@ -190,6 +192,103 @@ class TestStartStop(RuntimeResetMixin, unittest.TestCase):
             self.assertNotEqual(get_active_workers(), [])
             worker_block.set()
             time.sleep(1.1)
+
+
+# ── Start/Stop race condition audit ──────────────────────────────
+
+
+class TestStartStopRaceCondition(RuntimeResetMixin, unittest.TestCase):
+    """Validate no race conditions between start() and stop()."""
+
+    def test_stopping_state_blocks_start(self):
+        """start() must return False while state is STOPPING."""
+        from integration import runtime
+        gate = threading.Event()
+
+        original_join = threading.Thread.join
+
+        def slow_join(self_thread, timeout=None):
+            gate.wait(timeout=2)
+            original_join(self_thread, timeout=timeout)
+
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        with patch.object(threading.Thread, "join", slow_join):
+            stop_thread = threading.Thread(target=stop, args=(5,))
+            stop_thread.start()
+            time.sleep(0.05)
+            self.assertEqual(get_state(), "STOPPING")
+            self.assertFalse(start(lambda _: None, interval=0.05))
+            gate.set()
+            stop_thread.join(timeout=3)
+
+    def test_no_duplicate_loop_thread_during_stop(self):
+        """No new loop thread must be spawned while STOPPING."""
+        from integration import runtime
+        gate = threading.Event()
+
+        original_join = threading.Thread.join
+
+        def slow_join(self_thread, timeout=None):
+            gate.wait(timeout=2)
+            original_join(self_thread, timeout=timeout)
+
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        with patch.object(threading.Thread, "join", slow_join):
+            stop_thread = threading.Thread(target=stop, args=(5,))
+            stop_thread.start()
+            time.sleep(0.05)
+            self.assertEqual(get_state(), "STOPPING")
+            with runtime._lock:
+                loop_before = runtime._loop_thread
+            self.assertFalse(start(lambda _: None, interval=0.05))
+            with runtime._lock:
+                loop_after = runtime._loop_thread
+            self.assertIs(loop_before, loop_after)
+            gate.set()
+            stop_thread.join(timeout=3)
+
+    def test_concurrent_start_stop_deterministic(self):
+        """Concurrent start+stop must produce deterministic outcome."""
+        for _ in range(10):
+            reset()
+            results = {"start": None, "stop": None}
+            barrier = threading.Barrier(2, timeout=5)
+
+            def do_start():
+                barrier.wait()
+                results["start"] = start(
+                    lambda _: time.sleep(0.5), interval=0.05)
+
+            def do_stop():
+                barrier.wait()
+                results["stop"] = stop(timeout=2)
+
+            start(lambda _: time.sleep(0.5), interval=0.05)
+            t1 = threading.Thread(target=do_start)
+            t2 = threading.Thread(target=do_stop)
+            t1.start(); t2.start()
+            t1.join(timeout=5); t2.join(timeout=5)
+            # Exactly one of start/stop should succeed on the running instance
+            self.assertFalse(results["start"] and results["stop"] is None)
+            # State must be valid
+            self.assertIn(get_state(), ALLOWED_STATES)
+            stop(timeout=2)
+
+    def test_state_transitions_to_stopped_after_stop(self):
+        """State must be STOPPED after stop() completes."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        self.assertEqual(get_state(), "RUNNING")
+        stop(timeout=2)
+        self.assertEqual(get_state(), "STOPPED")
+
+    def test_start_after_stopped(self):
+        """start() must succeed after state reaches STOPPED."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        stop(timeout=2)
+        self.assertEqual(get_state(), "STOPPED")
+        self.assertTrue(start(lambda _: time.sleep(0.5), interval=0.05))
+        self.assertEqual(get_state(), "RUNNING")
+        stop(timeout=2)
 
 
 # ── Runtime loop integration ─────────────────────────────────────
