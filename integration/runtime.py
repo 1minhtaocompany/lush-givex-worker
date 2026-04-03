@@ -144,7 +144,8 @@ def stop(timeout=None):
             return False
         _running = False
         loop_thread = _loop_thread
-    if loop_thread is not None: loop_thread.join(timeout=max(0, deadline - time.monotonic()))
+    if loop_thread is not None:
+        loop_thread.join(timeout=max(0, deadline - time.monotonic()))
     loop_stopped = loop_thread is None or not loop_thread.is_alive()
     with _lock:
         if loop_stopped:

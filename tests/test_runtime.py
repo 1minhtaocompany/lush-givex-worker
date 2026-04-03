@@ -17,6 +17,11 @@ from integration.runtime import (
     stop_worker,
 )
 
+WORKER_BLOCK_TIMEOUT = 1
+CLEANUP_TIMEOUT = 2
+WARMUP_DELAY = 0.2
+INSUFFICIENT_TIMEOUT = 0.01
+
 
 class RuntimeResetMixin:
     def setUp(self):
@@ -67,7 +72,7 @@ class TestStopWorker(RuntimeResetMixin, unittest.TestCase):
 
     def test_stop_running_worker_timeout_keeps_worker_active(self):
         barrier = threading.Event()
-        wid = start_worker(lambda _: barrier.wait(timeout=1))
+        wid = start_worker(lambda _: barrier.wait(timeout=WORKER_BLOCK_TIMEOUT))
         try:
             self.assertFalse(stop_worker(wid, timeout=0))
             self.assertIn(wid, get_active_workers())
@@ -75,7 +80,7 @@ class TestStopWorker(RuntimeResetMixin, unittest.TestCase):
             self.assertTrue(runtime._workers[wid].is_alive())
         finally:
             barrier.set()
-            stop_worker(wid, timeout=2)
+            stop_worker(wid, timeout=CLEANUP_TIMEOUT)
 
 
 # ── Scale up / down ──────────────────────────────────────────────
@@ -178,9 +183,9 @@ class TestStartStop(RuntimeResetMixin, unittest.TestCase):
         worker_block = threading.Event()
         with patch("integration.runtime.rollout.try_scale_up",
                    return_value=(1, "at_max", [])):
-            start(lambda _: worker_block.wait(timeout=1), interval=1)
-            time.sleep(0.2)
-            self.assertFalse(stop(timeout=0.01))
+            start(lambda _: worker_block.wait(timeout=WORKER_BLOCK_TIMEOUT), interval=1)
+            time.sleep(WARMUP_DELAY)
+            self.assertFalse(stop(timeout=INSUFFICIENT_TIMEOUT))
             self.assertFalse(is_running())
             self.assertNotEqual(get_active_workers(), [])
             worker_block.set()
