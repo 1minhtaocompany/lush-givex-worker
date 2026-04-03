@@ -466,13 +466,13 @@ class TestEndToEndDeterminism(_MonitorResetMixin, unittest.TestCase):
                 save_baseline_fn=monitor.save_baseline,
             )
             with patch("modules.monitor.main.get_memory_usage_bytes",
-                        return_value=100):
+                       return_value=100):
                 results.append(rollout.try_scale_up())
             # Unhealthy phase: add errors
             for _ in range(20):
                 monitor.record_error()
             with patch("modules.monitor.main.get_memory_usage_bytes",
-                        return_value=100):
+                       return_value=100):
                 results.append(rollout.try_scale_up())
             return results
 
