@@ -13,6 +13,7 @@ _worker_counter = 0
 _running = False
 _loop_thread = None
 _DEFAULT_LOOP_INTERVAL = 10
+_MIN_LOOP_INTERVAL = 0.1
 _WORKER_TIMEOUT = 30
 _MAX_CONSECUTIVE_ROLLBACKS = 3
 _consecutive_rollbacks = 0
@@ -26,6 +27,18 @@ def _log_event(worker_id, state, action, metrics=None):
     """Log: timestamp | worker_id | state | action | metrics."""
     _logger.info("%s | %s | %s | %s | %s", time.strftime("%Y-%m-%dT%H:%M:%S"),
                  worker_id, state, action, metrics or "")
+def _safe_sleep(interval):
+    try:
+        time.sleep(interval)
+    except (TypeError, ValueError):
+        time.sleep(_MIN_LOOP_INTERVAL)
+def _ensure_rollout_configured():
+    # Avoid overriding test-provided callbacks.
+    with rollout._lock:
+        check_fn = rollout._check_rollback_fn
+        save_fn = rollout._save_baseline_fn
+    if check_fn is None and save_fn is None:
+        rollout.configure(monitor.check_rollback_needed, monitor.save_baseline)
 def _worker_fn(worker_id, task_fn):
     """Run *task_fn* in a loop until the worker is removed or runtime stops."""
     global _pending_restarts
@@ -69,6 +82,9 @@ def stop_worker(worker_id, timeout=None):
     if thread is None:
         return False
     thread.join(timeout=timeout or _WORKER_TIMEOUT)
+    if thread.is_alive():
+        _logger.warning("Worker %s did not stop within timeout", worker_id)
+        return False
     _log_event(worker_id, "stopped", "stop_requested")
     return True
 def get_active_workers():
@@ -110,7 +126,7 @@ def _runtime_loop(task_fn, interval):
                 metrics = monitor.get_metrics()
             except Exception as exc:
                 _log_event("runtime", "warning", "monitor_unavailable", {"error": str(exc)})
-                time.sleep(interval)
+                _safe_sleep(interval)
                 continue
             target, action, reasons = rollout.try_scale_up()
             with _lock:
@@ -128,15 +144,21 @@ def _runtime_loop(task_fn, interval):
         except Exception as exc:
             _log_event("runtime", "error", "loop_error",
                        {"error": str(exc)})
-        time.sleep(interval)
+        _safe_sleep(interval)
 def start(task_fn, interval=None):
     """Start the runtime loop.  Returns True if started, False if already running."""
     global _running, _loop_thread
     interval = interval if interval is not None else _DEFAULT_LOOP_INTERVAL
+    try:
+        if interval <= 0:
+            interval = _MIN_LOOP_INTERVAL
+    except TypeError:
+        interval = _MIN_LOOP_INTERVAL
     with _lock:
         if _running:
             return False
         _running = True
+    _ensure_rollout_configured()
     _loop_thread = threading.Thread(target=_runtime_loop,
                                     args=(task_fn, interval), daemon=True)
     _loop_thread.start()
@@ -152,7 +174,8 @@ def stop(timeout=None):
         _running = False
     if _loop_thread is not None:
         _loop_thread.join(timeout=timeout)
-        _loop_thread = None
+        if not _loop_thread.is_alive():
+            _loop_thread = None
     with _lock:
         wids = list(_workers.keys())
     for wid in wids:
