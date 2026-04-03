@@ -87,10 +87,6 @@ class TestScaleUp(RolloutResetMixin, unittest.TestCase):
 
 class TestRollback(RolloutResetMixin, unittest.TestCase):
     def test_rollback_on_bad_metrics(self):
-        configure(
-            check_rollback_fn=lambda: ["error rate 50.0% exceeds 5%"],
-            save_baseline_fn=lambda: None,
-        )
         # Scale up first (configure with healthy, then switch to bad)
         reset()
         configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
