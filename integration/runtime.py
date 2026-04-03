@@ -58,7 +58,8 @@ def start_worker(task_fn):
         wid = f"worker-{_worker_counter}"
         t = threading.Thread(target=_worker_fn, args=(wid, task_fn), daemon=True)
         _workers[wid] = t
-    t.start(); return wid
+    t.start()
+    return wid
 def stop_worker(worker_id, timeout=None):
     """Remove a worker from the active set and join its thread."""
     with _lock:
@@ -66,7 +67,10 @@ def stop_worker(worker_id, timeout=None):
         if thread is None:
             return False
         _stop_requests.add(worker_id)
-    thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
+    try:
+        thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
+    except RuntimeError:
+        return False
     if thread.is_alive():
         _logger.warning("Worker %s did not stop within timeout", worker_id)
         return False

@@ -285,5 +285,133 @@ class TestReset(RuntimeResetMixin, unittest.TestCase):
         self.assertEqual(status["worker_count"], 0)
 
 
+# ── Worker registry concurrency audit ────────────────────────────
+
+
+class TestRegistryConcurrency(RuntimeResetMixin, unittest.TestCase):
+    """Phase 6 — verify _workers dict integrity under concurrency."""
+
+    CONCURRENCY = 20
+
+    def test_concurrent_spawn_unique_ids(self):
+        """Concurrent start_worker calls must produce unique worker IDs."""
+        barrier = threading.Event()
+        results: list = []
+        errors: list = []
+
+        def spawn():
+            try:
+                wid = start_worker(lambda _: barrier.wait(timeout=2))
+                results.append(wid)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=spawn) for _ in range(self.CONCURRENCY)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        barrier.set()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), self.CONCURRENCY)
+        self.assertEqual(len(set(results)), self.CONCURRENCY,
+                         "Duplicate worker IDs detected")
+
+    def test_concurrent_spawn_registry_integrity(self):
+        """All concurrently spawned workers must appear in the registry."""
+        barrier = threading.Event()
+        ids: list = []
+
+        def spawn():
+            ids.append(start_worker(lambda _: barrier.wait(timeout=2)))
+
+        threads = [threading.Thread(target=spawn) for _ in range(self.CONCURRENCY)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        active = get_active_workers()
+        for wid in ids:
+            self.assertIn(wid, active)
+        self.assertEqual(len(active), self.CONCURRENCY)
+        barrier.set()
+
+    def test_concurrent_add_remove(self):
+        """Interleaved start/stop must not corrupt the registry."""
+        barrier = threading.Event()
+        spawned: list = []
+
+        # Pre-spawn workers to stop later
+        for _ in range(self.CONCURRENCY):
+            spawned.append(start_worker(lambda _: barrier.wait(timeout=2)))
+
+        errors: list = []
+
+        def stop_one(wid):
+            try:
+                barrier.set()
+                stop_worker(wid, timeout=2)
+            except Exception as exc:
+                errors.append(exc)
+
+        def add_one():
+            try:
+                start_worker(lambda _: barrier.wait(timeout=2))
+            except Exception as exc:
+                errors.append(exc)
+
+        # Concurrently remove half and add new ones
+        half = self.CONCURRENCY // 2
+        stop_threads = [threading.Thread(target=stop_one, args=(spawned[i],))
+                        for i in range(half)]
+        add_threads = [threading.Thread(target=add_one) for _ in range(half)]
+        all_threads = stop_threads + add_threads
+        for t in all_threads:
+            t.start()
+        for t in all_threads:
+            t.join(timeout=5)
+
+        self.assertEqual(errors, [])
+        # Registry must not contain any removed workers that were stopped
+        active = get_active_workers()
+        for wid in spawned[:half]:
+            self.assertNotIn(wid, active)
+        barrier.set()
+
+    def test_registry_reflects_runtime_after_completion(self):
+        """After workers exit, registry must accurately reflect state."""
+        from integration import runtime
+        runtime._running = True
+        gate = threading.Event()
+
+        call_count = 0
+        count_lock = threading.Lock()
+
+        def exit_after_signal(_):
+            nonlocal call_count
+            gate.wait(timeout=2)
+            with count_lock:
+                call_count += 1
+            raise RuntimeError("done")
+
+        ids = [start_worker(exit_after_signal) for _ in range(5)]
+        # All should be registered
+        self.assertEqual(len(get_active_workers()), 5)
+        for wid in ids:
+            self.assertIn(wid, get_active_workers())
+
+        # Signal workers to exit via exception path
+        gate.set()
+        time.sleep(0.3)
+
+        # All should be deregistered via _worker_fn finally block
+        self.assertEqual(get_active_workers(), [])
+        status = get_status()
+        self.assertEqual(status["worker_count"], 0)
+        runtime._running = False
+
+
 if __name__ == "__main__":
     unittest.main()
