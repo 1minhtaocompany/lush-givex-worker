@@ -6,7 +6,7 @@ Thread-safe via threading.Lock.  No cross-module imports.
 
 import threading
 import time
-
+import logging
 
 _lock = threading.Lock()
 
@@ -85,7 +85,9 @@ def get_memory_usage_bytes():
                     # Value is in kB
                     return int(line.split()[1]) * 1024
     except (OSError, IndexError, ValueError):
-        pass
+        logging.getLogger(__name__).debug(
+            "Failed to read VmRSS from /proc/self/status; returning 0", exc_info=True
+        )
     return 0
 
 
