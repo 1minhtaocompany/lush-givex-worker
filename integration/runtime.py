@@ -5,8 +5,8 @@ import time
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 _logger = logging.getLogger(__name__)
-_lock = threading.Lock()
 ALLOWED_STATES = {"INIT", "RUNNING", "STOPPING", "STOPPED"}
+_lock = threading.Lock()
 _state = "INIT"
 _workers: dict = {}
 _worker_counter = 0
@@ -120,29 +120,30 @@ def _runtime_loop(task_fn, interval):
         _safe_sleep(interval)
 def start(task_fn, interval=None):
     """Start the runtime loop. Returns True if started, False if already running."""
-    global _state, _loop_thread
+    global _running, _loop_thread, _state
     interval = _DEFAULT_LOOP_INTERVAL if interval is None else interval
     try:
         if interval <= 0: interval = _MIN_LOOP_INTERVAL
     except TypeError:
         interval = _MIN_LOOP_INTERVAL
     with _lock:
-        if _state in ("RUNNING", "STOPPING"):
+        if _state not in ("INIT", "STOPPED"):
             return False
         if _loop_thread is not None and _loop_thread.is_alive(): return False
         _ensure_rollout_configured()
         _loop_thread = threading.Thread(target=_runtime_loop, args=(task_fn, interval), daemon=True)
-        _state = "RUNNING"; _loop_thread.start()
+        _running = True; _state = "RUNNING"; _loop_thread.start()
     _log_event("runtime", "started", "runtime_start")
     return True
 def stop(timeout=None):
     """Stop the runtime loop and all active workers."""
-    global _state, _loop_thread
+    global _running, _loop_thread, _state
     timeout = _WORKER_TIMEOUT if timeout is None else timeout
     deadline = time.monotonic() + timeout
     with _lock:
         if _state != "RUNNING":
             return False
+        _running = False
         _state = "STOPPING"
         loop_thread = _loop_thread
     if loop_thread is not None:
@@ -173,8 +174,8 @@ def get_status():
         return {"running": _state == "RUNNING", "state": _state, "active_workers": list(_workers.keys()), "worker_count": len(_workers), "consecutive_rollbacks": _consecutive_rollbacks}
 def reset():
     """Reset all runtime state. Intended for testing."""
-    global _state, _loop_thread, _workers, _worker_counter, _consecutive_rollbacks, _pending_restarts
+    global _running, _loop_thread, _workers, _worker_counter, _consecutive_rollbacks, _pending_restarts, _state
     stop(timeout=2)
     with _lock:
-        _state = "INIT"; _loop_thread = None; _workers = {}; _worker_counter = 0
+        _running = False; _state = "INIT"; _loop_thread = None; _workers = {}; _worker_counter = 0
         _consecutive_rollbacks = 0; _pending_restarts = 0; _stop_requests.clear()
