@@ -1,7 +1,7 @@
 import threading
 import time
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
