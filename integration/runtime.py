@@ -31,21 +31,29 @@ def _ensure_rollout_configured():
         rollout.configure(monitor.check_rollback_needed, monitor.save_baseline)
 def _worker_fn(worker_id, task_fn):
     global _pending_restarts
-    _log_event(worker_id, "running", "start")
     try:
+        _log_event(worker_id, "running", "start")
         while True:
             with _lock:
                 if _should_stop_worker(worker_id):
                     break
             try:
                 task_fn(worker_id)
-                monitor.record_success()
+                try:
+                    monitor.record_success()
+                except Exception as mon_exc:
+                    _log_event(worker_id, "warning", "monitor_record_failed", {"error": str(mon_exc)})
             except Exception as exc:
-                monitor.record_error()
+                try:
+                    monitor.record_error()
+                except Exception as mon_exc:
+                    _log_event(worker_id, "warning", "monitor_record_failed", {"error": str(mon_exc)})
                 with _lock:
                     if worker_id in _workers and worker_id not in _stop_requests: _pending_restarts += 1
                 _log_event(worker_id, "error", "task_failed", {"error": str(exc)})
                 break
+    except Exception as exc:
+        _logger.error("Worker %s unexpected error: %s", worker_id, exc)
     finally:
         with _lock:
             _stop_requests.discard(worker_id); _workers.pop(worker_id, None)
@@ -66,7 +74,13 @@ def stop_worker(worker_id, timeout=None):
         if thread is None:
             return False
         _stop_requests.add(worker_id)
-    thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
+    try:
+        thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
+    except RuntimeError:
+        _logger.warning("Worker %s: cannot join thread (not started)", worker_id)
+        with _lock:
+            _stop_requests.discard(worker_id)
+        return False
     if thread.is_alive():
         _logger.warning("Worker %s did not stop within timeout", worker_id)
         return False

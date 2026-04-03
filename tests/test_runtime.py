@@ -285,5 +285,138 @@ class TestReset(RuntimeResetMixin, unittest.TestCase):
         self.assertEqual(status["worker_count"], 0)
 
 
+# ── Failure mode audit ────────────────────────────────────────────
+
+
+class TestFailureModeAudit(RuntimeResetMixin, unittest.TestCase):
+    """Phase 6: ensure no silent failures across crash, timeout, and exceptions."""
+
+    def test_crash_with_monitor_error_still_cleans_up(self):
+        """Worker must be deregistered even when monitor.record_error fails."""
+        crash_event = threading.Event()
+
+        def crashing_fn(_):
+            crash_event.set()
+            raise RuntimeError("task boom")
+
+        from integration import runtime
+        runtime._running = True
+        with patch("integration.runtime.monitor") as mock_mon:
+            mock_mon.record_error.side_effect = RuntimeError("monitor boom")
+            wid = start_worker(crashing_fn)
+            crash_event.wait(timeout=2)
+            time.sleep(0.15)
+        runtime._running = False
+        self.assertNotIn(wid, get_active_workers())
+
+    def test_crash_with_monitor_error_still_logs_task_error(self):
+        """Original task error must still be logged even if monitor fails."""
+        crash_event = threading.Event()
+
+        def crashing_fn(_):
+            crash_event.set()
+            raise RuntimeError("real task error")
+
+        from integration import runtime
+        runtime._running = True
+        with patch("integration.runtime.monitor") as mock_mon, \
+             patch("integration.runtime._log_event") as mock_log:
+            mock_mon.record_error.side_effect = RuntimeError("monitor dead")
+            start_worker(crashing_fn)
+            crash_event.wait(timeout=2)
+            time.sleep(0.15)
+        runtime._running = False
+        logged_actions = [c[0][2] for c in mock_log.call_args_list]
+        self.assertIn("task_failed", logged_actions)
+
+    def test_success_with_monitor_failure_continues_worker(self):
+        """Worker must survive monitor.record_success failure and keep running."""
+        call_count = []
+        barrier = threading.Event()
+
+        def task_fn(_):
+            call_count.append(1)
+            if len(call_count) >= 3:
+                barrier.set()
+
+        from integration import runtime
+        runtime._running = True
+        with patch("integration.runtime.monitor") as mock_mon:
+            mock_mon.record_success.side_effect = RuntimeError("monitor boom")
+            start_worker(task_fn)
+            barrier.wait(timeout=2)
+        runtime._running = False
+        time.sleep(0.15)
+        self.assertGreaterEqual(len(call_count), 3,
+                                "Worker should keep running despite monitor failure")
+
+    def test_stop_worker_unstarted_thread(self):
+        """stop_worker must handle a thread registered but not yet started."""
+        from integration import runtime
+        t = threading.Thread(target=lambda: None, daemon=True)
+        with runtime._lock:
+            runtime._workers["ghost-1"] = t
+        # Thread not started – join() would raise RuntimeError
+        result = stop_worker("ghost-1", timeout=1)
+        self.assertFalse(result)
+        with runtime._lock:
+            self.assertNotIn("ghost-1", runtime._stop_requests)
+
+    def test_unexpected_exception_logged(self):
+        """An unexpected exception in the worker loop must be logged, not silent."""
+        from integration import runtime
+        runtime._running = True
+        with patch("integration.runtime._log_event",
+                    side_effect=RuntimeError("log broken")), \
+             patch.object(runtime._logger, "error") as mock_err:
+            start_worker(lambda _: None)
+            time.sleep(0.15)
+        runtime._running = False
+        # The outer except block should have called _logger.error
+        self.assertTrue(mock_err.called,
+                        "Unexpected exception must be logged via _logger.error")
+
+    def test_timeout_stop_deterministic_state(self):
+        """After stop(timeout=...) the runtime must be in a consistent state."""
+        worker_block = threading.Event()
+        with patch("integration.runtime.rollout.try_scale_up",
+                    return_value=(1, "at_max", [])):
+            start(lambda _: worker_block.wait(timeout=WORKER_BLOCK_TIMEOUT),
+                  interval=1)
+            time.sleep(WARMUP_DELAY)
+            stop(timeout=INSUFFICIENT_TIMEOUT)
+        # _running must be False regardless of whether workers finished
+        self.assertFalse(is_running())
+        # Status must be consistent with is_running
+        status = get_status()
+        self.assertFalse(status["running"])
+        worker_block.set()
+        time.sleep(0.2)
+
+    def test_crash_recovery_state(self):
+        """After a worker crash the system must recover to expected state."""
+        crash_event = threading.Event()
+        call_count = {"n": 0}
+
+        def task_fn(_):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                crash_event.set()
+                raise RuntimeError("boom")
+            time.sleep(0.5)
+
+        with patch("integration.runtime.rollout.try_scale_up",
+                    return_value=(1, "at_max", [])):
+            start(task_fn, interval=0.05)
+            crash_event.wait(timeout=2)
+            time.sleep(0.4)
+            # System should have restarted the worker
+            status = get_status()
+            self.assertTrue(status["running"])
+            self.assertGreater(call_count["n"], 1,
+                               "Worker should have been restarted after crash")
+            stop(timeout=2)
+
+
 if __name__ == "__main__":
     unittest.main()
