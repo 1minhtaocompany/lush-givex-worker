@@ -389,10 +389,12 @@ class TestStartStopRace(RuntimeResetMixin, unittest.TestCase):
 
     def test_no_duplicate_loop_thread_during_stopping(self):
         """_loop_thread must not be replaced while state is STOPPING."""
-        start(lambda _: time.sleep(0.5), interval=0.05)
+        started = start(lambda _: time.sleep(0.5), interval=0.05)
+        self.assertTrue(started)
         time.sleep(0.1)
         with runtime._lock:
             runtime._state = "STOPPING"
+            self.assertIsNotNone(runtime._loop_thread)
             original_thread = runtime._loop_thread
         # Attempt start while STOPPING — must be rejected
         self.assertFalse(start(lambda _: None, interval=0.05))
@@ -402,7 +404,7 @@ class TestStartStopRace(RuntimeResetMixin, unittest.TestCase):
         stop(timeout=2)
 
     def test_concurrent_start_stop_deterministic(self):
-        """start() and stop() racing from separate threads — at most one wins each iteration."""
+        """Racing start() vs stop() — if both succeed, runtime must not remain RUNNING."""
         for _ in range(10):
             start_result = [None]
             stop_result = [None]
@@ -422,9 +424,15 @@ class TestStartStopRace(RuntimeResetMixin, unittest.TestCase):
             t2.start()
             t1.join(timeout=5)
             t2.join(timeout=5)
-            # Mutual exclusion: start() and stop() must not both succeed
-            # while leaving the runtime RUNNING — that would mean stop()
-            # claimed it stopped a lifecycle that is still active.
+            # Assert threads actually completed (not timed-out)
+            self.assertFalse(t1.is_alive(), "start thread did not finish")
+            self.assertFalse(t2.is_alive(), "stop thread did not finish")
+            # Assert results are booleans, not None (threads ran their targets)
+            self.assertIsInstance(start_result[0], bool)
+            self.assertIsInstance(stop_result[0], bool)
+            # Mutual exclusion: if both start() and stop() claim success,
+            # the runtime must NOT be left in RUNNING — that would mean
+            # stop() reported success while the lifecycle is still active.
             if start_result[0] and stop_result[0]:
                 self.assertNotEqual(get_state(), "RUNNING")
             # Clean up for next iteration
