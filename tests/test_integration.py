@@ -51,6 +51,17 @@ class InitializeCycleTests(unittest.TestCase):
         initialize_cycle()
         self.assertIsNone(get_current_state())
 
+    def test_configures_rollout_with_monitor_callbacks(self):
+        with (
+            patch("integration.orchestrator.rollout") as mock_rollout,
+            patch("integration.orchestrator.monitor") as mock_monitor,
+        ):
+            initialize_cycle()
+        mock_rollout.configure.assert_called_once_with(
+            mock_monitor.check_rollback_needed,
+            mock_monitor.save_baseline,
+        )
+
 
 class HandleOutcomeTests(unittest.TestCase):
     def test_none_state_returns_retry(self):

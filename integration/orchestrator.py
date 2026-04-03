@@ -10,6 +10,8 @@ import threading
 from modules.billing import main as billing
 from modules.cdp import main as cdp
 from modules.fsm import main as fsm
+from modules.monitor import main as monitor
+from modules.rollout import main as rollout
 from modules.watchdog import main as watchdog
 
 _FSM_STATES = ("ui_lock", "success", "vbv_3ds", "declined")
@@ -20,6 +22,7 @@ _lock = threading.Lock()
 
 def initialize_cycle():
     """Reset FSM registry and register all valid states for a new cycle."""
+    rollout.configure(monitor.check_rollback_needed, monitor.save_baseline)
     fsm.reset_states()
     for state_name in _FSM_STATES:
         fsm.add_new_state(state_name)
