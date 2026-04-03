@@ -67,7 +67,9 @@ def stop_worker(worker_id, timeout=None):
             return False
         _stop_requests.add(worker_id)
     thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
-    if thread.is_alive(): _logger.warning("Worker %s did not stop within timeout", worker_id); return False
+    if thread.is_alive():
+        _logger.warning("Worker %s did not stop within timeout", worker_id)
+        return False
     with _lock:
         _stop_requests.discard(worker_id); _workers.pop(worker_id, None)
     _log_event(worker_id, "stopped", "stop_requested")
