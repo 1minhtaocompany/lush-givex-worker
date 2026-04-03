@@ -594,5 +594,131 @@ class TestLifecycleStateMachine(RuntimeResetMixin, unittest.TestCase):
         self.assertEqual(get_state(), "INIT")
 
 
+class TestZombieWorkerCleanup(RuntimeResetMixin, unittest.TestCase):
+    """Validate no zombie workers remain across stop/timeout/crash scenarios."""
+
+    def _poll_until(self, predicate, timeout=CLEANUP_TIMEOUT, interval=0.05):
+        """Poll *predicate* until it returns True or *timeout* expires."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(interval)
+        return predicate()
+
+    def test_timeout_worker_eventually_cleaned_up(self):
+        """Worker cleans up from _workers after its blocking task completes."""
+        barrier = threading.Event()
+        wid = start_worker(lambda _: barrier.wait(timeout=WORKER_BLOCK_TIMEOUT))
+        with runtime._lock:
+            worker_thread = runtime._workers[wid]
+        # Force a timeout on stop
+        stop_result = stop_worker(wid, timeout=INSUFFICIENT_TIMEOUT)
+        self.assertFalse(stop_result)
+        self.assertNotIn(wid, get_active_workers())
+        # Let the blocking task finish naturally and verify the thread exits
+        barrier.set()
+        worker_thread.join(timeout=CLEANUP_TIMEOUT)
+        self.assertFalse(worker_thread.is_alive())
+
+    def test_stop_requests_cleaned_after_timeout_worker_exits(self):
+        """No stale _stop_requests entries after timed-out worker exits."""
+        barrier = threading.Event()
+        wid = start_worker(lambda _: barrier.wait(timeout=WORKER_BLOCK_TIMEOUT))
+        with runtime._lock:
+            worker_thread = runtime._workers[wid]
+        stop_worker(wid, timeout=INSUFFICIENT_TIMEOUT)
+        barrier.set()
+        worker_thread.join(timeout=CLEANUP_TIMEOUT)
+        with runtime._lock:
+            self.assertNotIn(wid, runtime._stop_requests)
+
+    def test_multiple_crashes_no_zombies(self):
+        """5 concurrent crashes all deregister cleanly."""
+        events = []
+        for _ in range(5):
+            ev = threading.Event()
+            events.append(ev)
+
+            def crash_fn(_, e=ev):
+                e.set()
+                raise RuntimeError("crash")
+
+            start_worker(crash_fn)
+        for ev in events:
+            ev.wait(timeout=2)
+        self.assertTrue(
+            self._poll_until(lambda: get_active_workers() == []),
+            "crashed workers still in registry",
+        )
+
+    def test_crash_cleans_stop_requests(self):
+        """Crash with pending stop request leaves no stale entry."""
+        gate = threading.Event()
+
+        def crash_fn(_):
+            gate.wait(timeout=2)
+            raise RuntimeError("boom")
+
+        wid = start_worker(crash_fn)
+        # Add a stop request before the crash to simulate stop racing with crash
+        with runtime._lock:
+            runtime._stop_requests.add(wid)
+        gate.set()
+        self.assertTrue(
+            self._poll_until(lambda: wid not in get_active_workers()),
+            "crashed worker still in registry",
+        )
+        with runtime._lock:
+            self.assertNotIn(wid, runtime._stop_requests)
+            self.assertNotIn(wid, runtime._workers)
+
+    def test_stop_runtime_timeout_eventual_cleanup(self):
+        """stop() timeout returns False and the original worker thread later exits."""
+        barrier = threading.Event()
+        with patch("integration.runtime.rollout.try_scale_up",
+                   return_value=(1, "at_max", [])):
+            start(lambda _: barrier.wait(timeout=WORKER_BLOCK_TIMEOUT), interval=60)
+            time.sleep(WARMUP_DELAY)
+            with runtime._lock:
+                self.assertEqual(len(runtime._workers), 1)
+                worker_thread = next(iter(runtime._workers.values()))
+            self.assertIsInstance(worker_thread, threading.Thread)
+            # Stop with very short timeout — may not join all workers yet.
+            self.assertFalse(stop(timeout=INSUFFICIENT_TIMEOUT))
+            barrier.set()
+            worker_thread.join(timeout=CLEANUP_TIMEOUT)
+            self.assertFalse(worker_thread.is_alive())
+
+    def test_start_worker_thread_failure_no_zombie(self):
+        """thread.start() failure leaves no zombie in _workers."""
+        with patch.object(threading.Thread, "start", side_effect=RuntimeError("no resources")):
+            with self.assertRaises(RuntimeError):
+                start_worker(lambda _: None)
+        self.assertEqual(get_active_workers(), [])
+
+    def test_concurrent_start_stop_no_zombies(self):
+        """10 concurrent start/stop threads leave consistent registry."""
+        errors = []
+
+        def start_stop_cycle():
+            try:
+                wid = start_worker(lambda _: time.sleep(0.01))
+                stop_worker(wid, timeout=2)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=start_stop_cycle) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        self.assertEqual(errors, [])
+        self.assertTrue(
+            self._poll_until(lambda: get_active_workers() == []),
+            "workers still in registry after concurrent start/stop",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
