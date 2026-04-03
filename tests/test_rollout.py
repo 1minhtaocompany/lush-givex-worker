@@ -148,7 +148,7 @@ class TestRollback(RolloutResetMixin, unittest.TestCase):
         for _ in range(10):
             monitor.record_success()
         evaluate()
-        self.assertTrue(len(get_rollback_reasons()) > 0)
+        self.assertGreater(len(get_rollback_reasons()), 0)
         rollback()
         self.assertEqual(get_rollback_reasons(), [])
 
