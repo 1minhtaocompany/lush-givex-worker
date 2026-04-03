@@ -19,10 +19,11 @@ _MAX_CONSECUTIVE_ROLLBACKS = 3
 _consecutive_rollbacks = 0
 _pending_restarts = 0
 _stop_requests = set()
+_NO_TRACE = "no-trace"
 def _should_stop_worker(worker_id):
     return worker_id not in _workers or worker_id in _stop_requests or (not _running and _loop_thread is not None)
 def _log_event(worker_id, state, action, metrics=None):
-    _logger.info("%s | %s | %s | %s | %s | %s", time.strftime("%Y-%m-%dT%H:%M:%S"), worker_id, _trace_id or "no-trace", state, action, metrics or "")
+    _logger.info("%s | %s | %s | %s | %s | %s", time.strftime("%Y-%m-%dT%H:%M:%S"), worker_id, _trace_id or _NO_TRACE, state, action, metrics or "")
 def _safe_sleep(interval):
     try: time.sleep(interval)
     except (TypeError, ValueError): time.sleep(_MIN_LOOP_INTERVAL)
