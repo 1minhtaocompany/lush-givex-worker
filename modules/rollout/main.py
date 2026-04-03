@@ -1,9 +1,4 @@
-"""Rollout system — progressive worker scaling with automatic rollback.
-
-Scales workers in steps: 1 → 3 → 5 → 10.
-Uses callback-based integration with monitor (no cross-module imports).
-Thread-safe via threading.Lock.
-"""
+"""Rollout system for progressive worker scaling with automatic rollback."""
 
 import logging
 import threading
