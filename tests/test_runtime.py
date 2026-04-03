@@ -268,8 +268,8 @@ class TestStartStopRaceCondition(RuntimeResetMixin, unittest.TestCase):
             t2 = threading.Thread(target=do_stop)
             t1.start(); t2.start()
             t1.join(timeout=5); t2.join(timeout=5)
-            # Exactly one of start/stop should succeed on the running instance
-            self.assertFalse(results["start"] and results["stop"] is None)
+            # Both start and stop must not both succeed on the same instance
+            self.assertFalse(results["start"] and results["stop"])
             # State must be valid
             self.assertIn(get_state(), ALLOWED_STATES)
             stop(timeout=2)
