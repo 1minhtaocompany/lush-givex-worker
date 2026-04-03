@@ -102,6 +102,7 @@ def try_scale_up():
 
         _current_step_index += 1
         new_count = SCALE_STEPS[_current_step_index]
+        new_step = _current_step_index
 
     # Save baseline outside the lock
     if save_fn is not None:
@@ -110,7 +111,7 @@ def try_scale_up():
     _logger.info(
         "Scaled up to %d workers (step %d/%d)",
         new_count,
-        _current_step_index + 1,
+        new_step + 1,
         len(SCALE_STEPS),
     )
     return new_count, "scaled_up", []
