@@ -113,8 +113,8 @@ def _runtime_loop(task_fn, interval):
         try:
             try:
                 metrics = monitor.get_metrics()
-            except Exception:
-                _log_event("runtime", "warning", "monitor_unavailable")
+            except Exception as exc:
+                _log_event("runtime", "warning", "monitor_unavailable", {"error": str(exc)})
                 time.sleep(interval)
                 continue
             target, action, reasons = rollout.try_scale_up()
