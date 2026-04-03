@@ -19,6 +19,7 @@ _consecutive_rollbacks = 0
 _pending_restarts = 0
 
 def _should_stop_worker(worker_id):
+    """Standalone workers stop only when removed; runtime workers also stop on shutdown."""
     return worker_id not in _workers or (not _running and _loop_thread is not None)
 
 def _log_event(worker_id, state, action, metrics=None):
@@ -41,6 +42,7 @@ def _worker_fn(worker_id, task_fn):
                 monitor.record_error()
                 with _lock:
                     if worker_id in _workers:
+                        _workers.pop(worker_id, None)
                         _pending_restarts += 1
                 _log_event(worker_id, "error", "task_failed",
                            {"error": str(exc)})
@@ -80,7 +82,6 @@ def _apply_scale(target_count, task_fn):
         current_ids = list(_workers.keys())
     current_count = len(current_ids)
     if target_count > current_count:
-        restarted = 0
         with _lock:
             restarted = min(_pending_restarts, target_count - current_count)
             _pending_restarts -= restarted
