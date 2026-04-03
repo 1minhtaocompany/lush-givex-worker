@@ -152,6 +152,15 @@ class TestForceRollback(RolloutResetMixin, unittest.TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["reasons"], ["manual override"])
 
+    def test_rollback_history_isolation(self):
+        force_rollback("manual override")
+        history = get_rollback_history()
+        history[0]["reasons"].append("mutated")
+        history[0]["from_step"] = 99
+        fresh_history = get_rollback_history()
+        self.assertEqual(fresh_history[0]["reasons"], ["manual override"])
+        self.assertEqual(fresh_history[0]["from_step"], 0)
+
 
 class TestCheckHealth(RolloutResetMixin, unittest.TestCase):
     def test_healthy_returns_empty(self):
@@ -220,6 +229,35 @@ class TestThreadSafety(RolloutResetMixin, unittest.TestCase):
         idx = get_current_step_index()
         self.assertGreaterEqual(idx, 0)
         self.assertLess(idx, len(SCALE_STEPS))
+
+    def test_concurrent_try_scale_up_does_not_exceed_max(self):
+        errors = []
+        actions = []
+        thread_count = 8
+        barrier = threading.Barrier(thread_count)
+
+        def check_healthy():
+            barrier.wait()
+            return []
+
+        configure(check_rollback_fn=check_healthy, save_baseline_fn=lambda: None)
+
+        def scale_worker():
+            try:
+                actions.append(try_scale_up()[1])
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=scale_worker) for _ in range(thread_count)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertLessEqual(get_current_step_index(), len(SCALE_STEPS) - 1)
+        self.assertEqual(get_current_workers(), SCALE_STEPS[-1])
+        self.assertTrue(all(action in ("scaled_up", "at_max") for action in actions))
 
 
 class TestReset(RolloutResetMixin, unittest.TestCase):

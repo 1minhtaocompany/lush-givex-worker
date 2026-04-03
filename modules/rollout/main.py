@@ -78,6 +78,7 @@ def try_scale_up():
 
         check_fn = _check_rollback_fn
         save_fn = _save_baseline_fn
+        step_index = _current_step_index
 
     # Call callbacks outside the lock to avoid holding it during I/O
     reasons = check_fn() if check_fn is not None else []
@@ -99,6 +100,13 @@ def try_scale_up():
                 "; ".join(reasons),
             )
             return SCALE_STEPS[_current_step_index], "rollback", reasons
+
+        if _current_step_index != step_index:
+            if _current_step_index >= len(SCALE_STEPS) - 1:
+                return SCALE_STEPS[_current_step_index], "at_max", []
+            step_index = _current_step_index
+        if step_index >= len(SCALE_STEPS) - 1:
+            return SCALE_STEPS[step_index], "at_max", []
 
         _current_step_index += 1
         new_count = SCALE_STEPS[_current_step_index]
@@ -162,7 +170,14 @@ def force_rollback(reason="manual"):
 def get_rollback_history():
     """Return a copy of the rollback event history."""
     with _lock:
-        return list(_rollback_history)
+        return [
+            {
+                "from_step": entry["from_step"],
+                "to_step": entry["to_step"],
+                "reasons": list(entry["reasons"]),
+            }
+            for entry in _rollback_history
+        ]
 
 
 def get_status():
