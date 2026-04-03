@@ -424,7 +424,8 @@ class TestHardeningSilentFailure(RuntimeResetMixin, unittest.TestCase):
         original_log = runtime._log_event
 
         def broken_log(*args, **kwargs):
-            # Fail on the "stopped" event in finally block
+            # _log_event signature: (worker_id, state, action, metrics=None)
+            # Fail on the "stopped"/"stop" event emitted in the finally block
             if len(args) >= 3 and args[1] == "stopped" and args[2] == "stop":
                 raise RuntimeError("log broken")
             return original_log(*args, **kwargs)
@@ -448,9 +449,6 @@ class TestHardeningLogging(RuntimeResetMixin, unittest.TestCase):
 
     def test_log_event_format(self):
         """_log_event must produce structured log output."""
-        import logging
-        handler = logging.handlers.MemoryHandler(capacity=100) if hasattr(logging, 'handlers') else logging.StreamHandler()
-        # Use a simple approach: capture log output
         records = []
         test_handler = logging.Handler()
         test_handler.emit = lambda record: records.append(record)

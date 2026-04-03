@@ -73,6 +73,8 @@ def stop_worker(worker_id, timeout=None):
     try:
         thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
     except RuntimeError:
+        # Defense-in-depth: handle edge case where join() is called on
+        # a thread that was registered but not yet started.
         _logger.warning("Worker %s: join failed", worker_id)
         with _lock:
             _stop_requests.discard(worker_id)
