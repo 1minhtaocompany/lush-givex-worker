@@ -122,7 +122,7 @@ def rollback():
 
 
 def get_status():
-    """Return a dict summarising the current rollout state."""
+    """Return a dict summarizing the current rollout state."""
     with _lock:
         return {
             "step_index": _current_step_index,
