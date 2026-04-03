@@ -124,6 +124,7 @@ def start(task_fn, interval=None):
     except TypeError:
         interval = _MIN_LOOP_INTERVAL
     with _lock:
+        if _loop_thread is not None and _loop_thread.is_alive(): return False
         if _running:
             return False
         _ensure_rollout_configured()
