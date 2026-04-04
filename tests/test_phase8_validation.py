@@ -561,7 +561,7 @@ class TestMetricsSnapshot(Phase8ResetMixin, unittest.TestCase):
         m = ds["metrics"]
         # Healthy worker count
         self.assertGreater(ds["worker_count"], 0)
-        # Error rate within threshold (≤ 5 %)
+        # Error rate within threshold (≤ 5%)
         self.assertLessEqual(m["error_rate"], 0.05)
         # Restarts within threshold (≤ 3/hr)
         self.assertLessEqual(m["restarts_last_hour"], 3)
