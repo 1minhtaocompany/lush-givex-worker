@@ -301,8 +301,6 @@ class TestNoStateDrift(DeterminismResetMixin, unittest.TestCase):
 
     def test_monitor_reset_cycle_produces_identical_initial_state(self):
         """Multiple reset cycles always return to the same metrics snapshot."""
-        initial_keys = ("success_count", "error_count", "success_rate",
-                        "error_rate", "restarts_last_hour", "baseline_success_rate")
         for _ in range(3):
             for _ in range(5):
                 monitor.record_success()
