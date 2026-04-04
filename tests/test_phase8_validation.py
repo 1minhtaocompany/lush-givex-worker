@@ -669,12 +669,9 @@ class TestExtendedObservationWindow(Phase8ResetMixin, unittest.TestCase):
 
     def test_restart_accumulation_accurate_over_window(self):
         """Restarts recorded in sequence must accumulate accurately."""
-        expected = []
         for i in range(1, self._OBS_SNAPSHOTS + 1):
             monitor.record_restart()
-            expected.append(i)
-        observed = monitor.get_restarts_last_hour()
-        self.assertEqual(observed, self._OBS_SNAPSHOTS)
+            self.assertEqual(monitor.get_restarts_last_hour(), i)
 
     def test_restarts_stay_within_threshold_during_healthy_window(self):
         """During a healthy observation window, restarts must be ≤ 3/hr."""
