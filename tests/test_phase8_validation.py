@@ -459,6 +459,163 @@ class TestBaselineRecording(Phase8ResetMixin, unittest.TestCase):
         self.assertEqual(monitor.get_baseline_success_rate(), baseline_before)
 
 
+# ── Step 5b: Metrics snapshot at stable state ───────────────────────
+
+
+class TestMetricsSnapshot(Phase8ResetMixin, unittest.TestCase):
+    """Step 5b — Baseline recording & metrics snapshot.
+
+    Captures the initial baseline of worker_count, error_rate, and
+    restart_count.  Saves a snapshot at a stable point and confirms that
+    no metric value is None in normal operation.
+
+    Acceptance criteria verified:
+      1. Baseline metrics (worker_count, error_rate, restart_count) recorded.
+      2. No None values in the metrics snapshot.
+      3. Snapshot reflects stable system state.
+    """
+
+    # -- AC1: Baseline metrics recorded ------------------------------------
+
+    def test_snapshot_captures_worker_count(self):
+        """Stable snapshot must include a non-None, positive worker_count."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        ds = get_deployment_status()
+        self.assertIsNotNone(ds["worker_count"])
+        self.assertIsInstance(ds["worker_count"], int)
+        self.assertGreater(ds["worker_count"], 0)
+        stop(timeout=CLEANUP_TIMEOUT)
+
+    def test_snapshot_captures_error_rate(self):
+        """Stable snapshot must include a non-None error_rate."""
+        for _ in range(10):
+            monitor.record_success()
+        m = monitor.get_metrics()
+        self.assertIsNotNone(m["error_rate"])
+        self.assertIsInstance(m["error_rate"], float)
+
+    def test_snapshot_captures_restart_count(self):
+        """Stable snapshot must include a non-None restarts_last_hour."""
+        m = monitor.get_metrics()
+        self.assertIsNotNone(m["restarts_last_hour"])
+        self.assertIsInstance(m["restarts_last_hour"], int)
+
+    def test_baseline_trio_recorded_together(self):
+        """worker_count, error_rate, restart_count must all be present."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        for _ in range(10):
+            monitor.record_success()
+        monitor.save_baseline()
+        ds = get_deployment_status()
+        self.assertIsNotNone(ds["worker_count"])
+        self.assertIsNotNone(ds["metrics"]["error_rate"])
+        self.assertIsNotNone(ds["metrics"]["restarts_last_hour"])
+        stop(timeout=CLEANUP_TIMEOUT)
+
+    # -- AC2: No None values in snapshot -----------------------------------
+
+    def test_full_snapshot_no_none_at_stable_state(self):
+        """After baseline save, every metric value must be non-None."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        for _ in range(10):
+            monitor.record_success()
+        monitor.save_baseline()
+        ds = get_deployment_status()
+        # Runtime-level fields
+        for key in ("running", "state", "worker_count",
+                     "active_workers", "consecutive_rollbacks",
+                     "trace_id", "metrics"):
+            self.assertIsNotNone(ds[key], f"Deployment key {key!r} is None")
+        # All metric values (including baseline_success_rate)
+        for key, value in ds["metrics"].items():
+            self.assertIsNotNone(value,
+                                 f"Metric {key!r} is None in stable snapshot")
+        stop(timeout=CLEANUP_TIMEOUT)
+
+    def test_snapshot_error_rate_zero_for_clean_system(self):
+        """error_rate must be 0.0 when only successes are recorded."""
+        for _ in range(10):
+            monitor.record_success()
+        m = monitor.get_metrics()
+        self.assertEqual(m["error_rate"], 0.0)
+        self.assertEqual(m["error_count"], 0)
+
+    def test_snapshot_restart_count_zero_initially(self):
+        """restarts_last_hour must be 0 when no restarts have occurred."""
+        m = monitor.get_metrics()
+        self.assertEqual(m["restarts_last_hour"], 0)
+
+    # -- AC3: Snapshot reflects stable system state ------------------------
+
+    def test_snapshot_reflects_stable_system(self):
+        """Snapshot at a stable point must reflect healthy values."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        for _ in range(20):
+            monitor.record_success()
+        monitor.save_baseline()
+        ds = get_deployment_status()
+        m = ds["metrics"]
+        # Healthy worker count
+        self.assertGreater(ds["worker_count"], 0)
+        # Error rate within threshold (≤ 5 %)
+        self.assertLessEqual(m["error_rate"], 0.05)
+        # Restarts within threshold (≤ 3/hr)
+        self.assertLessEqual(m["restarts_last_hour"], 3)
+        # Baseline saved
+        self.assertIsNotNone(m["baseline_success_rate"])
+        # Formal deployment verification agrees
+        result = verify_deployment()
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["errors"], [])
+        stop(timeout=CLEANUP_TIMEOUT)
+
+    def test_snapshot_worker_count_matches_active_list(self):
+        """worker_count must equal length of active_workers list."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        ds = get_deployment_status()
+        self.assertEqual(ds["worker_count"], len(ds["active_workers"]))
+        stop(timeout=CLEANUP_TIMEOUT)
+
+    def test_snapshot_with_mixed_activity(self):
+        """Snapshot after mixed activity must record all values non-None."""
+        for _ in range(8):
+            monitor.record_success()
+        for _ in range(2):
+            monitor.record_error()
+        monitor.record_restart()
+        monitor.save_baseline()
+        m = monitor.get_metrics()
+        self.assertEqual(m["success_count"], 8)
+        self.assertEqual(m["error_count"], 2)
+        self.assertAlmostEqual(m["error_rate"], 0.2)
+        self.assertEqual(m["restarts_last_hour"], 1)
+        self.assertAlmostEqual(m["baseline_success_rate"], 0.8)
+        for key, value in m.items():
+            self.assertIsNotNone(value,
+                                 f"Metric {key!r} should not be None after baseline")
+
+    def test_snapshot_consistent_across_reads(self):
+        """Multiple snapshot reads must return consistent metric values."""
+        for _ in range(10):
+            monitor.record_success()
+        monitor.save_baseline()
+        snapshots = [monitor.get_metrics() for _ in range(5)]
+        first = snapshots[0]
+        for snap in snapshots[1:]:
+            self.assertEqual(snap["success_count"], first["success_count"])
+            self.assertEqual(snap["error_count"], first["error_count"])
+            self.assertAlmostEqual(snap["error_rate"], first["error_rate"])
+            self.assertEqual(snap["restarts_last_hour"],
+                             first["restarts_last_hour"])
+            self.assertAlmostEqual(snap["baseline_success_rate"],
+                                   first["baseline_success_rate"])
+
+
 # ── Step 6: Deployment verification ─────────────────────────────────
 
 
