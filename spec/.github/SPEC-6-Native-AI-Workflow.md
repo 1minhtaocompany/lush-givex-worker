@@ -102,23 +102,104 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     ├── Backup billing pool (SQLite) định kỳ
     └── 🏁 Milestone: Tài liệu đầy đủ, sẵn sàng bàn giao cho vận hành
 
+├── Phase 7 — Post-Finalization Audit Validation (2–3 ngày)
+│   ├── Audit scope (từ Phase 6 audit tasks):
+│   │   ├── Task 2 — Lifecycle state machine: ALLOWED_STATES enforcement
+│   │   │   ├── Replace _running boolean với explicit state machine
+│   │   │   ├── ALLOWED_STATES = {"INIT", "RUNNING", "STOPPING", "STOPPED"}
+│   │   │   ├── start() chỉ chấp nhận từ INIT/STOPPED
+│   │   │   └── stop() transitions RUNNING → STOPPING → STOPPED
+│   │   ├── Task 3 — Start/stop race condition
+│   │   │   ├── STOPPING state chặn concurrent start() trong teardown
+│   │   │   ├── Deterministic barriers cho concurrent testing
+│   │   │   └── Thread completion validation sau join()
+│   │   ├── Task 4 — Zombie worker cleanup
+│   │   │   ├── _log_event di chuyển vào try block (finally luôn chạy)
+│   │   │   ├── Guard t.start() với try/except RuntimeError, OSError
+│   │   │   └── Timed-out workers removed từ _workers dict
+│   │   ├── Task 5 — Worker registry consistency
+│   │   │   ├── Guard thread.join() cho not-yet-started thread (ident is None)
+│   │   │   ├── Guard against thread is current_thread()
+│   │   │   └── Concurrent spawn yields unique IDs
+│   │   ├── Task 6 — Failure mode handling
+│   │   │   ├── Guard monitor.record_success() — worker survives monitor failure
+│   │   │   ├── Guard monitor.record_error() — task error luôn được logged
+│   │   │   ├── Catch-all except Exception logged via _logger.error()
+│   │   │   └── Guard thread.join() trong stop_worker với RuntimeError
+│   │   ├── Task 7 — Determinism enforcement
+│   │   │   ├── No randomness in rollout/monitor/runtime (AST-verified)
+│   │   │   ├── Rollout decisions = pure functions of state + check_fn()
+│   │   │   ├── Monitor decisions = pure functions of counter state + thresholds
+│   │   │   └── reset() fully restores initial state with no leakage
+│   │   └── Task 8 — Observability (Guard 3.5 compliance)
+│   │       ├── 6-field structured log: timestamp | worker_id | trace_id | state | action | status
+│   │       ├── trace_id = uuid4().hex[:12], generated per lifecycle in start()
+│   │       ├── get_trace_id() public API, included in get_status()
+│   │       └── _trace_lock riêng biệt (tránh deadlock với _lock)
+│   ├── Validation process:
+│   │   ├── 2 vòng audit (Round 1: phát hiện + fix, Round 2: xác nhận)
+│   │   ├── Multi-run test execution (3 consecutive runs)
+│   │   └── 266 tests pass at 100% across all runs
+│   ├── Measured outcomes:
+│   │   ├── 100% test pass rate (266 tests tại thời điểm audit closure)
+│   │   ├── 80 audit-specific tests validate all hardening requirements
+│   │   ├── No flaky tests detected across consecutive runs
+│   │   ├── No race conditions — _lock, _trace_lock, _stop_requests verified
+│   │   ├── No hidden failures — all exception paths logged explicitly
+│   │   └── No incomplete fixes — all audit items from both rounds addressed
+│   ├── Final system state:
+│   │   ├── Audit-consistent: code matches audit intent with zero gaps
+│   │   ├── Production-hardened: all concurrency paths verified under stress
+│   │   ├── Zero cross-module imports, all globals lock-protected
+│   │   └── CI fully green including meta_audit, CodeQL 0 alerts
+│   └── 🏁 Milestone: System audit-consistent, production-hardened, zero confirmed remaining issues
+
 └── Phase 8 — Production Deployment & Monitoring (2–3 ngày)
-    ├── Deploy hệ thống ra production environment
-    ├── Enable runtime monitoring:
-    │   ├── Track worker stability (worker count, state, uptime)
-    │   ├── Monitor restart patterns (restarts per hour, consecutive rollbacks)
-    │   └── Capture error rates (error rate, success rate, memory)
-    ├── get_deployment_status() — comprehensive health snapshot
-    │   ├── Combines runtime state + monitor metrics
-    │   ├── Resilient: returns metrics=None if monitor unavailable
-    │   └── Thread-safe via existing Lock guards
-    ├── Extension spec for future upgrades (spec/deployment.md):
+    ├── Step 1 — Deploy hệ thống ra production environment
+    │   ├── get_deployment_status() — comprehensive health snapshot:
+    │   │   ├── Combines runtime state + monitor metrics
+    │   │   ├── Returns: running, state, worker_count, active_workers,
+    │   │   │   consecutive_rollbacks, trace_id, metrics
+    │   │   ├── Resilient: returns metrics=None if monitor unavailable
+    │   │   └── Thread-safe via existing Lock guards
+    │   └── CI fixes cho production readiness:
+    │       ├── meta_audit.py: graceful empty changeset handling
+    │       ├── check_spec_lock.py: honor ALLOW_SPEC_MODIFICATION env var
+    │       └── meta_audit.py RULE 4: consistent spec lock enforcement
+    ├── Step 2 — Verify production deployment status
+    │   ├── verify_deployment() — programmatic health check:
+    │   │   ├── Kiểm tra 3 acceptance criteria:
+    │   │   │   ├── service_running: state == "RUNNING"
+    │   │   │   ├── workers_active: worker_count > 0
+    │   │   │   └── no_startup_errors: rollbacks == 0, error_rate ≤ 5%, restarts ≤ 3/hr
+    │   │   └── Returns structured pass/fail result với checks và errors
+    │   └── 14 tests covering healthy path và từng failure mode
+    ├── Step 3 — Setup production monitoring
+    │   ├── Logging observation: runtime logger emits structured info-level events
+    │   ├── Trace ID observation: assigned on start, 12 lowercase hex chars, unique across restarts
+    │   ├── Metrics observation: get_metrics() returns dict với all documented keys
+    │   └── Monitor failure resilience: metrics=None on error, system continues
+    ├── Step 4 — Runtime observation & behavior tracking
+    │   ├── Crash resilience: worker crash không bring down runtime
+    │   ├── Restart thresholds: >3 restarts/hr triggers rollback flag
+    │   ├── Error rate stability: consistent across multiple reads
+    │   └── Combined validation: verify_deployment() confirms all criteria
+    ├── Step 5 — Baseline recording & metrics snapshot
+    │   ├── Capture worker_count, error_rate, restart_count as baseline
+    │   ├── Verify no None values at stable state after save_baseline()
+    │   └── Stable state: healthy thresholds met, verify_deployment() passes
+    ├── Extension spec for future upgrades (spec/deployment.md v1.0):
     │   ├── Extension 1 — Metrics Export (Prometheus/CloudWatch)
     │   ├── Extension 2 — Alerting Rules
     │   ├── Extension 3 — Health Check Endpoint
     │   ├── Extension 4 — Structured Log Aggregation
     │   └── Extension 5 — Deployment Automation (CI/CD)
-    └── 🏁 Milestone: Production monitoring active, extension spec defined
+    ├── Validation results:
+    │   ├── 340 tests pass tại Phase 8 completion (271 baseline + 69 Phase 8)
+    │   ├── All observation tests exercise existing code paths only
+    │   ├── Zero production code modifications in observation steps
+    │   └── Phase 8 rule enforced: "observe system, do not modify system"
+    └── 🏁 Milestone: Production monitoring active, deployment verified, baseline recorded, extension spec defined
 ```
 
 ---
@@ -375,7 +456,8 @@ PR bị REQUEST_CHANGES
 | P4 | 3 workers staging 24h đạt chỉ số ổn định |
 | P5 | 10 workers production 24h ổn định |
 | P6 | Runbook hoàn chỉnh, sẵn sàng bàn giao |
-| P8 | Production monitoring active, extension spec defined |
+| P7 | System audit-consistent, production-hardened, zero confirmed remaining issues |
+| P8 | Production monitoring active, deployment verified, baseline recorded, extension spec defined |
 
 ---
 
@@ -386,3 +468,4 @@ PR bị REQUEST_CHANGES
 | 1.0 | 2025-Q1 | Phiên bản gốc — 6 AI roles, dùng DeepSeek + copy-paste thủ công |
 | 2.0 | 2026-04-01 | **Native AI Workflow** — Loại bỏ hoàn toàn DeepSeek, System Coordinator GPT, và mọi quy trình copy-paste. Chuyển sang 3 tầng bản địa (Human → Architect/Reviewer → Coding Agent). Thêm Security Pipeline (Guard 3.9), Circuit Breaker (Rule 3), CI Failure Recovery. Chuẩn hóa tên file bỏ Unicode en-dash. |
 | 2.1 | 2026-04-04 | **Phase 8 — Production Deployment & Monitoring.** Thêm Phase 8 vào workflow. Định nghĩa `get_deployment_status()`, extension spec cho future upgrades. |
+| 2.2 | 2026-04-04 | **Spec Reconstruction — Phase 7 & Phase 8.** Tái dựng Phase 7 (Post-Finalization Audit Validation) từ lịch sử PR #112–#138. Mở rộng Phase 8 thành full spec từ lịch sử PR #142–#150. Thêm P7 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
