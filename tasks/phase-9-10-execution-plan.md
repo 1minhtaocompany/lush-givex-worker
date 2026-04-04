@@ -375,7 +375,7 @@ IN_CYCLE → IDLE             (worker completes one cycle iteration)
 
 **_runtime_loop patch (pseudocode):**
 ```python
-# EXISTING (lines 146-162):
+# EXISTING (in _runtime_loop, after behavior.evaluate):
 decision, reasons = behavior.evaluate(metrics, step, max)
 # ... route decision to target ...
 _apply_scale(target, task_fn)  # ← CURRENTLY UNCONDITIONAL
@@ -568,18 +568,18 @@ Add explicit guard tests and runtime checks that validate the NO-DELAY zones def
 ### Parallelization Opportunities
 
 ```
-WAVE 0 (MANDATORY FIRST):  Task 9.3 (Safe Point + Safe Guard)
-                                │
-                                │  ← Fixes "SAI CÁCH TÍCH HỢP"
-                                │  ← Scaling now gated by is_safe_to_control()
-                                │
+WAVE 0 (MANDATORY FIRST): Task 9.3 (Safe Point + Safe Guard)
+                               │
+                               │  ← Fixes "SAI CÁCH TÍCH HỢP"
+                               │  ← Scaling now gated by is_safe_to_control()
+                               │
 WAVE 1 (parallel):         Task 10.1  ║  Task 10.2
-                                │              │
-                                └──────┬───────┘
-                                       │
-WAVE 2 (sequential):           Task 10.3
-                                       │
-WAVE 3 (sequential):           Task 10.4
+                               │              │
+                               └──────┬───────┘
+                                      │
+WAVE 2 (sequential):          Task 10.3
+                                      │
+WAVE 3 (sequential):          Task 10.4
 ```
 
 **CRITICAL CHANGE vs previous plan:** Task 9.3 is now Wave 0 (strictly first, NOT parallel with 10.1/10.2). This is because:
