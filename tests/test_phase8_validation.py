@@ -265,7 +265,9 @@ class TestBehaviorTracking(Phase8ResetMixin, unittest.TestCase):
         time.sleep(WARMUP_DELAY)
         # Inject a crashing worker into the already running system
         from integration.runtime import start_worker
-        start_worker(lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
+        def _crash(_):
+            raise RuntimeError("boom")
+        start_worker(_crash)
         time.sleep(0.3)
         # System must still be RUNNING
         self.assertEqual(get_state(), "RUNNING")
@@ -338,7 +340,7 @@ class TestBehaviorTracking(Phase8ResetMixin, unittest.TestCase):
             monitor.record_success()
         for _ in range(2):
             monitor.record_error()
-        # error rate = 2/11 ≈ 18.2% > 5%
+        # error rate = 2/11 ≈ 18% > 5%
         reasons = monitor.check_rollback_needed()
         self.assertTrue(
             any("error rate" in r for r in reasons),
