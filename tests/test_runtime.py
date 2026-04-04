@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from integration import runtime
+from modules.delay import main as delay
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 from integration.runtime import (
@@ -34,11 +35,18 @@ class RuntimeResetMixin:
         reset()
         rollout.reset()
         monitor.reset()
+        delay.reset()
+        self._delay_patcher = patch.object(
+            delay, "compute_delay", return_value=(0.0, "test")
+        )
+        self._delay_patcher.start()
 
     def tearDown(self):
+        self._delay_patcher.stop()
         reset()
         rollout.reset()
         monitor.reset()
+        delay.reset()
 
     def _poll_until(self, predicate, timeout=CLEANUP_TIMEOUT, interval=0.05):
         """Poll *predicate* until it returns True or *timeout* expires."""

@@ -22,6 +22,7 @@ from integration.runtime import (
     start,
     stop,
 )
+from modules.delay import main as delay
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 
@@ -35,11 +36,18 @@ class ObservationResetMixin:
         runtime.reset()
         rollout.reset()
         monitor.reset()
+        delay.reset()
+        self._delay_patcher = patch.object(
+            delay, "compute_delay", return_value=(0.0, "test")
+        )
+        self._delay_patcher.start()
 
     def tearDown(self):
+        self._delay_patcher.stop()
         runtime.reset()
         rollout.reset()
         monitor.reset()
+        delay.reset()
 
 
 # ── Logging observation ─────────────────────────────────────────────

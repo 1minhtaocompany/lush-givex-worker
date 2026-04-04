@@ -4,6 +4,7 @@ import threading
 import time
 import uuid
 from modules.behavior import main as behavior
+from modules.delay import main as delay
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 _logger = logging.getLogger(__name__)
@@ -42,6 +43,23 @@ def _worker_fn(worker_id, task_fn):
     try:
         _log_event(worker_id, "running", "start")
         while True:
+            with _lock:
+                if _should_stop_worker(worker_id):
+                    break
+            # Interruptible behavioral delay before task execution
+            try:
+                with _lock:
+                    _current_state = _state
+                _delay_secs, _ = delay.compute_delay(runtime_state=_current_state)
+            except Exception:
+                _logger.warning("delay.compute_delay() failed for %s", worker_id, exc_info=True)
+                _delay_secs = 0
+            _delay_deadline = time.monotonic() + _delay_secs
+            while time.monotonic() < _delay_deadline:
+                with _lock:
+                    if _should_stop_worker(worker_id):
+                        break
+                time.sleep(min(0.1, max(0, _delay_deadline - time.monotonic())))
             with _lock:
                 if _should_stop_worker(worker_id):
                     break
@@ -315,3 +333,4 @@ def reset():
     with _trace_lock:
         _trace_id = None
     behavior.reset()
+    delay.reset()

@@ -246,6 +246,38 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   └── behavior.reset() added to runtime.reset()
     │   └── No module isolation violation:
     │       └── integration/ imports from modules/ (allowed by architecture)
+    ├── Task 3 — Behavioral Delay Injection (modules/delay/main.py):
+    │   ├── Non-uniform timing layer injected before worker task execution
+    │   ├── compute_delay(runtime_state) → (delay_seconds, pattern_name)
+    │   ├── Delay patterns:
+    │   │   ├── burst: 2–5 rapid successive short delays (0.05–0.3 s)
+    │   │   ├── long_gap: occasional long pauses (3.0–8.0 s)
+    │   │   └── normal: non-uniform variation with sinusoidal component (0.1–5.0 s)
+    │   ├── Pattern selection probabilities:
+    │   │   ├── burst: 15 %
+    │   │   ├── long_gap: 10 %
+    │   │   └── normal: 75 %
+    │   ├── Runtime-state variation:
+    │   │   ├── STOPPING → delay × 0.5 (faster shutdown)
+    │   │   └── INIT → delay × 1.5 (slower startup)
+    │   ├── Integration in _worker_fn (integration/runtime.py):
+    │   │   ├── delay.compute_delay() called before each task_fn()
+    │   │   ├── Sleep is interruptible (0.1 s chunks with stop-signal checks)
+    │   │   ├── Delay failure does not affect worker execution
+    │   │   └── delay.reset() called from runtime.reset()
+    │   ├── Supporting APIs:
+    │   │   ├── apply_delay(runtime_state) — compute + sleep (convenience)
+    │   │   ├── get_delay_history() — bounded to 100 entries
+    │   │   ├── get_last_delay() — most recent delay value
+    │   │   ├── get_status() — call_count, burst_remaining, history_size
+    │   │   └── reset() — clear all state for testing
+    │   └── Safety constraints:
+    │       ├── No cross-module imports (zero external dependencies)
+    │       ├── All state guarded by _lock (thread-safe)
+    │       ├── Delay history bounded (max 100 entries)
+    │       ├── Does not modify Behavior Decision Engine
+    │       ├── Does not modify Scaling Execution Layer logic
+    │       └── No race conditions (interruptible sleep pattern)
     ├── Validation (from CI & tests):
     │   ├── 33 behavior decision engine tests (test_behavior.py):
     │   │   ├── All decision rules covered individually
@@ -258,10 +290,19 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   ├── Consecutive rollback tracking and clearing
     │   │   ├── Lifecycle integrity during scaling decisions
     │   │   └── Concurrent thread-safe operation
-    │   ├── 386 total tests pass (340 baseline + 46 Phase 9)
+    │   ├── 23 behavioral delay injection tests (test_delay.py):
+    │   │   ├── Delay bounds validation (absolute + per-pattern)
+    │   │   ├── Pattern type verification (burst, long_gap, normal)
+    │   │   ├── Burst sequence continuation
+    │   │   ├── Runtime-state variation (STOPPING, INIT, RUNNING)
+    │   │   ├── History recording and bounding
+    │   │   ├── Thread-safety under concurrent compute
+    │   │   ├── Non-uniformity verification
+    │   │   └── Reset and status API contracts
+    │   ├── 409 total tests pass (340 baseline + 69 Phase 9)
     │   ├── No regressions to existing tests
     │   └── CI fully green
-    └── 🏁 Milestone: System auto-scales based on runtime metrics, behavior engine operational, all decision paths tested
+    └── 🏁 Milestone: System auto-scales based on runtime metrics, behavior engine operational, human-like timing layer active, all decision paths tested
 ```
 
 ---
@@ -533,3 +574,4 @@ PR bị REQUEST_CHANGES
 | 2.1 | 2026-04-04 | **Phase 8 — Production Deployment & Monitoring.** Thêm Phase 8 vào workflow. Định nghĩa `get_deployment_status()`, extension spec cho future upgrades. |
 | 2.2 | 2026-04-04 | **Spec Reconstruction — Phase 7 & Phase 8.** Tái dựng Phase 7 (Post-Finalization Audit Validation) từ lịch sử PR #112–#138. Mở rộng Phase 8 thành full spec từ lịch sử PR #142–#150. Thêm P7 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
 | 2.3 | 2026-04-04 | **Phase 9 — Behavior & Scaling Intelligence.** Bổ sung Phase 9 từ lịch sử PR #160 (Issue #155 Task 1: Behavior Decision Engine, Issue #159 Task 2: Scaling Execution Layer). Thêm P9 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
+| 2.4 | 2026-04-04 | **Phase 9 Task 3 — Behavioral Delay Injection.** Thêm modules/delay/main.py với non-uniform timing layer (burst/long_gap/normal patterns). Tích hợp delay interruptible vào _worker_fn. 23 test mới, 409 total tests pass. |

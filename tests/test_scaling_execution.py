@@ -25,6 +25,7 @@ from integration.runtime import (
     stop,
 )
 from modules.behavior import main as behavior
+from modules.delay import main as delay
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 
@@ -37,12 +38,19 @@ class ScalingResetMixin:
         rollout.reset()
         monitor.reset()
         behavior.reset()
+        delay.reset()
+        self._delay_patcher = patch.object(
+            delay, "compute_delay", return_value=(0.0, "test")
+        )
+        self._delay_patcher.start()
 
     def tearDown(self):
+        self._delay_patcher.stop()
         reset()
         rollout.reset()
         monitor.reset()
         behavior.reset()
+        delay.reset()
 
 
 # ── Decision routing ────────────────────────────────────────────────
