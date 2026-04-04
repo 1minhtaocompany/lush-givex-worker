@@ -11,7 +11,6 @@ These tests are *observation-only* — they exercise existing production code
 paths without modifying any production module.
 """
 
-import logging
 import threading
 import time
 import unittest
@@ -23,13 +22,10 @@ from integration.runtime import (
     get_active_workers,
     get_deployment_status,
     get_state,
-    get_status,
     get_trace_id,
     reset,
     start,
-    start_worker,
     stop,
-    stop_worker,
 )
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
