@@ -80,5 +80,6 @@ jobs:
         PR_TITLE: ${{ github.event.pull_request.title }}
         PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         CHANGE_CLASS_APPROVED: ${{ vars.CHANGE_CLASS_APPROVED || 'false' }}
+        ALLOW_SPEC_MODIFICATION: "true"
         GITHUB_BASE_REF: ${{ github.event.pull_request.base.ref }}
         GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
