@@ -46,20 +46,22 @@ def _worker_fn(worker_id, task_fn):
             with _lock:
                 if _should_stop_worker(worker_id):
                     break
+                _current_state = _state
             # Interruptible behavioral delay before task execution
             try:
-                with _lock:
-                    _current_state = _state
                 _delay_secs, _ = delay.compute_delay(runtime_state=_current_state)
             except Exception:
                 _logger.warning("delay.compute_delay() failed for %s", worker_id, exc_info=True)
                 _delay_secs = 0
             _delay_deadline = time.monotonic() + _delay_secs
-            while time.monotonic() < _delay_deadline:
+            while True:
+                _remaining = _delay_deadline - time.monotonic()
+                if _remaining <= 0:
+                    break
                 with _lock:
                     if _should_stop_worker(worker_id):
                         break
-                time.sleep(min(0.1, max(0, _delay_deadline - time.monotonic())))
+                time.sleep(min(0.1, _remaining))
             with _lock:
                 if _should_stop_worker(worker_id):
                     break
