@@ -590,5 +590,260 @@ class TestEndToEndLifecycle(Phase8ResetMixin, unittest.TestCase):
             self.assertIn("metrics", ds)
 
 
+# ── Extended Runtime Observation Window ──────────────────────────────
+
+
+class TestExtendedObservationWindow(Phase8ResetMixin, unittest.TestCase):
+    """Phase 8 — Extended Runtime Observation Window.
+
+    Validates system stability under time-based observation:
+      - Worker stability over multiple observation intervals (no drift)
+      - Restart patterns remain within thresholds across windows
+      - Error rate trends do not increase over time
+      - Abnormal spikes are detected by the existing rollback machinery
+    """
+
+    # Number of consecutive observation snapshots to collect.
+    _OBS_SNAPSHOTS = 5
+    # Interval between snapshots (seconds).
+    _OBS_INTERVAL = 0.1
+
+    # -- Worker stability over time ----------------------------------------
+
+    def test_worker_count_stable_across_observation_intervals(self):
+        """Worker count must not drift over multiple observation intervals."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        counts = []
+        for _ in range(self._OBS_SNAPSHOTS):
+            ds = get_deployment_status()
+            counts.append(ds["worker_count"])
+            time.sleep(self._OBS_INTERVAL)
+        stop(timeout=2)
+        # All observations must report the same worker count.
+        self.assertTrue(
+            all(c == counts[0] for c in counts),
+            f"Worker count drifted across observations: {counts}",
+        )
+
+    def test_state_remains_running_during_observation(self):
+        """State must remain RUNNING throughout the observation window."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        states = []
+        for _ in range(self._OBS_SNAPSHOTS):
+            states.append(get_state())
+            time.sleep(self._OBS_INTERVAL)
+        stop(timeout=2)
+        for s in states:
+            self.assertEqual(s, "RUNNING", f"Unexpected state during observation: {states}")
+
+    def test_active_workers_consistent_over_time(self):
+        """Active worker IDs must be consistent across observation snapshots."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        worker_sets = []
+        for _ in range(self._OBS_SNAPSHOTS):
+            worker_sets.append(set(get_active_workers()))
+            time.sleep(self._OBS_INTERVAL)
+        stop(timeout=2)
+        for ws in worker_sets[1:]:
+            self.assertEqual(
+                ws,
+                worker_sets[0],
+                f"Active workers drifted: {worker_sets}",
+            )
+
+    # -- Restart pattern tracking ------------------------------------------
+
+    def test_restart_count_does_not_drift_without_events(self):
+        """Restart count must not increase when no restarts are recorded."""
+        monitor.record_restart()
+        initial = monitor.get_restarts_last_hour()
+        counts = []
+        for _ in range(self._OBS_SNAPSHOTS):
+            counts.append(monitor.get_restarts_last_hour())
+            time.sleep(self._OBS_INTERVAL)
+        for c in counts:
+            self.assertEqual(c, initial, f"Restart count drifted: {counts}")
+
+    def test_restart_accumulation_accurate_over_window(self):
+        """Restarts recorded in sequence must accumulate accurately."""
+        expected = []
+        for i in range(1, self._OBS_SNAPSHOTS + 1):
+            monitor.record_restart()
+            expected.append(i)
+        observed = monitor.get_restarts_last_hour()
+        self.assertEqual(observed, self._OBS_SNAPSHOTS)
+
+    def test_restarts_stay_within_threshold_during_healthy_window(self):
+        """During a healthy observation window, restarts must be ≤ 3/hr."""
+        # Record exactly threshold number of restarts.
+        for _ in range(3):
+            monitor.record_restart()
+        for _ in range(self._OBS_SNAPSHOTS):
+            ds = get_deployment_status()
+            self.assertLessEqual(ds["metrics"]["restarts_last_hour"], 3)
+            time.sleep(self._OBS_INTERVAL)
+
+    # -- Error rate trend stability ----------------------------------------
+
+    def test_error_rate_does_not_increase_over_observation(self):
+        """Error rate must not trend upward during a stable observation window."""
+        for _ in range(95):
+            monitor.record_success()
+        for _ in range(5):
+            monitor.record_error()
+        rates = []
+        for _ in range(self._OBS_SNAPSHOTS):
+            rates.append(get_deployment_status()["metrics"]["error_rate"])
+            time.sleep(self._OBS_INTERVAL)
+        # No upward drift — each rate must equal the first.
+        for rate in rates[1:]:
+            self.assertAlmostEqual(
+                rate,
+                rates[0],
+                delta=1e-12,
+                msg=f"Error rate drifted upward: {rates}",
+            )
+
+    def test_success_rate_does_not_decrease_over_observation(self):
+        """Success rate must not drift downward during a stable window."""
+        for _ in range(90):
+            monitor.record_success()
+        for _ in range(10):
+            monitor.record_error()
+        rates = []
+        for _ in range(self._OBS_SNAPSHOTS):
+            rates.append(get_deployment_status()["metrics"]["success_rate"])
+            time.sleep(self._OBS_INTERVAL)
+        for rate in rates[1:]:
+            self.assertAlmostEqual(
+                rate,
+                rates[0],
+                delta=1e-12,
+                msg=f"Success rate drifted downward: {rates}",
+            )
+
+    def test_error_rate_stable_below_threshold_across_window(self):
+        """Error rate must remain ≤ 5% throughout the observation window."""
+        for _ in range(100):
+            monitor.record_success()
+        for _ in range(self._OBS_SNAPSHOTS):
+            ds = get_deployment_status()
+            self.assertLessEqual(
+                ds["metrics"]["error_rate"],
+                0.05,
+                "Error rate exceeded 5% threshold during observation",
+            )
+            time.sleep(self._OBS_INTERVAL)
+
+    # -- Spike detection ---------------------------------------------------
+
+    def test_error_spike_detected_by_rollback_check(self):
+        """A sudden error spike must be flagged by check_rollback_needed."""
+        # Start with healthy baseline.
+        for _ in range(20):
+            monitor.record_success()
+        self.assertEqual(monitor.check_rollback_needed(), [])
+        # Inject error spike: 10 errors in a row → error_rate = 10/30 ≈ 33%.
+        for _ in range(10):
+            monitor.record_error()
+        reasons = monitor.check_rollback_needed()
+        self.assertTrue(
+            any("error rate" in r for r in reasons),
+            f"Error spike not detected: {reasons}",
+        )
+
+    def test_restart_spike_detected_by_rollback_check(self):
+        """A sudden restart spike must be flagged by check_rollback_needed."""
+        # Normal: 2 restarts (within threshold).
+        for _ in range(2):
+            monitor.record_restart()
+        self.assertEqual(
+            [r for r in monitor.check_rollback_needed() if "restart" in r],
+            [],
+        )
+        # Spike: 3 more restarts → total 5 > threshold of 3.
+        for _ in range(3):
+            monitor.record_restart()
+        reasons = monitor.check_rollback_needed()
+        self.assertTrue(
+            any("restart" in r for r in reasons),
+            f"Restart spike not detected: {reasons}",
+        )
+
+    def test_success_rate_drop_spike_detected(self):
+        """A sudden success-rate drop from baseline must trigger rollback."""
+        for _ in range(100):
+            monitor.record_success()
+        monitor.save_baseline()
+        # Inject spike: 20 errors → success_rate drops to ~83%.
+        for _ in range(20):
+            monitor.record_error()
+        reasons = monitor.check_rollback_needed()
+        self.assertTrue(
+            any("success rate" in r for r in reasons),
+            f"Success rate drop spike not detected: {reasons}",
+        )
+
+    # -- Time-based production validation ----------------------------------
+
+    def test_all_criteria_hold_throughout_observation_window(self):
+        """All acceptance criteria must pass at every observation point."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        for _ in range(20):
+            monitor.record_success()
+        for _ in range(self._OBS_SNAPSHOTS):
+            ds = get_deployment_status()
+            # AC1: No crashes — system must be running.
+            self.assertTrue(ds["running"])
+            self.assertEqual(ds["state"], "RUNNING")
+            # AC2: Restarts within threshold.
+            self.assertLessEqual(ds["metrics"]["restarts_last_hour"], 3)
+            # AC3: Error rate stable and within threshold.
+            self.assertLessEqual(ds["metrics"]["error_rate"], 0.05)
+            time.sleep(self._OBS_INTERVAL)
+        # Formal verification must pass at end of window.
+        result = verify_deployment()
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["errors"], [])
+        stop(timeout=2)
+
+    def test_deployment_status_contract_stable_over_time(self):
+        """Deployment status response shape must not change across reads."""
+        start(lambda _: time.sleep(0.5), interval=0.05)
+        time.sleep(WARMUP_DELAY)
+        expected_keys = {
+            "running", "state", "worker_count", "active_workers",
+            "consecutive_rollbacks", "trace_id", "metrics",
+        }
+        expected_metric_keys = {
+            "success_count", "error_count", "success_rate", "error_rate",
+            "memory_usage_bytes", "restarts_last_hour", "baseline_success_rate",
+        }
+        for _ in range(self._OBS_SNAPSHOTS):
+            ds = get_deployment_status()
+            self.assertEqual(set(ds.keys()), expected_keys)
+            self.assertIsNotNone(ds["metrics"])
+            self.assertEqual(set(ds["metrics"].keys()), expected_metric_keys)
+            time.sleep(self._OBS_INTERVAL)
+        stop(timeout=2)
+
+    def test_no_rollback_triggers_during_healthy_extended_window(self):
+        """check_rollback_needed must return empty throughout a healthy window."""
+        for _ in range(50):
+            monitor.record_success()
+        for _ in range(self._OBS_SNAPSHOTS):
+            reasons = monitor.check_rollback_needed()
+            self.assertEqual(
+                reasons,
+                [],
+                f"Unexpected rollback trigger during healthy window: {reasons}",
+            )
+            time.sleep(self._OBS_INTERVAL)
+
+
 if __name__ == "__main__":
     unittest.main()
