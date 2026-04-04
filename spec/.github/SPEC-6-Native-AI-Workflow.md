@@ -198,7 +198,7 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   ├── 340 tests pass tại Phase 8 completion (271 baseline + 69 Phase 8)
     │   ├── All observation tests exercise existing code paths only
     │   ├── Zero production code modifications in observation steps
-    │   └── Phase 8 rule enforced: "observe system, do not modify system"
+    │   └── Validation/observation rule enforced: "observe system behavior, do not modify the system during validation steps"
     └── 🏁 Milestone: Production monitoring active, deployment verified, baseline recorded, extension spec defined
 
 └── Phase 9 — Behavior & Scaling Intelligence (2–3 ngày)
