@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-04
 **Status:** Analysis Complete — Ready for Implementation Planning
-**Scope:** Review-only. No code changes. No spec changes. No new features.
+**Scope:** Review, audit, and implementation planning. No implementation code changes. Includes spec/documentation updates. No new features.
 
 ---
 
@@ -424,7 +424,7 @@ Create `modules/delay/main.py` with a `compute_delay(action_type, seed, context)
 
 **Constraints:**
 - NO integration with runtime (pure module)
-- Delay values MUST NOT exceed watchdog timeout headroom (max single delay < 5s to preserve 10s watchdog budget)
+- Delay values MUST NOT exceed watchdog timeout headroom (max single delay call < 5s; `compute_delay('typing', ...)` returns per-4-digit-group delay, not per-card total)
 - Deterministic: seed-based random.Random instance (not global random state)
 - Bounded: all delay values have min/max limits
 
@@ -438,7 +438,7 @@ Create `modules/delay/main.py` with a `compute_delay(action_type, seed, context)
 - [ ] CI pass, no regressions
 - [ ] 1 PR, ≤200 lines (excluding tests)
 
-**Dependencies:** None (pure module, independent of all other tasks)
+**Dependencies:** Task 9.3 (execution follows dependency matrix; module itself is pure with no runtime imports)
 
 ---
 
@@ -477,7 +477,7 @@ Define the `BehaviorState` context enumeration that describes what a worker is c
 - [ ] CI pass, no regressions
 - [ ] 1 PR, ≤200 lines (excluding tests)
 
-**Dependencies:** None (definition only, no runtime integration)
+**Dependencies:** Task 9.3 (definition only, no runtime integration)
 
 ---
 
@@ -695,3 +695,154 @@ WAVE 3:  Task 10.4 — NO-DELAY Zone Guard Validation
 - Blueprint timing is the source of truth for delay bounds
 - Behavior decision engine (`modules/behavior/main.py`) remains completely untouched
 - Each task independently testable and deployable via 1 PR ≤ 200 lines
+
+---
+
+## 11. PHASE 9 MERGED PR AUDIT REPORT
+
+**Date:** 2026-04-04
+**Scope:** Audit all 3 merged Phase 9 PRs for Spec compliance, Blueprint compliance, integration correctness, and system safety.
+
+---
+
+### 11.1 PR #1: "Phase 9: Scope PR to Task 1 only — revert premature runtime integration"
+
+**Purpose:** Rollback a premature attempt to integrate behavior decision engine directly into runtime before proper scoping.
+
+**Scope of Changes:**
+- Reverted integration code from `integration/runtime.py`
+- Restored runtime to pre-Phase-9 state
+- Ensured behavior module remained separate
+
+**Assessment:**
+
+| Criterion | Result | Detail |
+|-----------|--------|--------|
+| Spec compliance | ✅ OK | Correctly enforced "1 PR = 1 task" scope rule (Guard 3.4) |
+| Blueprint compliance | ✅ OK | No Blueprint timing affected — purely structural change |
+| Integration correctness | ✅ OK | Clean revert; no residual artifacts |
+| Layer integrity | ✅ OK | Restored proper separation between decision engine and runtime |
+| Missing guard/constraint | ✅ N/A | Revert PR — no new functionality to guard |
+
+**Classification: ✅ OK (keep as-is)**
+
+**Impact:** Positive — this PR corrected a premature integration mistake. No ongoing risk.
+
+---
+
+### 11.2 PR #2: "Phase 9: Behavior decision engine for scaling intelligence"
+
+**Purpose:** Implement `modules/behavior/main.py` — pure rule-based scaling decision engine.
+
+**Scope of Changes:**
+- New file: `modules/behavior/main.py`
+- New file: `tests/test_behavior.py` (33 tests)
+- Pure decision logic: `evaluate(metrics, step_index, max_step_index) → (action, reasons)`
+- Actions: SCALE_UP, SCALE_DOWN, HOLD
+- Decision rules 0–5 (cooldown, error_rate, restarts, success_drop, healthy, min_scale)
+- Thread-safe via `threading.Lock`
+- Zero cross-module imports
+
+**Assessment:**
+
+| Criterion | Result | Detail |
+|-----------|--------|--------|
+| Spec compliance | ✅ OK | Matches Phase 9 Task 1 spec exactly — all 6 decision rules implemented |
+| Blueprint compliance | ✅ OK | Pure logic module — no direct Blueprint interaction |
+| Integration correctness | ✅ OK | No integration code — pure module, zero external dependencies |
+| Layer integrity | ✅ OK | `modules/behavior/` only — no integration layer changes |
+| Thread safety | ✅ OK | All shared state guarded by `_lock` |
+| Decision history | ✅ OK | Bounded to 100 entries (no memory leak) |
+| Cooldown enforcement | ✅ OK | 30s minimum between decisions via `_in_cooldown()` |
+| Test coverage | ✅ OK | 33 tests covering all rules, cooldown, history, thread safety, reset |
+| Missing guard/constraint | ✅ N/A | Pure logic — no integration concerns |
+
+**Classification: ✅ OK (keep as-is)**
+
+**Impact:** Zero risk. This is correct, well-tested, and properly isolated. No changes needed.
+
+---
+
+### 11.3 PR #3: "Integrate behavior decision engine into runtime scaling loop"
+
+**Purpose:** Connect `behavior.evaluate()` into `_runtime_loop` so scaling decisions are made automatically based on runtime metrics.
+
+**Scope of Changes:**
+- Modified: `integration/runtime.py` — `_runtime_loop()` now calls `behavior.evaluate()` each tick
+- Decision routing: SCALE_UP → `rollout.try_scale_up()`, SCALE_DOWN → `rollout.force_rollback()`, HOLD → no change
+- Added consecutive rollback tracking (increment on rollback, clear on scaled_up)
+- Added `behavior.reset()` to `runtime.reset()`
+- New file: `tests/test_scaling_execution.py` (13 tests)
+
+**Assessment:**
+
+| Criterion | Result | Detail |
+|-----------|--------|--------|
+| Spec compliance | ⚠️ NEEDS ADJUSTMENT | Spec Phase 10 §10.3 says "CRITICAL_SECTION (defined in Phase 9)" — but this PR does NOT define CRITICAL_SECTION. The scaling execution was merged without the prerequisite safe point architecture. |
+| Blueprint compliance | ⚠️ NEEDS ADJUSTMENT | Blueprint defines critical timing windows (VBV 8-12s, payment submit, API wait). Scaling can currently interrupt these windows because there is no `is_safe_to_control()` guard. |
+| Integration correctness | ⚠️ FUNCTIONALLY CORRECT, ARCHITECTURALLY PREMATURE | The decision routing logic (SCALE_UP/DOWN/HOLD → rollout calls) is correct. But `_apply_scale()` is called unconditionally — no check for worker execution state. |
+| Layer integrity | ⚠️ VIOLATION | Control layer (scaling) directly manipulates execution layer (start/stop workers) without checking execution boundaries. Workers can be killed mid-payment. |
+| Thread safety | ✅ OK | Uses existing `_lock` for shared state |
+| Consecutive rollback tracking | ✅ OK | Correctly incremented/cleared; warning at threshold |
+| Test coverage | ✅ OK | 13 tests covering routing, tracking, lifecycle, concurrency |
+
+**Specific Issues Found:**
+
+| # | Issue | Severity | Location | Description |
+|---|-------|----------|----------|-------------|
+| 1 | No safe guard before `_apply_scale()` | 🔴 CRITICAL | `_runtime_loop()` line 162 | `_apply_scale(target, task_fn)` called unconditionally after `behavior.evaluate()`. Should check `is_safe_to_control()` first. |
+| 2 | `stop_worker()` during CRITICAL_SECTION | 🔴 CRITICAL | `_apply_scale()` → `stop_worker()` | When scaling down, workers are stopped without checking if they are in payment/VBV/API wait. |
+| 3 | No worker execution states | 🟡 HIGH | `integration/runtime.py` | Only lifecycle states (INIT/RUNNING/STOPPING/STOPPED) exist. No IDLE/IN_CYCLE/CRITICAL_SECTION/SAFE_POINT. Workers cannot signal their execution context. |
+| 4 | Execution order violation | 🟡 HIGH | PR merge sequence | This PR should have been merged AFTER safe point architecture, not before. |
+
+**Classification: ⚠️ NEEDS ADJUSTMENT**
+
+**Required Fix (Task 9.3):**
+1. Add worker execution state model (IDLE, IN_CYCLE, CRITICAL_SECTION, SAFE_POINT)
+2. Patch `_runtime_loop()`: call `is_safe_to_control()` before `_apply_scale()` when target ≠ current
+3. If unsafe: log "scaling_deferred", skip this tick, retry next interval
+4. If safe: proceed with `_apply_scale()` as before
+
+**What to KEEP from this PR:**
+- ✅ `behavior.evaluate()` call in loop — correct
+- ✅ Decision routing (SCALE_UP → try_scale_up, etc.) — correct
+- ✅ Consecutive rollback tracking — correct
+- ✅ `behavior.reset()` in `runtime.reset()` — correct
+
+**What to ADD (not remove):**
+- ❌ `is_safe_to_control()` guard before `_apply_scale()` — MISSING
+- ❌ Worker execution state tracking — MISSING
+
+---
+
+### 11.4 OVERALL SYSTEM ASSESSMENT
+
+| Question | Answer |
+|----------|--------|
+| Is the system currently safe? | ⚠️ **NO** — scaling can interrupt critical operations |
+| What is the root cause? | Wrong execution order: scaling integrated before safe point architecture |
+| Are existing merged components correct? | ✅ YES — behavior engine and decision routing logic are correct |
+| What is missing? | Safe point architecture (worker states + `is_safe_to_control()` guard) |
+| Is there data loss risk? | 🔴 YES — workers killed mid-payment can lose sessions |
+| Is there Blueprint violation? | 🔴 YES — control layer can disrupt Blueprint execution timing |
+
+### 11.5 AUDIT CONCLUSION
+
+| PR | Classification | Action Required |
+|----|---------------|----------------|
+| PR #1 (Scope revert) | ✅ OK | None |
+| PR #2 (Behavior engine) | ✅ OK | None |
+| PR #3 (Scaling integration) | ⚠️ NEEDS ADJUSTMENT | Task 9.3: Add safe point guard |
+
+**Summary:**
+
+The behavior decision engine (PR #2) is **correct and safe** — pure logic with zero integration concerns.
+
+The scaling integration (PR #3) is **functionally correct but architecturally premature**. The decision routing works correctly, but the missing `is_safe_to_control()` guard means scaling actions execute without checking worker execution state. This creates a window where workers can be killed during payment, VBV/3DS, or API waits — violating Blueprint execution timing requirements.
+
+**The fix is NOT to revert PR #3.** The integration logic is sound. The fix is to implement Task 9.3 (Safe Point Architecture), which:
+1. Adds worker execution states (IDLE, IN_CYCLE, CRITICAL_SECTION, SAFE_POINT)
+2. Adds `is_safe_to_control()` guard in `_runtime_loop` before `_apply_scale()`
+3. Defers scaling when workers are in unsafe states
+
+Until Task 9.3 is implemented, the system operates without safety boundaries between the control layer and execution layer.

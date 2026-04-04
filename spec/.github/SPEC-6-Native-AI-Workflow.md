@@ -311,9 +311,10 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   ├── click — spatial offset only (x±15, y±5), no significant time delay (Blueprint §4: Bounding Box Click)
     │   │   └── thinking — 3–5s hover/scroll near action target (Blueprint §5: Hesitation, "lảng vảng quanh khu vực nút khoảng 3 - 5 giây")
     │   ├── Delay bound:
-    │   │   ├── typing: max 1.8s per 4-digit group × 4 groups = max 7.2s total for 16-digit card
+    │   │   ├── typing: max 1.8s per 4-digit group (each compute_delay call returns one group delay)
     │   │   ├── thinking: max 5s per hesitation point
-    │   │   ├── Accumulated delay per cycle step: MUST leave ≥3s headroom within watchdog 10s timeout (Blueprint §5)
+    │   │   ├── typing and thinking are mutually exclusive within a single cycle step
+    │   │   ├── Total behavioral delay per cycle step: MUST be ≤7.0s, leaving ≥3s headroom within watchdog 10s timeout (Blueprint §5)
     │   │   └── MUST NOT affect watchdog timeout or system-level deadlines
     │   └── Deterministic: Seed-based random (Blueprint §2: Gắn Seed Hành Vi)
     │       └── Reproducible execution: same seed → same behavior pattern
