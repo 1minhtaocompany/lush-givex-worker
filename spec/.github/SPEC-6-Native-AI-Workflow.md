@@ -194,6 +194,14 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   ├── Extension 3 — Health Check Endpoint
     │   ├── Extension 4 — Structured Log Aggregation
     │   └── Extension 5 — Deployment Automation (CI/CD)
+    ├── Monitoring signals:
+    │   ├── Worker state: tracked via state field (INIT/RUNNING/STOPPING/STOPPED)
+    │   ├── Restart patterns: tracked via restarts_last_hour metric
+    │   └── Error rate / success rate: tracked via error_rate, success_rate metrics
+    ├── Monitoring constraints:
+    │   ├── Resilient when metrics unavailable: returns metrics=None, system continues
+    │   ├── Thread-safe observation only: all metric reads guarded by threading.Lock
+    │   └── Explicit rule: NO control logic — Phase 8 is ONLY observation
     ├── Validation results:
     │   ├── 340 tests pass tại Phase 8 completion (271 baseline + 69 Phase 8)
     │   ├── All observation tests exercise existing code paths only
@@ -201,10 +209,26 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   └── Validation/observation rule enforced: "observe system behavior, do not modify the system during validation steps"
     └── 🏁 Milestone: Production monitoring active, deployment verified, baseline recorded, extension spec defined
 
-└── Phase 9 — Behavior & Scaling Intelligence (2–3 ngày)
+├── Phase 9 — Control Layer (Blueprint-aligned) (2–3 ngày)
     ├── Purpose:
     │   ├── Chuyển system từ passive scaling → adaptive auto-scaling
+    │   ├── Định nghĩa control rules đảm bảo Blueprint alignment
     │   └── Runtime tự động điều chỉnh worker count dựa trên metrics thực tế
+    ├── 9.1 — Safe Point Model:
+    │   ├── SAFE_POINT — Scaling decisions applied ONLY at:
+    │   │   ├── End of runtime loop tick (between worker evaluations)
+    │   │   ├── After card swap completion (ngã rẽ 3/4 resolved)
+    │   │   └── After final success/failure determination per cycle
+    │   └── CRITICAL_SECTION — No scaling interruption during:
+    │       ├── Payment submit (Complete Purchase execution)
+    │       ├── VBV/3DS handling (iframe interaction + wait)
+    │       └── API wait (CDP Network.responseReceived pending)
+    ├── 9.2 — Scaling Rule:
+    │   ├── decision_time ≠ execution_time:
+    │   │   ├── behavior.evaluate() computes decision → returns (action, reasons)
+    │   │   └── rollout.try_scale_up()/force_rollback() applies change separately
+    │   ├── Behavior Engine evaluates continuously (each runtime loop tick)
+    │   └── Runtime applies scaling ONLY at SAFE_POINT (loop tick boundary)
     ├── Task 1 — Behavior Decision Engine (modules/behavior/main.py):
     │   ├── Pure rule-based logic, thread-safe via threading.Lock
     │   ├── evaluate(metrics, current_step_index, max_step_index) → (action, reasons)
@@ -246,6 +270,35 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   └── behavior.reset() added to runtime.reset()
     │   └── No module isolation violation:
     │       └── integration/ imports from modules/ (allowed by architecture)
+    ├── 9.3 — Graceful Shutdown:
+    │   ├── STOPPING (draining) state:
+    │   │   ├── stop() transitions RUNNING → STOPPING → STOPPED
+    │   │   ├── _should_stop_worker() checks _state == "STOPPING"
+    │   │   └── All workers receive stop signal, no new workers started during drain
+    │   ├── Rule: Worker KHÔNG được stop giữa cycle
+    │   │   └── Workers run to natural breakpoint or check _should_stop_worker() between iterations
+    │   └── Fallback: timeout → force stop
+    │       ├── deadline = time.monotonic() + timeout
+    │       └── Workers exceeding deadline removed from registry with warning log
+    ├── 9.4 — FSM Requirement:
+    │   ├── NORMAL_FLOW: "success" state — order confirmed, screenshot + notification
+    │   ├── VBV_FLOW: "vbv_3ds" state — cancel iframe → reload → refill from billing step
+    │   ├── DECLINED_FLOW: "declined" state — NO reload, only clear card fields + swap next card
+    │   ├── FALLBACK_STATE: "ui_lock" state — detect stuck UI, focus-shift retry
+    │   └── Rules:
+    │       ├── VBV → page reload + refill toàn bộ thông tin từ bước thanh toán
+    │       ├── Declined → NO reload, chỉ clear form thẻ (Ctrl+A + Backspace) và swap thẻ mới
+    │       └── Unknown → fallback detect qua ui_lock retry mechanism
+    ├── 9.5 — Billing Consistency:
+    │   ├── Semi-persistent checkpoint via module-level state:
+    │   │   ├── _cursor (last_used_index): position in shuffled profile list
+    │   │   └── select_profile(): returns consistent profile for entire cycle
+    │   ├── Store: last_used_index (_cursor), billing profile được chọn cố định cho cycle
+    │   └── Update: _cursor advances ONLY at end of selection (sequential pick)
+    ├── Critical Rule — Phase 9 MUST NOT:
+    │   ├── Interrupt execution flow (no mid-task scaling changes)
+    │   ├── Inject into runtime timing (no artificial delays from control layer)
+    │   └── Violate Blueprint FSM transitions (state flow follows blueprint exactly)
     ├── Validation (from CI & tests):
     │   ├── 33 behavior decision engine tests (test_behavior.py):
     │   │   ├── All decision rules covered individually
@@ -261,7 +314,50 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   ├── 386 total tests pass (340 baseline + 46 Phase 9)
     │   ├── No regressions to existing tests
     │   └── CI fully green
-    └── 🏁 Milestone: System auto-scales based on runtime metrics, behavior engine operational, all decision paths tested
+    └── 🏁 Milestone: Control layer operational, scaling Blueprint-aligned, all decision paths tested
+
+└── Phase 10 — Behavior Layer (Blueprint-safe) (Status: Designed)
+    ├── 10.1 — Architecture:
+    │   ├── Behavior wrapper ONLY tại worker execution layer:
+    │   │   └── worker_fn → wrap(task_fn)
+    │   └── KHÔNG:
+    │       ├── Inject vào runtime loop
+    │       ├── Inject vào scaling logic
+    │       └── Modify orchestration flow
+    ├── 10.2 — Deterministic Behavior:
+    │   ├── Seed-based random (Blueprint §2: Gắn Seed Hành Vi)
+    │   └── Reproducible execution: same seed → same behavior pattern
+    ├── 10.3 — Behavior State:
+    │   ├── Internal states: fatigue, stress, confidence
+    │   └── Context awareness:
+    │       ├── IDLE — between actions, awaiting next step
+    │       ├── FILLING_FORM — form field interaction (recipient, billing)
+    │       ├── PAYMENT — payment data entry (card number, CVV)
+    │       ├── VBV — 3DS iframe handling
+    │       └── POST_ACTION — after submit, waiting for result
+    ├── 10.4 — Action-Aware Delay:
+    │   └── Delay MUST depend on action type:
+    │       ├── typing — key-by-key with hesitation (Blueprint §4: CDP gõ phím, quy tắc 4x4)
+    │       ├── click — bounding box calculation + hover + offset (Blueprint §4: Bounding Box Click)
+    │       └── thinking — review/hesitation before action (Blueprint §5: Hesitation 3-5s)
+    ├── 10.5 — Critical Protection (MANDATORY):
+    │   └── Behavior layer MUST NOT inject delay vào:
+    │       ├── Watchdog timeout checks
+    │       ├── Network wait (CDP Network.responseReceived)
+    │       ├── Payment submit (Complete Purchase click event)
+    │       ├── VBV iframe load/interaction
+    │       └── Page reload operations
+    ├── 10.6 — Critical Section Rule:
+    │   └── If in CRITICAL_SECTION → NO delay injected
+    ├── 10.7 — Performance Limit:
+    │   ├── max_delay_per_action ≤ configured limit
+    │   └── total_delay_per_cycle ≤ bounded threshold
+    ├── 10.8 — No Side Effect:
+    │   └── KHÔNG thay đổi:
+    │       ├── Logic (execution path unchanged)
+    │       ├── Result (success/failure outcome unchanged)
+    │       └── Execution order (step sequence unchanged)
+    └── 🏁 Milestone: Behavior layer designed, specification complete, ready for implementation
 ```
 
 ---
@@ -520,7 +616,8 @@ PR bị REQUEST_CHANGES
 | P6 | Runbook hoàn chỉnh, sẵn sàng bàn giao |
 | P7 | System audit-consistent, production-hardened, zero confirmed remaining issues |
 | P8 | Production monitoring active, deployment verified, baseline recorded, extension spec defined |
-| P9 | System auto-scales based on runtime metrics, behavior engine operational, all decision paths tested |
+| P9 | Control layer operational, scaling Blueprint-aligned, all decision paths tested |
+| P10 | Behavior layer designed, specification complete, ready for implementation |
 
 ---
 
@@ -533,3 +630,4 @@ PR bị REQUEST_CHANGES
 | 2.1 | 2026-04-04 | **Phase 8 — Production Deployment & Monitoring.** Thêm Phase 8 vào workflow. Định nghĩa `get_deployment_status()`, extension spec cho future upgrades. |
 | 2.2 | 2026-04-04 | **Spec Reconstruction — Phase 7 & Phase 8.** Tái dựng Phase 7 (Post-Finalization Audit Validation) từ lịch sử PR #112–#138. Mở rộng Phase 8 thành full spec từ lịch sử PR #142–#150. Thêm P7 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
 | 2.3 | 2026-04-04 | **Phase 9 — Behavior & Scaling Intelligence.** Bổ sung Phase 9 từ lịch sử PR #160 (Issue #155 Task 1: Behavior Decision Engine, Issue #159 Task 2: Scaling Execution Layer). Thêm P9 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
+| 2.4 | 2026-04-04 | **Spec Finalization — Phase 7–10.** Hoàn thiện Phase 8 (thêm monitoring signals, constraints, explicit NO-control-logic rule). Tái cấu trúc Phase 9 thành Control Layer (Blueprint-aligned): Safe Point Model, Scaling Rule, Graceful Shutdown, FSM Requirement, Billing Consistency. Bổ sung Phase 10 — Behavior Layer (Blueprint-safe): architecture, deterministic behavior, behavior state, action-aware delay, critical protection, performance limit. Thêm P10 vào milestones table. Đồng bộ spec với system và blueprint (CHANGE_CLASS=spec_sync). |
