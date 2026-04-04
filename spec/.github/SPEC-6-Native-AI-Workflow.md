@@ -154,7 +154,7 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
 │   │   └── CI fully green including meta_audit, CodeQL 0 alerts
 │   └── 🏁 Milestone: System audit-consistent, production-hardened, zero confirmed remaining issues
 
-└── Phase 8 — Production Deployment & Monitoring (2–3 ngày)
+├── Phase 8 — Production Deployment & Monitoring (2–3 ngày)
     ├── Step 1 — Deploy hệ thống ra production environment
     │   ├── get_deployment_status() — comprehensive health snapshot:
     │   │   ├── Combines runtime state + monitor metrics
