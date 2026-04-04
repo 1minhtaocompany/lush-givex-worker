@@ -23,16 +23,13 @@ from integration.runtime import (
     ALLOWED_STATES,
     ALLOWED_WORKER_STATES,
     _VALID_TRANSITIONS,
-    get_active_workers,
     get_all_worker_states,
     get_status,
     get_worker_state,
     is_safe_to_control,
     reset,
     set_worker_state,
-    start,
     start_worker,
-    stop,
     stop_worker,
 )
 from modules.behavior import main as behavior
@@ -193,6 +190,11 @@ class TestStateTransitions(SafePointResetMixin, unittest.TestCase):
         with self.assertRaises(ValueError):
             set_worker_state(wid, "")
 
+    def test_unknown_worker_rejected(self):
+        """set_worker_state rejects worker_id not in _workers."""
+        with self.assertRaises(ValueError):
+            set_worker_state("nonexistent-worker", "IN_CYCLE")
+
 
 # ── State query ──────────────────────────────────────────────────
 
@@ -261,6 +263,13 @@ class TestIsSafeToControl(SafePointResetMixin, unittest.TestCase):
         self._register("w2", "CRITICAL_SECTION")
         self.assertFalse(is_safe_to_control())
 
+    def test_missing_state_is_not_safe(self):
+        """Active worker with missing state entry → NOT safe to control."""
+        with runtime._lock:
+            runtime._workers["w1"] = threading.current_thread()
+            # Deliberately do NOT set _worker_states["w1"]
+        self.assertFalse(is_safe_to_control())
+
 
 # ── Worker lifecycle integration ─────────────────────────────────
 
@@ -268,24 +277,36 @@ class TestIsSafeToControl(SafePointResetMixin, unittest.TestCase):
 class TestWorkerStateLifecycle(SafePointResetMixin, unittest.TestCase):
     """_worker_fn must track worker state transitions."""
 
+    def _poll_until(self, predicate, timeout=2, interval=0.01):
+        """Poll *predicate* until it returns True or *timeout* expires."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(interval)
+        return predicate()
+
     def test_worker_reaches_safe_point(self):
         """Worker enters SAFE_POINT after successful task execution."""
-        reached = threading.Event()
+        task_started = threading.Event()
+        allow_task_exit = threading.Event()
 
         def task_fn(_wid):
-            reached.set()
+            task_started.set()
+            allow_task_exit.wait(timeout=2)
 
         runtime._state = "RUNNING"
         wid = start_worker(task_fn)
-        reached.wait(timeout=2)
-        # Give worker time to transition to SAFE_POINT
-        time.sleep(0.1)
-        state = get_worker_state(wid)
-        # Worker might be at SAFE_POINT or IN_CYCLE (next iteration) or gone
-        if state is not None:
-            self.assertIn(state, ALLOWED_WORKER_STATES)
-        stop_worker(wid, timeout=2)
-        runtime._state = "INIT"
+        try:
+            self.assertTrue(task_started.wait(timeout=2))
+            allow_task_exit.set()
+            self.assertTrue(
+                self._poll_until(lambda: get_worker_state(wid) == "SAFE_POINT"),
+                "Expected worker to reach SAFE_POINT",
+            )
+        finally:
+            stop_worker(wid, timeout=2)
+            runtime._state = "INIT"
 
     def test_worker_state_cleaned_on_stop(self):
         """Worker state removed from _worker_states when worker stops."""
@@ -296,12 +317,16 @@ class TestWorkerStateLifecycle(SafePointResetMixin, unittest.TestCase):
 
         runtime._state = "RUNNING"
         wid = start_worker(task_fn)
-        time.sleep(0.1)
-        self.assertIsNotNone(get_worker_state(wid))
+        self.assertTrue(
+            self._poll_until(lambda: get_worker_state(wid) is not None),
+            "Worker state should be set after start",
+        )
         barrier.set()
         stop_worker(wid, timeout=2)
-        time.sleep(0.1)
-        self.assertIsNone(get_worker_state(wid))
+        self.assertTrue(
+            self._poll_until(lambda: get_worker_state(wid) is None),
+            "Worker state should be cleaned up after stop",
+        )
         runtime._state = "INIT"
 
     def test_worker_state_cleaned_on_error(self):
@@ -315,8 +340,10 @@ class TestWorkerStateLifecycle(SafePointResetMixin, unittest.TestCase):
         runtime._state = "RUNNING"
         wid = start_worker(crash_fn)
         started.wait(timeout=2)
-        time.sleep(0.2)
-        self.assertIsNone(get_worker_state(wid))
+        self.assertTrue(
+            self._poll_until(lambda: get_worker_state(wid) is None),
+            "Worker state should be cleaned up after crash",
+        )
         runtime._state = "INIT"
 
 
@@ -341,7 +368,7 @@ class TestStatusExposesWorkerStates(SafePointResetMixin, unittest.TestCase):
 
         runtime._state = "RUNNING"
         wid = start_worker(task_fn)
-        time.sleep(0.1)
+        # State is initialized synchronously in start_worker; no sleep needed
         status = get_status()
         self.assertIn(wid, status["worker_states"])
         self.assertIn(status["worker_states"][wid], ALLOWED_WORKER_STATES)
