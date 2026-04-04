@@ -212,6 +212,16 @@ def get_deployment_status():
 
     Combines runtime state with monitor metrics for production monitoring.
     Tracks worker stability, restart patterns, and error rates.
+
+    Returns a dict with keys:
+        running (bool): Whether the runtime loop is active.
+        state (str): Current lifecycle state.
+        worker_count (int): Number of active workers.
+        active_workers (list[str]): Active worker IDs.
+        consecutive_rollbacks (int): Consecutive rollback count.
+        trace_id (str | None): Current trace ID.
+        metrics (dict | None): Monitor metrics snapshot, or None if
+            monitor.get_metrics() is unavailable.
     """
     status = get_status()
     try:
