@@ -723,6 +723,15 @@ class TestZombieWorkerCleanup(RuntimeResetMixin, unittest.TestCase):
 class TestRegistryConcurrency(RuntimeResetMixin, unittest.TestCase):
     """Worker registry consistency under concurrent operations."""
 
+    def _poll_until(self, predicate, timeout=CLEANUP_TIMEOUT, interval=0.05):
+        """Poll *predicate* until it returns True or *timeout* expires."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(interval)
+        return predicate()
+
     def test_concurrent_spawn_unique_ids(self):
         """20 concurrent start_worker calls all produce unique IDs."""
         runtime._state = "RUNNING"
@@ -732,7 +741,7 @@ class TestRegistryConcurrency(RuntimeResetMixin, unittest.TestCase):
 
         def spawn():
             barrier.wait()
-            wid = start_worker(lambda _: time.sleep(0.5))
+            wid = start_worker(lambda _: time.sleep(0.01))
             with lock:
                 ids.append(wid)
 
@@ -789,8 +798,10 @@ class TestRegistryConcurrency(RuntimeResetMixin, unittest.TestCase):
         for t in threads:
             t.join(timeout=10)
         self.assertEqual(errors, [], f"unexpected errors: {errors}")
-        time.sleep(0.3)
-        self.assertEqual(get_active_workers(), [], "registry not empty after concurrent add/remove")
+        self.assertTrue(
+            self._poll_until(lambda: get_active_workers() == []),
+            "registry not empty after concurrent add/remove",
+        )
         runtime._state = "INIT"
 
     def test_registry_reflects_runtime_after_completion(self):
@@ -808,8 +819,10 @@ class TestRegistryConcurrency(RuntimeResetMixin, unittest.TestCase):
             start_worker(crash_fn)
         for ev in events:
             ev.wait(timeout=2)
-        time.sleep(0.3)
-        self.assertEqual(get_active_workers(), [], "crashed workers remain in registry")
+        self.assertTrue(
+            self._poll_until(lambda: get_active_workers() == []),
+            "crashed workers remain in registry",
+        )
         runtime._state = "INIT"
 
 
