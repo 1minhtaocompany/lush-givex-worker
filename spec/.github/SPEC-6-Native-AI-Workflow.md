@@ -277,9 +277,9 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   └── All workers receive stop signal, no new workers started during drain
     │   ├── Rule: Worker KHÔNG được stop giữa cycle
     │   │   └── Workers run to natural breakpoint or check _should_stop_worker() between iterations
-    │   └── Fallback: timeout → force stop
+    │   └── Fallback: timeout → deregister worker
     │       ├── deadline = time.monotonic() + timeout
-    │       └── Workers exceeding deadline removed from registry with warning log
+    │       └── Workers exceeding deadline are removed from registry with warning log; underlying thread may continue until task_fn returns
     ├── 9.4 — FSM Requirement:
     │   ├── NORMAL_FLOW: "success" state — order confirmed, screenshot + notification
     │   ├── VBV_FLOW: "vbv_3ds" state — cancel iframe → reload → refill from billing step
