@@ -720,5 +720,98 @@ class TestZombieWorkerCleanup(RuntimeResetMixin, unittest.TestCase):
         )
 
 
+class TestRegistryConcurrency(RuntimeResetMixin, unittest.TestCase):
+    """Worker registry consistency under concurrent operations."""
+
+    def test_concurrent_spawn_unique_ids(self):
+        """20 concurrent start_worker calls all produce unique IDs."""
+        runtime._state = "RUNNING"
+        ids = []
+        lock = threading.Lock()
+        barrier = threading.Barrier(20)
+
+        def spawn():
+            barrier.wait()
+            wid = start_worker(lambda _: time.sleep(0.5))
+            with lock:
+                ids.append(wid)
+
+        threads = [threading.Thread(target=spawn) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        self.assertEqual(len(ids), 20)
+        self.assertEqual(len(set(ids)), 20, "duplicate worker IDs detected")
+        runtime._state = "INIT"
+
+    def test_concurrent_spawn_registry_integrity(self):
+        """All concurrently spawned workers appear in the active registry."""
+        runtime._state = "RUNNING"
+        ids = []
+        lock = threading.Lock()
+        barrier = threading.Barrier(10)
+        barriers = [threading.Event() for _ in range(10)]
+
+        def spawn(idx):
+            barrier.wait()
+            wid = start_worker(lambda _, b=barriers[idx]: b.wait(timeout=2))
+            with lock:
+                ids.append(wid)
+
+        threads = [threading.Thread(target=spawn, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        active = get_active_workers()
+        for wid in ids:
+            self.assertIn(wid, active, f"{wid} missing from active registry")
+        for b in barriers:
+            b.set()
+        runtime._state = "INIT"
+
+    def test_concurrent_add_remove(self):
+        """Interleaved start/stop from multiple threads doesn't corrupt the registry."""
+        runtime._state = "RUNNING"
+        errors = []
+
+        def add_remove():
+            try:
+                wid = start_worker(lambda _: time.sleep(0.01))
+                stop_worker(wid, timeout=2)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=add_remove) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        self.assertEqual(errors, [], f"unexpected errors: {errors}")
+        time.sleep(0.3)
+        self.assertEqual(get_active_workers(), [], "registry not empty after concurrent add/remove")
+        runtime._state = "INIT"
+
+    def test_registry_reflects_runtime_after_completion(self):
+        """After workers exit via exception, they are properly deregistered."""
+        runtime._state = "RUNNING"
+        events = []
+        for _ in range(5):
+            ev = threading.Event()
+            events.append(ev)
+
+            def crash_fn(_, e=ev):
+                e.set()
+                raise RuntimeError("boom")
+
+            start_worker(crash_fn)
+        for ev in events:
+            ev.wait(timeout=2)
+        time.sleep(0.3)
+        self.assertEqual(get_active_workers(), [], "crashed workers remain in registry")
+        runtime._state = "INIT"
+
+
 if __name__ == "__main__":
     unittest.main()

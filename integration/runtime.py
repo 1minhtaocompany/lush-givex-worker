@@ -73,7 +73,10 @@ def stop_worker(worker_id, timeout=None):
         if thread is None:
             return False
         _stop_requests.add(worker_id)
-    thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
+    try:
+        thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)
+    except RuntimeError:
+        pass
     if thread.is_alive():
         _logger.warning("Worker %s did not stop within timeout", worker_id)
         with _lock:
