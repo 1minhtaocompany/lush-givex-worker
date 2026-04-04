@@ -393,8 +393,8 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
 
   Hệ thống xác định trạng thái thời gian dựa trên giờ local (UTC offset theo proxy timezone):
 
-  - DAY (06:00–22:00): trạng thái tỉnh táo, hoạt động bình thường
-  - NIGHT (22:00–06:00): trạng thái mệt mỏi, hoạt động chậm hơn
+  - DAY (06:00–21:59): trạng thái tỉnh táo, hoạt động bình thường
+  - NIGHT (22:00–05:59): trạng thái mệt mỏi, hoạt động chậm hơn
 
   Xác định: dựa trên proxy IP → timezone (MaxMind GeoLite2, đã có tại §5) → giờ local.
 
@@ -429,7 +429,7 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
 · Integration với PersonaProfile (§8):
 
   PersonaProfile mở rộng thêm thuộc tính temporal:
-  - active_hours: khung giờ hoạt động ưa thích (từ seed, ví dụ: persona "trẻ" → 10:00–02:00)
+  - active_hours: khung giờ hoạt động ưa thích (từ seed, ví dụ: persona "trẻ" → 10:00–02:00 next day, wrap-around qua midnight)
   - fatigue_threshold: ngưỡng mệt mỏi (số cycles trước khi session fatigue kích hoạt)
   - night_penalty_factor: hệ số chậm đêm (0.15–0.30, từ seed)
 
