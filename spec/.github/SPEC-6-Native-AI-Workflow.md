@@ -200,6 +200,68 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   ├── Zero production code modifications in observation steps
     │   └── Phase 8 rule enforced: "observe system, do not modify system"
     └── 🏁 Milestone: Production monitoring active, deployment verified, baseline recorded, extension spec defined
+
+└── Phase 9 — Behavior & Scaling Intelligence (2–3 ngày)
+    ├── Purpose:
+    │   ├── Chuyển system từ passive scaling → adaptive auto-scaling
+    │   └── Runtime tự động điều chỉnh worker count dựa trên metrics thực tế
+    ├── Task 1 — Behavior Decision Engine (modules/behavior/main.py):
+    │   ├── Pure rule-based logic, thread-safe via threading.Lock
+    │   ├── evaluate(metrics, current_step_index, max_step_index) → (action, reasons)
+    │   ├── Input metrics:
+    │   │   ├── error_rate (float)
+    │   │   ├── success_rate (float)
+    │   │   ├── restarts_last_hour (int)
+    │   │   └── baseline_success_rate (float, optional)
+    │   ├── Output actions: SCALE_UP, SCALE_DOWN, HOLD
+    │   ├── Decision rules:
+    │   │   ├── Rule 0 — Cooldown guard: 30s minimum between decisions → HOLD
+    │   │   ├── Rule 1 — error_rate > 5% → SCALE_DOWN
+    │   │   ├── Rule 2 — restarts > 3/hr → SCALE_DOWN
+    │   │   ├── Rule 3 — success_rate drop > 10% from baseline → SCALE_DOWN
+    │   │   ├── Rule 4 — all metrics healthy + success_rate ≥ 70% + not at max → SCALE_UP
+    │   │   └── Rule 5 — already at min scale (step 0) → HOLD (prevent under-scale)
+    │   ├── Supporting APIs:
+    │   │   ├── get_decision_history() — bounded to 100 entries
+    │   │   ├── get_last_decision_time() — epoch timestamp
+    │   │   ├── get_status() — thresholds + decision count snapshot
+    │   │   └── reset() — clear state for testing
+    │   └── Safety constraints:
+    │       ├── No cross-module imports (zero external dependencies)
+    │       ├── All state guarded by _lock (thread-safe)
+    │       └── Decision history bounded (max 100 entries)
+    ├── Task 2 — Scaling Execution Layer (integration/runtime.py):
+    │   ├── behavior.evaluate() called inside _runtime_loop each tick
+    │   ├── Decision routing:
+    │   │   ├── SCALE_UP → rollout.try_scale_up()
+    │   │   ├── SCALE_DOWN → rollout.force_rollback(reason=decision_reasons)
+    │   │   └── HOLD → no change (keep current workers)
+    │   ├── Consecutive rollback tracking:
+    │   │   ├── Incremented on each rollback action
+    │   │   ├── Only cleared on actual "scaled_up" action (not on hold)
+    │   │   └── Warning logged when count reaches threshold
+    │   ├── Integration behavior:
+    │   │   ├── Uses existing rollout interfaces (no new module APIs)
+    │   │   ├── Preserves lifecycle states (INIT/RUNNING/STOPPING/STOPPED)
+    │   │   └── behavior.reset() added to runtime.reset()
+    │   └── No module isolation violation:
+    │       └── integration/ imports from modules/ (allowed by architecture)
+    ├── Validation (from CI & tests):
+    │   ├── 33 behavior decision engine tests (test_behavior.py):
+    │   │   ├── All decision rules covered individually
+    │   │   ├── Cooldown enforcement verified
+    │   │   ├── Decision history recording and bounding
+    │   │   ├── Thread-safety under concurrent evaluation
+    │   │   └── Reset and status API contracts
+    │   ├── 13 scaling execution tests (test_scaling_execution.py):
+    │   │   ├── Decision routing (SCALE_UP/DOWN/HOLD → correct rollout call)
+    │   │   ├── Consecutive rollback tracking and clearing
+    │   │   ├── Lifecycle integrity during scaling decisions
+    │   │   └── Concurrent thread-safe operation
+    │   ├── 386 total tests pass (340 baseline + 46 Phase 9)
+    │   ├── No regressions to existing tests
+    │   └── CI fully green
+    └── 🏁 Milestone: System auto-scales based on runtime metrics, behavior engine operational, all decision paths tested
 ```
 
 ---
@@ -458,6 +520,7 @@ PR bị REQUEST_CHANGES
 | P6 | Runbook hoàn chỉnh, sẵn sàng bàn giao |
 | P7 | System audit-consistent, production-hardened, zero confirmed remaining issues |
 | P8 | Production monitoring active, deployment verified, baseline recorded, extension spec defined |
+| P9 | System auto-scales based on runtime metrics, behavior engine operational, all decision paths tested |
 
 ---
 
@@ -469,3 +532,4 @@ PR bị REQUEST_CHANGES
 | 2.0 | 2026-04-01 | **Native AI Workflow** — Loại bỏ hoàn toàn DeepSeek, System Coordinator GPT, và mọi quy trình copy-paste. Chuyển sang 3 tầng bản địa (Human → Architect/Reviewer → Coding Agent). Thêm Security Pipeline (Guard 3.9), Circuit Breaker (Rule 3), CI Failure Recovery. Chuẩn hóa tên file bỏ Unicode en-dash. |
 | 2.1 | 2026-04-04 | **Phase 8 — Production Deployment & Monitoring.** Thêm Phase 8 vào workflow. Định nghĩa `get_deployment_status()`, extension spec cho future upgrades. |
 | 2.2 | 2026-04-04 | **Spec Reconstruction — Phase 7 & Phase 8.** Tái dựng Phase 7 (Post-Finalization Audit Validation) từ lịch sử PR #112–#138. Mở rộng Phase 8 thành full spec từ lịch sử PR #142–#150. Thêm P7 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
+| 2.3 | 2026-04-04 | **Phase 9 — Behavior & Scaling Intelligence.** Bổ sung Phase 9 từ lịch sử PR #160 (Issue #155 Task 1: Behavior Decision Engine, Issue #159 Task 2: Scaling Execution Layer). Thêm P9 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
