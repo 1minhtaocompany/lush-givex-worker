@@ -959,21 +959,6 @@ class TestFailureModeAudit(RuntimeResetMixin, unittest.TestCase):
             if "Unexpected error" in str(msg):
                 logged.set()
 
-        # _log_event raising in the while loop body would be caught by the
-        # catch-all except — simulate by making _should_stop_worker raise
-        def exploding_task(_):
-            raise SystemExit("should not propagate")
-
-        # SystemExit is not an Exception subclass so we need a different approach.
-        # Instead, patch _should_stop_worker to raise a non-standard Exception
-        call_count = {"n": 0}
-
-        def bad_task(_):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return  # first call succeeds
-            # This won't be reached normally, but we'll trigger the catch-all differently
-
         # Simulate unexpected error: patch _log_event to raise on "running"/"start"
         original_log = runtime._log_event
 
