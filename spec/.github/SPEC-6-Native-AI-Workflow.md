@@ -195,7 +195,7 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   ├── Extension 4 — Structured Log Aggregation
     │   └── Extension 5 — Deployment Automation (CI/CD)
     ├── Monitoring signals:
-    │   ├── Worker state: tracked via state field (INIT/RUNNING/STOPPING/STOPPED)
+    │   ├── Runtime state: tracked via state field (INIT/RUNNING/STOPPING/STOPPED)
     │   ├── Restart patterns: tracked via restarts_last_hour metric
     │   └── Error rate / success rate: tracked via error_rate, success_rate metrics
     ├── Monitoring constraints:
