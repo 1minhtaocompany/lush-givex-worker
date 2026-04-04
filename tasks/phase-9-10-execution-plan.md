@@ -6,14 +6,55 @@
 
 ---
 
+## 0. MANDATORY CONTEXT — PR HISTORY & "SAI CÁCH TÍCH HỢP"
+
+### 0.1 PR Merge History (Chronological)
+
+| # | PR | Status | Content |
+|---|---|--------|---------|
+| 1 | Phase 9: Scope PR to Task 1 only — revert premature runtime integration | ✅ Merged | Rollback of incorrect early integration attempt |
+| 2 | Phase 9: Behavior decision engine for scaling intelligence | ✅ Merged | Task 1 — pure logic `modules/behavior/main.py` |
+| 3 | Integrate behavior decision engine into runtime scaling loop | ✅ Merged | Task 2 — connected `behavior.evaluate()` into `_runtime_loop` |
+| 4 | Phase 9 Task 1: Safe Point Architecture — worker-level state model | ❌ **CLOSED** | Task 9.3 — attempted but NOT merged |
+
+### 0.2 Root Cause: Wrong Execution Order
+
+The integration was done **out of order**:
+
+```
+WHAT HAPPENED (wrong):                    WHAT SHOULD HAVE HAPPENED (correct):
+──────────────────────────                ─────────────────────────────────────
+1. Behavior Engine (pure)    ✅ OK        1. Behavior Engine (pure)    ✅ OK
+2. Scaling Integration       ⚠️ PREMATURE  2. Safe Point Architecture   ← SHOULD BE FIRST
+3. Safe Point Architecture   ❌ CLOSED     3. Scaling Integration       ← ONLY after safe points
+```
+
+**Consequence:** The scaling loop (`_runtime_loop`) currently makes SCALE_UP/SCALE_DOWN decisions and calls `_apply_scale()` → `start_worker()`/`stop_worker()` **without checking whether workers are in safe states**. This means:
+- Workers can be killed mid-payment-flow
+- New workers can be started while existing workers are in CRITICAL_SECTION
+- No guard prevents scaling during VBV/3DS handling or API waits
+
+### 0.3 The 5 "SAI CÁCH TÍCH HỢP" Problems
+
+| # | Problem | Description | Blueprint Impact |
+|---|---------|-------------|-----------------|
+| 1 | **CONTROL vs EXECUTION CONFLICT** | Phase 9 control layer (scaling) can interfere with Blueprint execution flow (FSM payment). Control can act at wrong timing. | Scaling during payment → broken checkout flow |
+| 2 | **MISSING SAFE POINT MODEL** | Runtime has no safe point concept. Scaling decisions execute immediately regardless of worker state. | Workers killed during VBV/3DS → lost session |
+| 3 | **NO CRITICAL_SECTION PROTECTION** | No guard protects VBV, payment submit, or API wait from being interrupted by scaling. | Payment submit interrupted → SessionFlaggedError |
+| 4 | **LAYER VIOLATION** | Control layer (behavior/scaling) directly manipulates execution layer without respecting execution boundaries. | Architecture principle violated |
+| 5 | **EXECUTION ORDER WRONG** | Scaling integration was merged BEFORE safe point architecture. Safe point PR was closed, not merged. | System operates without safety boundaries |
+
+---
+
 ## 1. ANALYSIS SUMMARY
 
 ### 1.1 What Was Reviewed
 
 | Component | Location | Phase | Status |
 |-----------|----------|-------|--------|
-| Behavior Decision Engine | `modules/behavior/main.py` | Phase 9 Task 1 | ✅ Implemented |
-| Scaling Execution Layer | `integration/runtime.py` | Phase 9 Task 2 | ✅ Implemented |
+| Behavior Decision Engine | `modules/behavior/main.py` | Phase 9 Task 1 | ✅ Implemented — KEEP |
+| Scaling Execution Layer | `integration/runtime.py` | Phase 9 Task 2 | ⚠️ Implemented — NEEDS ADJUSTMENT |
+| Safe Point Architecture | (not in codebase) | Phase 9 Task 3 | ❌ CLOSED — MUST BE IMPLEMENTED |
 | Behavior Layer Design | SPEC-6 §Phase 10 | Phase 10 | 📋 Designed only |
 | Blueprint (Master) | `spec/blueprint.md` | Reference | ✅ Locked |
 | FSM Module | `modules/fsm/main.py` | Core | ✅ Implemented |
@@ -52,14 +93,34 @@
 | **No `modules/delay/` module** | Phase 10 §Constraints: "uses existing modules/delay/" | Module directory does not exist in current codebase | Phase 10 cannot "use existing" delay module — it must be created first |
 | **Naming Confusion** | Phase 9 = "Behavior Decision Engine", Phase 10 = "Behavior Layer" | Both use "behavior" terminology for different purposes | Implementors may conflate scaling behavior (Phase 9) with execution behavior (Phase 10) |
 
-### 2.3 Phase 9 Verdict
+### 2.3 Phase 9 Verdict — KEEP vs ADJUST
 
-Phase 9 implementation is **correct within its own scope**. The behavior decision engine and scaling execution layer work as specified. However, Phase 9 **did not establish the prerequisite infrastructure** that Phase 10 explicitly depends on:
+#### ✅ KEEP (No changes needed)
 
-1. Worker execution states (CRITICAL_SECTION, SAFE_POINT) — referenced in Phase 10 §10.3, §10.4, §10.8
-2. Delay module foundation — referenced in Phase 10 §Constraints
+| Component | Reason |
+|-----------|--------|
+| `modules/behavior/main.py` (entire file) | Pure decision logic. No integration concerns. Thread-safe. Correct rules. |
+| `behavior.evaluate()` contract | Input/output contract is sound: `(metrics, step, max) → (action, reasons)` |
+| Decision rules 0–5 | Correctly implement spec: cooldown, error_rate, restarts, success_drop, healthy, min_scale |
+| `get_decision_history()`, `get_status()`, `reset()` | Supporting APIs are clean and well-tested |
 
-These are **missing prerequisites**, not implementation bugs.
+#### ⚠️ NEEDS ADJUSTMENT (Integration layer)
+
+| Component | Problem | Required Fix |
+|-----------|---------|-------------|
+| `_runtime_loop()` scaling execution | Calls `_apply_scale()` immediately after `behavior.evaluate()` without checking worker execution states | **MUST** check `is_safe_to_control()` before applying scaling decisions |
+| `_apply_scale()` → `stop_worker()` | Stops workers without verifying they are in a safe state (IDLE or SAFE_POINT) | **MUST** only stop workers that are in safe states; defer others |
+| `_apply_scale()` → `start_worker()` | Starts workers unconditionally | Lower risk but should respect system-wide safe state |
+
+**Critical insight:** The behavior decision engine (Task 1) is **correct and should be kept unchanged**. The integration (Task 2) is **functionally correct but architecturally premature** — it was merged before the safe point model that should have constrained its execution. The fix is NOT to rewrite the integration but to **add the missing safe point guard** that prevents scaling from executing at unsafe times.
+
+#### ❌ MUST BE IMPLEMENTED (Missing prerequisite)
+
+| Component | Status | Why It's Needed |
+|-----------|--------|-----------------|
+| Safe Point Architecture | PR was CLOSED | Without worker execution states, the control layer cannot know when it's safe to scale |
+| Worker state model (IDLE, IN_CYCLE, CRITICAL_SECTION, SAFE_POINT) | Not in codebase | Phase 10 §10.3, §10.4, §10.8 all depend on this |
+| `is_safe_to_control()` guard | Not in codebase | `_runtime_loop` must call this before `_apply_scale()` |
 
 ---
 
@@ -191,66 +252,143 @@ The Blueprint defines specific timings that the delay module must respect:
 ### 5.1 Dependency Graph
 
 ```
-Phase 9 (Existing)          Phase 9 (Gap)              Phase 10
-┌─────────────────┐         ┌────────────────────┐     ┌───────────────────┐
-│ Task 9.1        │         │ Task 9.3           │     │ Task 10.1         │
-│ Behavior Engine │ ✅ Done  │ Worker Exec States │ ──► │ Delay Module      │
-│ (Pure Logic)    │         │ (CRITICAL_SECTION, │     │ (Pure Logic)      │
-└─────────────────┘         │  SAFE_POINT)       │     └────────┬──────────┘
-                            └────────┬───────────┘              │
-┌─────────────────┐                  │              ┌───────────▼──────────┐
-│ Task 9.2        │                  │              │ Task 10.2            │
-│ Scaling Exec    │ ✅ Done           │              │ BehaviorState        │
-│ (Integration)   │                  │              │ Context Definition   │
-└─────────────────┘                  │              └───────────┬──────────┘
-                                     │                          │
-                                     │              ┌───────────▼──────────┐
-                                     └─────────────►│ Task 10.3            │
-                                                    │ Behavior Wrapper     │
-                                                    │ (Integration)        │
-                                                    └───────────┬──────────┘
-                                                                │
-                                                    ┌───────────▼──────────┐
-                                                    │ Task 10.4            │
-                                                    │ Guard Validation     │
-                                                    │ (NO-DELAY Zones)     │
-                                                    └──────────────────────┘
+Phase 9 (Existing — KEEP)   Phase 9 (Gap — CRITICAL)     Phase 10
+┌─────────────────┐         ┌─────────────────────────┐
+│ Task 9.1        │         │ Task 9.3                │
+│ Behavior Engine │ ✅ KEEP  │ Safe Point Architecture │ ◄── MUST BE FIRST
+│ (Pure Logic)    │         │ + Safe Guard in runtime  │
+└─────────────────┘         │ (CRITICAL_SECTION,      │
+                            │  SAFE_POINT, is_safe_to_ │
+┌─────────────────┐         │  control() guard in     │
+│ Task 9.2        │         │  _runtime_loop)         │
+│ Scaling Exec    │ ✅ KEEP  └────────┬────────────────┘
+│ (Integration)   │ + PATCH           │
+└─────────────────┘                   │
+        ▲                             │
+        │ (Task 9.3 patches           │
+        │  _runtime_loop to           ├─────────────────────────┐
+        │  check is_safe_to_          │                         │
+        │  control() before           │                         │
+        │  _apply_scale())            │                         │
+                            ┌─────────▼──────────┐  ┌──────────▼─────────┐
+                            │ Task 10.1          │  │ Task 10.2          │
+                            │ Delay Module       │  │ BehaviorState      │
+                            │ (Pure Logic)       │  │ Context Definition │
+                            └─────────┬──────────┘  └──────────┬─────────┘
+                                      │                        │
+                                      └────────────┬───────────┘
+                                                   │
+                                         ┌─────────▼──────────┐
+                                         │ Task 10.3          │
+                                         │ Behavior Wrapper   │
+                                         │ (Integration)      │
+                                         └─────────┬──────────┘
+                                                   │
+                                         ┌─────────▼──────────┐
+                                         │ Task 10.4          │
+                                         │ Guard Validation   │
+                                         │ (NO-DELAY Zones)   │
+                                         └────────────────────┘
 ```
 
-### 5.2 Execution Sequence (Strict Order)
+### 5.2 Execution Sequence (Strict Order — No Skipping)
 
 ```
-STEP 1: Task 9.3  — Worker Execution States (prerequisite gap-fill)
+STEP 1: Task 9.3  — Safe Point Architecture + Safe Guard in _runtime_loop
+                    (MANDATORY FIRST — fixes "SAI CÁCH TÍCH HỢP")
+                    This task BOTH adds worker states AND patches _runtime_loop
+                    to call is_safe_to_control() before _apply_scale().
+
 STEP 2: Task 10.1 — Delay Module (pure logic, can parallel with 10.2)
 STEP 2: Task 10.2 — BehaviorState Context (pure definition, can parallel with 10.1)
+
 STEP 3: Task 10.3 — Behavior Wrapper (integration — depends on 9.3, 10.1, 10.2)
+
 STEP 4: Task 10.4 — Guard Validation (depends on 10.3)
 ```
+
+### 5.3 Why This Order Is Mandatory
+
+1. **Task 9.3 MUST be first** because:
+   - The current `_runtime_loop` calls `_apply_scale()` without any safe guard
+   - Workers can be killed mid-payment-flow RIGHT NOW
+   - Until `is_safe_to_control()` is added, every scaling decision is a potential Blueprint violation
+   - Phase 10 tasks (10.1, 10.2, 10.3) all depend on CRITICAL_SECTION and SAFE_POINT existing
+
+2. **Tasks 10.1 and 10.2 can be parallel** because:
+   - Both are pure definitions with no integration dependencies
+   - 10.1 (delay module) is a new `modules/delay/` file — no existing file conflicts
+   - 10.2 (BehaviorState) extends `modules/common/types.py` — different file from 10.1
+
+3. **Task 10.3 MUST wait for all of Wave 1+2** because:
+   - It integrates delay module (10.1) with BehaviorState context (10.2)
+   - It injects the wrapper into `_worker_fn` which must respect safe point states (9.3)
+
+4. **Task 10.4 is final validation** — tests the complete integrated system
 
 ---
 
 ## 6. TASK BREAKDOWN
 
-### TASK 9.3 — Worker Execution States (Safe Point Architecture)
+### TASK 9.3 — Safe Point Architecture + Runtime Safe Guard
 
 **Objective:**
-Add worker-level execution state tracking to `integration/runtime.py` so that each worker can declare whether it is in a CRITICAL_SECTION (no external interference allowed) or SAFE_POINT (safe for control operations and delay injection).
+Add worker-level execution state tracking to `integration/runtime.py` AND patch the existing `_runtime_loop` so that scaling decisions only execute when workers are in safe states. This fixes the "SAI CÁCH TÍCH HỢP" by adding the missing safety layer between the control layer (scaling) and the execution layer (worker payment flow).
 
 **Scope:**
 - File: `integration/runtime.py`
-- Add: `ALLOWED_WORKER_STATES = {"IDLE", "IN_CYCLE", "CRITICAL_SECTION", "SAFE_POINT"}`
-- Add: `_worker_states: dict` — maps worker_id → current execution state
-- Add: `set_worker_state(worker_id, state)` — validated state transitions
-- Add: `get_worker_state(worker_id)` → current state
-- Add: `is_safe_to_control()` → True only when all workers are IDLE or SAFE_POINT
-- Modify: `_worker_fn()` to use `_transition_worker_state_locked()` for state changes
-- Modify: `start_worker()` to initialize worker state at registration
+- **Part A — Worker State Model:**
+  - Add: `ALLOWED_WORKER_STATES = {"IDLE", "IN_CYCLE", "CRITICAL_SECTION", "SAFE_POINT"}`
+  - Add: `_worker_states: dict` — maps worker_id → current execution state
+  - Add: `set_worker_state(worker_id, state)` — validated state transitions
+  - Add: `get_worker_state(worker_id)` → current state
+  - Add: `get_all_worker_states()` → snapshot of all worker states
+  - Add: `is_safe_to_control()` → True only when all workers are IDLE or SAFE_POINT
+  - Add: `_transition_worker_state_locked()` for internal validated transitions
+  - Modify: `start_worker()` to initialize worker state at registration (IDLE)
+  - Modify: `_worker_fn()` to transition through states during execution
+  - Modify: cleanup (finally blocks, stop_worker) to remove worker state on exit
+
+- **Part B — Safe Guard in _runtime_loop (fixes "SAI CÁCH TÍCH HỢP"):**
+  - Patch `_runtime_loop`: after `behavior.evaluate()` returns a scaling decision, call `is_safe_to_control()` BEFORE calling `_apply_scale()`
+  - If `is_safe_to_control()` returns False → log "scaling_deferred" and SKIP this tick (keep current workers, do not scale)
+  - If `is_safe_to_control()` returns True → proceed with `_apply_scale()` as before
+  - This ensures: **scaling NEVER happens while any worker is in CRITICAL_SECTION or IN_CYCLE**
 
 **Constraints:**
-- NO changes to scaling logic (behavior.evaluate routing unchanged)
+- NO changes to `behavior.evaluate()` logic (decision engine unchanged)
+- NO changes to `rollout.try_scale_up()`/`force_rollback()` (rollout module unchanged)
 - NO changes to lifecycle states (INIT/RUNNING/STOPPING/STOPPED unchanged)
 - Worker states are SEPARATE from lifecycle states
 - Thread-safe via existing `_lock`
+- `_apply_scale()` internal logic unchanged — only gated by new guard
+
+**Valid Worker State Transitions:**
+```
+IDLE → IN_CYCLE            (worker starts executing task_fn)
+IN_CYCLE → CRITICAL_SECTION (worker enters payment/VBV/API wait)
+IN_CYCLE → SAFE_POINT       (worker at safe point between actions)
+CRITICAL_SECTION → IN_CYCLE (worker exits critical section)
+SAFE_POINT → IN_CYCLE       (worker resumes from safe point)
+IN_CYCLE → IDLE             (worker completes one cycle iteration)
+```
+
+**_runtime_loop patch (pseudocode):**
+```python
+# EXISTING (lines 146-162):
+decision, reasons = behavior.evaluate(metrics, step, max)
+# ... route decision to target ...
+_apply_scale(target, task_fn)  # ← CURRENTLY UNCONDITIONAL
+
+# PATCHED:
+decision, reasons = behavior.evaluate(metrics, step, max)
+# ... route decision to target ...
+if target != current_count:     # Only check when scaling actually changes
+    if not is_safe_to_control():
+        _log_event("runtime", "deferred", "scaling_deferred", {...})
+        continue                 # Skip this tick, retry next interval
+_apply_scale(target, task_fn)   # ← NOW GATED BY SAFE GUARD
+```
 
 **Completion Criteria:**
 - [ ] `ALLOWED_WORKER_STATES` defined with strict transition rules
@@ -258,7 +396,9 @@ Add worker-level execution state tracking to `integration/runtime.py` so that ea
 - [ ] `is_safe_to_control()` returns `True` only when all workers IDLE/SAFE_POINT
 - [ ] `_worker_fn()` transitions through states: IDLE → IN_CYCLE → (CRITICAL_SECTION ↔ SAFE_POINT) → IDLE
 - [ ] Missing worker state treated as unsafe by `is_safe_to_control()`
-- [ ] Tests: state transitions, invalid transition rejection, is_safe_to_control logic
+- [ ] `_runtime_loop` checks `is_safe_to_control()` before `_apply_scale()` when scaling changes
+- [ ] Scaling is deferred (not lost) when workers are in unsafe states
+- [ ] Tests: state transitions, invalid transition rejection, is_safe_to_control logic, scaling deferral
 - [ ] CI pass, no regressions to existing 386 tests
 - [ ] 1 PR, ≤200 lines (excluding tests)
 
@@ -419,27 +559,48 @@ Add explicit guard tests and runtime checks that validate the NO-DELAY zones def
 
 | Task | Depends On | Can Parallel With | Must Complete Before |
 |------|-----------|-------------------|---------------------|
-| **9.3** Worker States | — (none) | — | 10.3 |
-| **10.1** Delay Module | — (none) | 9.3, 10.2 | 10.3 |
-| **10.2** BehaviorState | — (none) | 9.3, 10.1 | 10.3 |
+| **9.3** Safe Point + Safe Guard | — (none) | — (MUST be first) | 10.1, 10.2, 10.3, 10.4 |
+| **10.1** Delay Module | 9.3 | 10.2 | 10.3 |
+| **10.2** BehaviorState | 9.3 | 10.1 | 10.3 |
 | **10.3** Behavior Wrapper | 9.3, 10.1, 10.2 | — | 10.4 |
 | **10.4** Guard Validation | 10.3 | — | — (final) |
 
 ### Parallelization Opportunities
 
 ```
-WAVE 1 (parallel):  Task 9.3  ║  Task 10.1  ║  Task 10.2
-                        │              │              │
-                        └──────────────┼──────────────┘
+WAVE 0 (MANDATORY FIRST):  Task 9.3 (Safe Point + Safe Guard)
+                                │
+                                │  ← Fixes "SAI CÁCH TÍCH HỢP"
+                                │  ← Scaling now gated by is_safe_to_control()
+                                │
+WAVE 1 (parallel):         Task 10.1  ║  Task 10.2
+                                │              │
+                                └──────┬───────┘
                                        │
 WAVE 2 (sequential):           Task 10.3
                                        │
 WAVE 3 (sequential):           Task 10.4
 ```
 
+**CRITICAL CHANGE vs previous plan:** Task 9.3 is now Wave 0 (strictly first, NOT parallel with 10.1/10.2). This is because:
+1. Tasks 10.1 and 10.2 depend on CRITICAL_SECTION/SAFE_POINT concepts being defined (by 9.3)
+2. The current runtime is operating without safety boundaries — this must be fixed before ANY new features
+
 ---
 
 ## 8. RISK ASSESSMENT
+
+### 8.0 CRITICAL Risk: Scaling Without Safe Guard (CURRENT STATE)
+
+**Risk:** The `_runtime_loop` currently calls `_apply_scale()` unconditionally after `behavior.evaluate()`. This means `stop_worker()` can be called on a worker that is in the middle of a payment submit, VBV/3DS handling, or API wait. This is the core "SAI CÁCH TÍCH HỢP" — the control layer interferes with the execution layer at unsafe times.
+
+**Current Impact:**
+- Workers can be killed mid-payment → broken checkout, lost session
+- Workers can be killed during VBV/3DS → iframe stuck, session flagged
+- Workers can be killed during API wait → timeout, SessionFlaggedError
+- New workers can start while system is in an inconsistent state
+
+**Mitigation:** Task 9.3 MUST be implemented first. It adds `is_safe_to_control()` as a gate in `_runtime_loop` before `_apply_scale()`. Until this is done, no other Phase 10 work should proceed.
 
 ### 8.1 High Risk: BehaviorState ↔ Existing FSM Confusion
 
@@ -485,30 +646,52 @@ Every task PR must satisfy:
 
 ## 10. SUMMARY
 
-### Problems Identified
+### Root Cause: "SAI CÁCH TÍCH HỢP"
 
-1. **Phase 10 depends on worker execution states (CRITICAL_SECTION, SAFE_POINT) that Phase 9 did not implement** — Phase 10 §10.3 references "CRITICAL_SECTION (defined in Phase 9)" but no such infrastructure exists in the codebase.
+The scaling integration (Task 9.2) was merged BEFORE the safe point architecture (Task 9.3). Task 9.3's PR was subsequently closed without merge. As a result, the runtime's `_runtime_loop` makes scaling decisions and applies them immediately — without any guard to prevent scaling during critical operations (payment, VBV, API waits).
 
-2. **Phase 10 assumes `modules/delay/` exists** — The constraint "uses existing modules/delay/" cannot be met because the module does not exist.
+### What To KEEP (No Changes)
 
-3. **BehaviorState (Phase 10) relationship to existing FSM is undefined** — Two state machines (outcome states vs. execution context) need clear separation.
+| Component | File | Reason |
+|-----------|------|--------|
+| Behavior Decision Engine | `modules/behavior/main.py` | Pure logic, correct rules, well-tested, no integration issues |
+| Decision routing in `_runtime_loop` | `integration/runtime.py` lines 146-163 | Logic for routing SCALE_UP/DOWN/HOLD to rollout is correct |
+| Consecutive rollback tracking | `integration/runtime.py` | Correct safety mechanism |
+| All existing tests (386) | `tests/` | No regressions allowed |
 
-4. **Delay timing bounds not explicitly mapped to Blueprint values** — Phase 10 spec references Blueprint sections but does not bind specific delay ranges.
+### What NEEDS ADJUSTMENT
 
-5. **Worker wrapper injection point is ambiguous** — The spec says "worker_fn → wrap(task_fn)" but doesn't specify exactly where in the code the wrapping occurs.
+| Component | File | Required Change |
+|-----------|------|----------------|
+| `_runtime_loop` scaling execution | `integration/runtime.py` | Add `is_safe_to_control()` guard BEFORE `_apply_scale()` |
+| Worker lifecycle tracking | `integration/runtime.py` | Add worker execution states (IDLE/IN_CYCLE/CRITICAL_SECTION/SAFE_POINT) |
 
-### Redesigned Execution Order
+### Problems Identified (Updated with PR History Context)
 
-1. **Task 9.3** — Fill the Phase 9 prerequisite gap: add worker execution states
-2. **Task 10.1** — Create delay module (pure logic, Blueprint-aligned timing)
-3. **Task 10.2** — Define BehaviorState context (separate from existing FSM)
-4. **Task 10.3** — Build behavior wrapper (integration point for delays)
-5. **Task 10.4** — Validate NO-DELAY zone guards
+1. **"SAI CÁCH TÍCH HỢP" — Wrong execution order:** Scaling integration merged before safe point architecture. Control layer operates without execution boundaries.
+
+2. **No CRITICAL_SECTION protection:** Workers can be killed during payment submit, VBV/3DS handling, or API waits. No guard prevents this.
+
+3. **No SAFE_POINT model:** Runtime cannot determine when it's safe to scale. `_apply_scale()` executes unconditionally.
+
+4. **Phase 10 depends on nonexistent infrastructure:** CRITICAL_SECTION, SAFE_POINT, `modules/delay/`, BehaviorState — all referenced by Phase 10 spec but not implemented.
+
+5. **Layer violation:** Control layer (scaling) directly manipulates execution layer without respecting execution flow boundaries defined in Blueprint.
+
+### Redesigned Execution Order (Corrected)
+
+```
+WAVE 0:  Task 9.3  — Safe Point Architecture + Safe Guard (MANDATORY FIRST)
+WAVE 1:  Task 10.1 ║ Task 10.2 — Delay Module + BehaviorState (parallel)
+WAVE 2:  Task 10.3 — Behavior Wrapper (integration)
+WAVE 3:  Task 10.4 — NO-DELAY Zone Guard Validation
+```
 
 ### Key Principles
 
-- Bottom-up: pure logic first, integration last
-- No cross-layer contamination
-- Each task independently testable and deployable
+- **Safe point FIRST** — no other work until control layer respects execution boundaries
+- Control layer (Phase 9) only acts at safe points — never during critical operations
+- Execution layer (Phase 10) only injects delays at safe zones — never during critical sections
 - Blueprint timing is the source of truth for delay bounds
-- Phase 9 scaling logic remains completely untouched
+- Behavior decision engine (`modules/behavior/main.py`) remains completely untouched
+- Each task independently testable and deployable via 1 PR ≤ 200 lines
