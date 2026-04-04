@@ -12,7 +12,6 @@ import threading
 import time
 import unittest
 
-from modules.behavior import main as behavior
 from modules.behavior.main import (
     COOLDOWN_SECONDS,
     ERROR_RATE_THRESHOLD,
@@ -24,6 +23,7 @@ from modules.behavior.main import (
     SUCCESS_RATE_MIN,
     VALID_DECISIONS,
     evaluate,
+    expire_cooldown_for_testing,
     get_decision_history,
     get_last_decision_time,
     get_status,
@@ -223,8 +223,7 @@ class TestCooldown(BehaviorResetMixin, unittest.TestCase):
         action1, _ = evaluate(_healthy_metrics(), 0, 3)
         self.assertEqual(action1, SCALE_UP)
         # Manually expire cooldown
-        with behavior._lock:
-            behavior._last_decision_time = time.time() - COOLDOWN_SECONDS - 1
+        expire_cooldown_for_testing()
         action2, _ = evaluate(_healthy_metrics(), 1, 3)
         self.assertEqual(action2, SCALE_UP)
 
@@ -246,8 +245,7 @@ class TestDecisionHistory(BehaviorResetMixin, unittest.TestCase):
 
     def test_history_bounded(self):
         for i in range(110):
-            with behavior._lock:
-                behavior._last_decision_time = 0.0
+            expire_cooldown_for_testing()
             evaluate(_healthy_metrics(), 0, 3)
         history = get_decision_history()
         self.assertLessEqual(len(history), 100)
@@ -316,8 +314,7 @@ class TestThreadSafety(BehaviorResetMixin, unittest.TestCase):
 
         def worker(idx):
             try:
-                with behavior._lock:
-                    behavior._last_decision_time = 0.0
+                expire_cooldown_for_testing()
                 action, reasons = evaluate(_healthy_metrics(), 0, 3)
                 if action not in VALID_DECISIONS:
                     errors.append(f"Thread {idx}: invalid action {action}")
@@ -385,8 +382,7 @@ class TestValidDecisions(BehaviorResetMixin, unittest.TestCase):
             (_unhealthy_success_drop(), 2, 3),
         ]
         for i, (m, idx, mx) in enumerate(scenarios):
-            with behavior._lock:
-                behavior._last_decision_time = 0.0
+            expire_cooldown_for_testing()
             action, reasons = evaluate(m, idx, mx)
             self.assertIn(action, VALID_DECISIONS,
                           f"Scenario {i}: {action} not in VALID_DECISIONS")

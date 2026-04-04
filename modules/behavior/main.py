@@ -179,3 +179,10 @@ def reset():
     with _lock:
         _last_decision_time = 0.0
         _decision_history = []
+
+
+def expire_cooldown_for_testing():
+    """Force-expire the cooldown timer.  Intended for testing only."""
+    global _last_decision_time
+    with _lock:
+        _last_decision_time = 0.0
