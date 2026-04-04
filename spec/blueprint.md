@@ -226,3 +226,161 @@ Ràng buộc bộ đếm swap chung:
 · Worker quay về đầu OrderQueue, nhận nhiệm vụ mới và bắt đầu một Cycle hoàn toàn mới từ Giai đoạn 0 (Đầu vào & Khởi tạo Worker).
 
 ---
+
+8. KIẾN TRÚC HÀNH VI (BEHAVIOR ARCHITECTURE)
+
+Mapping giữa Blueprint và Phase 10 Behavior Layer:
+
+· PersonaProfile (Nhân Cách Worker):
+
+  · Nguồn gốc: Seed Hành Vi được cấp tại §2 (Khởi động & Tiêm Nhân Cách).
+
+  · Bao gồm:
+    - typing_speed: tốc độ gõ phím (quy định bởi seed, §4 quy tắc 4x4: 0.6–1.8s mỗi nhóm 4 số)
+    - typo_rate: tỷ lệ cố tình gõ sai (2–5% theo seed, §4)
+    - hesitation_pattern: thời gian ngập ngừng giữa các thao tác (§5: 3–5s)
+    - persona_type: mô tả đối tượng (người già, trẻ, phụ nữ, đàn ông — §2)
+
+  · Vòng đời: Cố định suốt cycle. Không thay đổi khi swap thẻ.
+
+· BehaviorState (Trạng Thái Thao Tác):
+
+  · Theo dõi ngữ cảnh hiện tại của worker trong cycle:
+    - IDLE — chờ bước tiếp theo (giữa các thao tác)
+    - FILLING_FORM — đang điền form (recipient, billing — §4)
+    - PAYMENT — đang nhập thẻ thanh toán (card number, CVV — §5)
+    - VBV — đang xử lý 3DS iframe (§6 Ngã rẽ 3)
+    - POST_ACTION — chờ kết quả sau submit (§6 Gatekeeper)
+
+  · Quy tắc: Quyết định delay PHẢI dựa trên BehaviorState hiện tại.
+
+· AntiDetection Layer:
+
+  · Tầng điều khiển hành vi theo thời gian (temporal behavior control).
+  · Hoạt động song song với PersonaProfile để tạo biometrics giống người thật.
+  · Chi tiết xem §12 (Anti-Detect Layer 2 Tầng).
+
+---
+
+9. TÍCH HỢP THỰC THI (EXECUTION INTEGRATION)
+
+· Cơ chế: Behavior được inject tại worker execution layer thông qua pattern wrapper:
+
+  task_fn = wrap(task_fn, persona)
+
+· Vị trí inject: Bên trong worker function, bao bọc task_fn gốc.
+
+· KHÔNG can thiệp vào:
+  - Runtime loop (vòng lặp điều khiển)
+  - Rollout / Scaling (quản lý số lượng worker)
+  - Monitor (giám sát metrics)
+  - FSM (máy trạng thái — flow §6 giữ nguyên 100%)
+
+· Nguyên tắc: Wrapper chỉ thêm delay tại các điểm an toàn (SAFE ZONE). Logic execution không bị thay đổi. Kết quả success/failure không bị ảnh hưởng.
+
+---
+
+10. KIỂM SOÁT HIỆU NĂNG (PERFORMANCE CONTROL)
+
+· Hard constraints (ràng buộc cứng):
+
+  - max_delay_per_action ≤ 1.8s (typing mỗi nhóm 4 số — §4)
+  - max_delay_per_hesitation ≤ 5.0s (thinking — §5)
+  - total_behavioral_delay_per_step ≤ 7.0s (để lại ≥3s headroom cho watchdog 10s — §5)
+  - typing và thinking loại trừ lẫn nhau trong cùng một bước cycle
+
+· Delay phải:
+  - Bị clamp (giới hạn) trước khi áp dụng — không bao giờ vượt quá max
+  - Không block worker loop — delay thực hiện bằng sleep không chặn luồng chính
+  - Không ảnh hưởng watchdog timeout hoặc system-level deadlines
+
+· Overhead trung bình: ≤ 15% so với thời gian cycle không có behavior.
+
+---
+
+11. MÔ HÌNH XÁC ĐỊNH (DETERMINISTIC MODEL)
+
+· Hệ thống random:
+
+  rnd = random.Random(seed)
+
+  Trong đó seed là Seed Hành Vi được cấp tại §2.
+
+· Đảm bảo:
+  - Reproducible: cùng seed → cùng pattern hành vi (tốc độ gõ, typo, hesitation)
+  - Testable: có thể kiểm thử với seed cố định
+  - Isolated: mỗi worker có instance random.Random riêng, không chia sẻ state
+
+· Áp dụng cho:
+  - Tốc độ gõ phím (typing_speed distribution)
+  - Tỷ lệ gõ sai (typo trigger)
+  - Thời gian ngập ngừng (hesitation duration)
+  - Offset click (Bounding Box ± random)
+
+---
+
+12. ANTI-DETECT LAYER 2 TẦNG
+
+TẦNG 1 — ENVIRONMENT & INTERACTION (ĐÃ CÓ TRONG §1-§7):
+
+  · Proxy tĩnh SOCKS5/HTTP map 1-1 với Profile BitBrowser (§1)
+  · BitBrowser fingerprint — vân tay trình duyệt duy nhất mỗi cycle (§2)
+  · CDP input — toàn bộ thao tác qua Chrome DevTools Protocol, isTrusted=True 100% (§1)
+  · Ghost cursor — đường cong Bézier tự nhiên cho di chuyển chuột (§3)
+  · Bounding Box Click — offset ngẫu nhiên (x±15, y±5) cho mỗi worker (§4)
+
+TẦNG 2 — BEHAVIORAL BIOMETRICS (BỔ SUNG — Phase 10):
+
+  · Temporal noise (nhiễu thời gian):
+    - Phân bố log-normal hoặc gaussian cho inter-keystroke delay
+    - Mỗi worker có distribution riêng dựa trên PersonaProfile seed
+
+  · Burst typing (nhịp gõ không đều):
+    - Mô phỏng người gõ nhanh rồi dừng, gõ nhanh rồi dừng
+    - Kết hợp với quy tắc 4x4: gõ 4 số → khựng → gõ 4 số (§4)
+
+  · Hesitation (ngập ngừng):
+    - 3–5s hover/scroll quanh nút trước khi click (§5)
+    - Thể hiện hành vi "kiểm tra lại thông tin"
+
+  · Trạng thái tâm lý (fatigue/stress — implicit):
+    - Seed persona_type quyết định mức độ ngập ngừng
+    - Người già: delay cao hơn, hesitation dài hơn
+    - Người trẻ: gõ nhanh hơn, ít ngập ngừng
+
+· QUY TẮC:
+  - Tầng 2 KHÔNG phá Tầng 1 — hành vi temporal bổ sung lên environment, không thay thế
+  - Tầng 2 KHÔNG thay đổi execution outcome — cùng input → cùng kết quả logic
+
+---
+
+13. SAFETY ALIGNMENT (ĐỐI CHIẾU AN TOÀN)
+
+· Behavior layer KHÔNG can thiệp CRITICAL_SECTION:
+
+  Các điểm CRITICAL_SECTION (zero delay):
+  - Payment submit — click "Complete Purchase" (§5, §6)
+  - VBV/3DS handling — iframe interaction + chờ loading (§6 Ngã rẽ 3)
+  - API wait — CDP Network.responseReceived pending (§5 Watchdog)
+  - Page reload operations (§6 Ngã rẽ 3, 4)
+
+· Behavior layer KHÔNG phá watchdog:
+  - Tổng delay mỗi bước ≤ 7.0s, watchdog timeout = 10s → headroom ≥ 3s
+  - Delay bị clamp cứng trước khi áp dụng
+
+· Behavior layer KHÔNG thay đổi outcome:
+  - FSM flow giữ nguyên 100% (4 ngã rẽ — §6)
+  - Thứ tự bước execution không đổi
+  - Kết quả success/failure không bị ảnh hưởng bởi delay
+  - State transitions không bị behavior can thiệp
+
+· Stagger start (§1: random.uniform(12, 25)s) là cơ chế RIÊNG BIỆT:
+  - Stagger hoạt động giữa các worker launches
+  - Behavior delay hoạt động trong cycle
+  - Hai cơ chế KHÔNG can thiệp lẫn nhau
+
+· VBV 8–12s wait (§6 Ngã rẽ 3) là OPERATIONAL wait:
+  - Chờ iframe loading — không phải behavioral delay
+  - KHÔNG được thay thế hoặc bổ sung bởi behavior layer
+
+---
