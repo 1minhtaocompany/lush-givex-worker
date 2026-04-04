@@ -384,3 +384,123 @@ TẦNG 2 — BEHAVIORAL BIOMETRICS (BỔ SUNG — Phase 10):
   - KHÔNG được thay thế hoặc bổ sung bởi behavior layer
 
 ---
+
+14. MÔ PHỎNG HÀNH VI NGÀY/ĐÊM (DAY/NIGHT BEHAVIOR SIMULATION)
+
+Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường anti-detect bằng temporal realism.
+
+· Biological Time State:
+
+  Hệ thống xác định trạng thái thời gian dựa trên giờ local (UTC offset theo proxy timezone):
+
+  - DAY (06:00–22:00): trạng thái tỉnh táo, hoạt động bình thường
+  - NIGHT (22:00–06:00): trạng thái mệt mỏi, hoạt động chậm hơn
+
+  Xác định: dựa trên proxy IP → timezone (MaxMind GeoLite2, đã có tại §5) → giờ local.
+
+· Behavior Differentiation:
+
+  DAY mode:
+  - Tốc độ gõ: ổn định, phù hợp với persona_type (§8 PersonaProfile)
+  - Hesitation: ngắn (theo seed — §11), ít ngập ngừng
+  - Typo rate: baseline theo seed (2–5% — §4)
+  - Inter-action delay: đều, biến thiên thấp
+
+  NIGHT mode:
+  - Tốc độ gõ: chậm hơn DAY 15–30% (scale factor từ rnd — §11)
+  - Hesitation: tăng 20–40% so với DAY (fatigue simulation)
+  - Typo rate: tăng 1–2% tuyệt đối so với DAY baseline
+  - Inter-action delay: không đều hơn, variance cao hơn (mô phỏng buồn ngủ)
+
+  Tất cả giá trị vẫn BỊ CLAMP bởi hard constraints §10:
+  - max_delay_per_action ≤ 1.8s
+  - max_delay_per_hesitation ≤ 5.0s
+  - total_behavioral_delay_per_step ≤ 7.0s
+
+· Temporal Variation (Biến Thiên Thời Gian):
+
+  Hành vi KHÔNG cố định mà biến động theo thời gian trong cycle:
+  - Gradual drift: hành vi thay đổi từ từ qua các bước cycle (không nhảy đột ngột)
+  - Micro-variation: mỗi thao tác có nhiễu nhỏ (±5–10%) từ rnd (§11)
+  - Session fatigue: sau 3+ cycles liên tiếp, hesitation tăng nhẹ (mô phỏng mệt mỏi tích lũy)
+
+  Tất cả variation được tạo từ rnd = random.Random(seed) → reproducible + testable.
+
+· Integration với PersonaProfile (§8):
+
+  PersonaProfile mở rộng thêm thuộc tính temporal:
+  - active_hours: khung giờ hoạt động ưa thích (từ seed, ví dụ: persona "trẻ" → 10:00–02:00)
+  - fatigue_threshold: ngưỡng mệt mỏi (số cycles trước khi session fatigue kích hoạt)
+  - night_penalty_factor: hệ số chậm đêm (0.15–0.30, từ seed)
+
+  Vòng đời: Cố định suốt worker lifetime (không đổi giữa các cycles).
+
+· Anti-Detect Enhancement:
+
+  Day/Night model tăng cường Tầng 2 (§12 Behavioral Biometrics):
+  - Temporal fingerprint đa dạng: cùng persona nhưng hành vi khác nhau theo giờ
+  - Phá pattern đồng nhất: workers chạy cùng lúc nhưng có penalty factor khác nhau
+  - Non-periodic: kết hợp DAY/NIGHT + burst typing + hesitation → không có pattern lặp
+  - Realistic variance: mô phỏng người thật — ban ngày nhanh, ban đêm chậm và hay nhầm
+
+· Quy tắc an toàn:
+
+  - Day/Night model KHÔNG can thiệp CRITICAL_SECTION (§13) — zero delay tại payment submit, VBV, API wait
+  - Day/Night model KHÔNG phá watchdog — tất cả delay vẫn bị clamp bởi §10 hard constraints
+  - Day/Night model KHÔNG ảnh hưởng FSM — flow §6 giữ nguyên 100%, chỉ timing thay đổi
+  - Day/Night model KHÔNG thay đổi outcome — kết quả success/failure không phụ thuộc thời gian ngày/đêm
+
+---
+
+15. ĐỒNG BỘ SPEC ↔ BLUEPRINT (SYNCHRONIZATION MATRIX)
+
+Ma trận đối chiếu giữa Spec Phase 10 và Blueprint:
+
+· Spec §10.1 (Architecture) ↔ Blueprint §9 (Execution Integration):
+  - Spec: wrapper ONLY tại worker execution layer
+  - Blueprint: task_fn = wrap(task_fn, persona) tại worker function
+  - Status: ✓ ĐỒNG BỘ
+
+· Spec §10.2 (FSM Context) ↔ Blueprint §8 (BehaviorState):
+  - Spec: IDLE, FILLING_FORM, PAYMENT, VBV, POST_ACTION
+  - Blueprint: IDLE, FILLING_FORM, PAYMENT, VBV, POST_ACTION
+  - Status: ✓ ĐỒNG BỘ
+
+· Spec §10.3 (CRITICAL_SECTION) ↔ Blueprint §13 (Safety Alignment):
+  - Spec: Payment submit, VBV/3DS, API wait → NO delay
+  - Blueprint: Payment submit, VBV/3DS, API wait, Page reload → zero delay
+  - Status: ✓ ĐỒNG BỘ (Blueprint mở rộng thêm Page reload — an toàn hơn)
+
+· Spec §10.4 (SAFE POINT/SAFE ZONE) ↔ Blueprint §9 + §13:
+  - Spec: delay chỉ tại UI interaction, non-critical steps
+  - Blueprint: wrapper chỉ thêm delay tại SAFE ZONE, stagger tách biệt
+  - Status: ✓ ĐỒNG BỘ
+
+· Spec §10.5 (NO-DELAY Zone) ↔ Blueprint §13:
+  - Spec: Payment submit, Watchdog, Network wait, VBV iframe, Page reload
+  - Blueprint: Payment submit, VBV/3DS, API wait, Page reload
+  - Status: ✓ ĐỒNG BỘ
+
+· Spec §10.6 (Action-Aware Delay) ↔ Blueprint §10 (Performance Control):
+  - Spec: typing max 1.8s/group, thinking max 5s, total ≤7.0s/step, ≥3s headroom
+  - Blueprint: max_delay_per_action ≤ 1.8s, max_delay_per_hesitation ≤ 5.0s, total ≤ 7.0s, ≥3s headroom
+  - Status: ✓ ĐỒNG BỘ
+
+· Spec §10.6 (Deterministic) ↔ Blueprint §11 (Deterministic Model):
+  - Spec: Seed-based random, reproducible execution
+  - Blueprint: rnd = random.Random(seed), reproducible + testable + isolated
+  - Status: ✓ ĐỒNG BỘ
+
+· Spec §10.7 (Non-Interference) ↔ Blueprint §13 (Safety Alignment):
+  - Spec: no CRITICAL_SECTION delay, no FSM disruption, no side-effects, no order change, no outcome change
+  - Blueprint: FSM giữ nguyên, thứ tự không đổi, outcome không ảnh hưởng, state transitions không bị can thiệp
+  - Status: ✓ ĐỒNG BỘ
+
+· Spec §10.8 (Phase 9 Alignment) ↔ Blueprint §13:
+  - Spec: respect SAFE_POINT, respect CRITICAL_SECTION
+  - Blueprint: CRITICAL_SECTION zero delay, stagger tách biệt, VBV operational wait tách biệt
+  - Status: ✓ ĐỒNG BỘ
+
+· Kết luận: Zero mismatch. Blueprint phản ánh đúng và đầy đủ Spec Phase 10.
+
+---
