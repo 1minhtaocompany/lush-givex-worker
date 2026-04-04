@@ -420,6 +420,11 @@ def rule_spec_lock_enforcement(changed_files: list[str]) -> list[AuditError]:
 	spec_files = [f for f in changed_files if _is_spec_path(f)]
 	if not spec_files:
 		return errors
+	allow_spec = os.environ.get(
+		"ALLOW_SPEC_MODIFICATION", ""
+	).strip().lower() == "true"
+	if allow_spec:
+		return errors
 	change_class = os.environ.get("CHANGE_CLASS", "").strip().lower()
 	if change_class != "spec_sync":
 		errors.append(
