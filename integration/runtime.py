@@ -3,7 +3,6 @@ import logging
 import threading
 import time
 import uuid
-from modules.behavior import main as behavior
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 _logger = logging.getLogger(__name__)
@@ -141,30 +140,16 @@ def _runtime_loop(task_fn, interval):
                 metrics = monitor.get_metrics()
             except Exception as exc:
                 _log_event("runtime", "warning", "monitor_unavailable", {"error": str(exc)}); _safe_sleep(interval); continue
-            # Behavior-driven decision
-            step_index = rollout.get_current_step_index()
-            max_index = len(rollout.SCALE_STEPS) - 1
-            decision, decision_reasons = behavior.evaluate(metrics, step_index, max_index)
-            if decision == behavior.SCALE_DOWN:
-                target = rollout.force_rollback(reason="; ".join(decision_reasons))
-                action = "rollback"
-                reasons = decision_reasons
-            elif decision == behavior.SCALE_UP:
-                target, action, reasons = rollout.try_scale_up()
-            else:
-                # HOLD — keep current target, no scaling change
-                target = rollout.get_current_workers()
-                action = "hold"
-                reasons = decision_reasons
+            target, action, reasons = rollout.try_scale_up()
             with _lock:
                 if action == "rollback":
                     _consecutive_rollbacks += 1
                     if _consecutive_rollbacks >= _MAX_CONSECUTIVE_ROLLBACKS:
                         _log_event("runtime", "warning", "consecutive_rollbacks", {"count": _consecutive_rollbacks})
-                elif action != "hold":
+                else:
                     _consecutive_rollbacks = 0
             _apply_scale(target, task_fn)
-            _log_event("runtime", action, "loop_tick", {"target": target, "decision": decision, "metrics": metrics})
+            _log_event("runtime", action, "loop_tick", {"target": target, "metrics": metrics})
         except Exception as exc:
             _log_event("runtime", "error", "loop_error", {"error": str(exc)})
         _safe_sleep(interval)
@@ -318,4 +303,3 @@ def reset():
         _consecutive_rollbacks = 0; _pending_restarts = 0; _stop_requests.clear()
     with _trace_lock:
         _trace_id = None
-    behavior.reset()
