@@ -76,6 +76,9 @@ def stop_worker(worker_id, timeout=None):
     if thread is threading.current_thread():
         raise RuntimeError("cannot join current thread")
     if thread.ident is None:
+        # Thread registered but not yet started; is_alive() will be False below,
+        # so cleanup proceeds normally. _worker_fn's finally block handles the
+        # eventual start → immediate stop via _should_stop_worker.
         _logger.debug("join() on not-yet-started thread for %s; will self-cleanup via _worker_fn", worker_id)
     else:
         thread.join(timeout=_WORKER_TIMEOUT if timeout is None else timeout)

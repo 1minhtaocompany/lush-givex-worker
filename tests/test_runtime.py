@@ -827,7 +827,12 @@ class TestRegistryConcurrency(RuntimeResetMixin, unittest.TestCase):
         runtime._state = "INIT"
 
     def test_stop_worker_on_not_yet_started_thread(self):
-        """stop_worker handles thread registered but not yet started without raising."""
+        """stop_worker handles thread registered but not yet started without raising.
+
+        Direct state manipulation is required because the public start_worker()
+        API calls t.start() immediately, making the narrow registration-to-start
+        window impossible to hit deterministically through the public interface.
+        """
         with runtime._lock:
             runtime._worker_counter += 1
             wid = f"worker-{runtime._worker_counter}"
