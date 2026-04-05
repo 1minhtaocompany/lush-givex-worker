@@ -5,7 +5,7 @@ import unittest
 from modules.delay.main import (
     PersonaProfile, MAX_TYPING_DELAY, MAX_HESITATION_DELAY, MAX_STEP_DELAY,
     TemporalModel, DAY_START, DAY_END,
-    NIGHT_SPEED_PENALTY_RANGE, NIGHT_HESITATION_INCREASE_RANGE, NIGHT_TYPO_INCREASE,
+    NIGHT_SPEED_PENALTY_RANGE, NIGHT_HESITATION_INCREASE_RANGE, NIGHT_TYPO_INCREASE_RANGE,
 )
 
 
@@ -94,7 +94,7 @@ class TestFatigue(_TemporalSetup):
         self.assertLessEqual(result - base, 1.0 + 1e-9)
 
     def test_fatigue_clamped_to_hard_limit(self):
-        """apply_fatigue() must never exceed MAX_STEP_DELAY (Blueprint §14 safety)."""
+        """apply_fatigue() must never exceed MAX_STEP_DELAY (Blueprint §10 safety)."""
         result = self.tm.apply_fatigue(MAX_HESITATION_DELAY, self.persona.fatigue_threshold + 1000)
         self.assertLessEqual(result, MAX_STEP_DELAY)
 
@@ -121,11 +121,11 @@ class TestGetCurrentModifiers(_TemporalSetup):
         self.assertIn("fatigue_threshold", mods)
         self.assertIn("micro_var_range", mods)
         self.assertIn("night_hesitation_increase_range", mods)
-        self.assertIn("night_typo_increase", mods)
+        self.assertIn("night_typo_increase_range", mods)
 
     def test_night_typo_value(self):
         mods = self.tm.get_current_modifiers()
-        self.assertEqual(mods["night_typo_increase"], NIGHT_TYPO_INCREASE)
+        self.assertEqual(mods["night_typo_increase_range"], NIGHT_TYPO_INCREASE_RANGE)
 
 
 class TestNightHesitationIncrease(_TemporalSetup):
@@ -150,7 +150,22 @@ class TestNightTypoIncrease(_TemporalSetup):
         if offset > 12:
             offset -= 24
         increase = self.tm.get_night_typo_increase(offset)
-        self.assertEqual(increase, NIGHT_TYPO_INCREASE)
+        self.assertGreaterEqual(increase, NIGHT_TYPO_INCREASE_RANGE[0] - 1e-9)
+        self.assertLessEqual(increase, NIGHT_TYPO_INCREASE_RANGE[1] + 1e-9)
+
+    def test_night_typo_increase_is_random_in_range(self):
+        """Multiple NIGHT calls must produce values across the 1–2% range (not fixed)."""
+        utc_hour = time.gmtime().tm_hour
+        offset = (3 - utc_hour) % 24
+        if offset > 12:
+            offset -= 24
+        results = {self.tm.get_night_typo_increase(offset) for _ in range(20)}
+        # All values must be within range
+        for v in results:
+            self.assertGreaterEqual(v, NIGHT_TYPO_INCREASE_RANGE[0] - 1e-9)
+            self.assertLessEqual(v, NIGHT_TYPO_INCREASE_RANGE[1] + 1e-9)
+        # With 20 calls from a seeded RNG, we should see at least 2 distinct values
+        self.assertGreater(len(results), 1, "get_night_typo_increase() must be random, not fixed")
 
     def test_day_typo_no_increase(self):
         utc_hour = time.gmtime().tm_hour

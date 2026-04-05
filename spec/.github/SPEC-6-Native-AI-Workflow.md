@@ -268,14 +268,14 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   ├── Thêm behavioral delay vào worker execution layer
     │   ├── Mô phỏng hành vi người dùng thực (typing, click, hesitation)
     │   └── KHÔNG thay đổi control logic, scaling, hoặc orchestration
-    ├── 10.1 — Architecture:
+    ├── 10.1 — Architecture (↔ Blueprint §8.1):
     │   ├── Behavior wrapper ONLY tại worker execution layer:
     │   │   └── worker_fn → wrap(task_fn)
     │   └── KHÔNG:
     │       ├── Inject vào runtime loop
     │       ├── Inject vào scaling logic
     │       └── Modify orchestration flow
-    ├── 10.2 — FSM Context (MANDATORY):
+    ├── 10.2 — FSM Context (MANDATORY) (↔ Blueprint §8.2):
     │   ├── BehaviorState MUST include context:
     │   │   ├── IDLE — between actions, awaiting next step
     │   │   ├── FILLING_FORM — form field interaction (recipient, billing)
@@ -283,13 +283,13 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   ├── VBV — 3DS iframe handling
     │   │   └── POST_ACTION — after submit, waiting for result
     │   └── Rule: Delay decision MUST depend on current context
-    ├── 10.3 — CRITICAL_SECTION Awareness (Phase 9 alignment):
+    ├── 10.3 — CRITICAL_SECTION Awareness (Phase 9 alignment) (↔ Blueprint §8.3):
     │   ├── CRITICAL_SECTION (defined in Phase 9):
     │   │   ├── Payment submit (Complete Purchase execution)
     │   │   ├── VBV/3DS handling (iframe interaction + wait)
     │   │   └── API wait (CDP Network.responseReceived pending)
     │   └── Rule: If in CRITICAL_SECTION → NO delay injected
-    ├── 10.4 — SAFE POINT / SAFE ZONE Rule:
+    ├── 10.4 — SAFE POINT / SAFE ZONE Rule (↔ Blueprint §8.4):
     │   ├── Delay ONLY permitted at (SAFE ZONE):
     │   │   ├── UI interaction (typing, click, hover)
     │   │   └── Non-critical steps (form navigation, field focus)
@@ -297,7 +297,7 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   ├── Execution control (scaling, lifecycle transitions)
     │   │   └── System coordination (runtime loop, watchdog checks)
     │   └── Separation: Stagger start (Blueprint §1: random.uniform(12, 25)s between worker launches) is a SEPARATE mechanism from behavioral delay. Behavior delay operates WITHIN a cycle, not between worker launches. These MUST NOT interfere.
-    ├── 10.5 — NO-DELAY Zone (STRICT):
+    ├── 10.5 — NO-DELAY Zone (STRICT) (↔ Blueprint §8.5):
     │   ├── Behavior layer MUST NOT inject delay vào:
     │   │   ├── Payment submit (Complete Purchase click event)
     │   │   ├── Watchdog timeout checks
@@ -305,26 +305,26 @@ SPEC-6 EXECUTION WORKFLOW (Native AI)
     │   │   ├── VBV iframe load/interaction
     │   │   └── Page reload operations
     │   └── Clarification: VBV 8–12s wait (Blueprint §6: Ngã rẽ 3) is an OPERATIONAL wait (waiting for iframe to load), NOT a behavioral delay. This wait is inherent to the payment flow and MUST NOT be replaced or augmented by behavior delay injection.
-    ├── 10.6 — Action-Aware Delay (Bounded):
+    ├── 10.6 — Action-Aware Delay (Bounded) (↔ Blueprint §8.6):
     │   ├── Delay MUST depend on action type with explicit Blueprint bounds:
     │   │   ├── typing — 0.6–1.8s hesitation per 4-digit group (Blueprint §4: quy tắc 4x4, "Khựng lại 0.6s - 1.8s")
     │   │   ├── click — spatial offset only (x±15, y±5), no significant time delay (Blueprint §4: Bounding Box Click)
     │   │   └── thinking — 3–5s hover/scroll near action target (Blueprint §5: Hesitation, "lảng vảng quanh khu vực nút khoảng 3 - 5 giây")
     │   ├── Delay bound:
-    │   │   ├── typing: max 1.8s per 4-digit group × 4 groups = max 7.2s total for 16-digit card
+    │   │   ├── typing: max 1.8s per 4-digit group; total capped at 7.0s per step (accumulator clamps beyond group 4)
     │   │   ├── thinking: max 5s per hesitation point
     │   │   ├── Accumulated delay per cycle step: MUST leave ≥3s headroom within watchdog 10s timeout (Blueprint §5)
     │   │   └── MUST NOT affect watchdog timeout or system-level deadlines
     │   └── Deterministic: Seed-based random (Blueprint §2: Gắn Seed Hành Vi)
     │       └── Reproducible execution: same seed → same behavior pattern
-    ├── 10.7 — Non-Interference Rule (MANDATORY):
+    ├── 10.7 — Non-Interference Rule (MANDATORY) (↔ Blueprint §8.7):
     │   └── Behavior layer MUST NOT:
     │       ├── Break critical execution timing (no delay in CRITICAL_SECTION)
     │       ├── Disrupt FSM flow (state transitions unchanged by behavior)
     │       ├── Cause runtime side-effects (no state mutation outside behavior)
     │       ├── Alter execution order (step sequence unchanged)
     │       └── Change success/failure outcome (logic path unchanged)
-    ├── 10.8 — Phase 9 Alignment (STRICT):
+    ├── 10.8 — Phase 9 Alignment (STRICT) (↔ Blueprint §8.8):
     │   ├── Phase 10 MUST respect:
     │   │   ├── SAFE_POINT — behavior operates within safe boundaries only
     │   │   └── CRITICAL_SECTION — zero interference during critical operations
@@ -608,3 +608,5 @@ PR bị REQUEST_CHANGES
 | 2.3 | 2026-04-04 | **Phase 9 — Behavior & Scaling Intelligence.** Bổ sung Phase 9 từ lịch sử PR #160 (Issue #155 Task 1: Behavior Decision Engine, Issue #159 Task 2: Scaling Execution Layer). Thêm P9 vào milestones table. Đồng bộ spec với system đã triển khai (CHANGE_CLASS=spec_sync). |
 | 2.4 | 2026-04-04 | **Phase 10 — Behavior Layer (Blueprint-safe).** Bổ sung Phase 10 spec: CRITICAL_SECTION awareness, SAFE POINT/SAFE ZONE rule, FSM context (BehaviorState), NO-DELAY zone, bounded UI delay, non-interference rule, Phase 9 alignment. Thêm P10 vào milestones table. Đồng bộ spec với Blueprint (CHANGE_CLASS=spec_sync). |
 | 2.5 | 2026-04-04 | **Phase 10 — Blueprint timing sync.** §10.4: Added stagger start separation (Blueprint §1 stagger ≠ behavior delay). §10.5: Added VBV operational wait clarification (Blueprint §6: 8-12s is operational, not behavioral). §10.6: Added explicit Blueprint timing bounds (typing 0.6-1.8s per group, click spatial only, thinking 3-5s) and accumulated delay ceiling (≥3s watchdog headroom). Audit confirmed zero remaining Blueprint conflicts (CHANGE_CLASS=spec_sync). |
+| 2.6 | 2026-04-05 | **Structural Alignment — Blueprint ↔ SPEC-6 Phase 10.** Restructured Blueprint §8–§15 into §8 (overview) + §8.1–§8.8 (1-to-1 mapping with Spec §10.1–§10.8) + §9 (Anti-Detect) + §10 (Day/Night) + §11 (Sync Matrix). Added Blueprint cross-references (↔ Blueprint §8.x) to all Phase 10 sub-sections. Updated Synchronization Matrix with new aligned numbering. Updated code/test section references. Zero content changes — structural reorganization only (CHANGE_CLASS=spec_sync). |
+| 2.7 | 2026-04-05 | **Logic gap fixes (audit pre-check).** §10.6: Fixed arithmetic contradiction — replaced "max 1.8s × 4 groups = max 7.2s" with correct statement that total is capped at 7.0s by step accumulator. Blueprint §10 / temporal.py: Changed `NIGHT_TYPO_INCREASE` (fixed 0.02) → `NIGHT_TYPO_INCREASE_RANGE=(0.01, 0.02)` so typo increase is random in the spec-defined 1–2% range. Both changes align code behavior with spec text (CHANGE_CLASS=spec_sync). |
