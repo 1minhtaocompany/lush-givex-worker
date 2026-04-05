@@ -7,6 +7,7 @@ Thread-safe.  Imports limited to ``modules.delay`` submodules.
 Deterministic via seed-based random from PersonaProfile.
 """
 
+import functools
 import time
 
 from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY
@@ -21,7 +22,8 @@ def wrap(task_fn, persona: PersonaProfile):
     engine = DelayEngine(persona, sm)
     temporal = TemporalModel(persona)
 
-    def _wrapped(worker_id):
+    @functools.wraps(task_fn)
+    def _wrapped(*args, **kwargs):
         sm.transition("FILLING_FORM")
         if engine.is_delay_permitted():
             delay = engine.calculate_delay("typing")
@@ -30,7 +32,7 @@ def wrap(task_fn, persona: PersonaProfile):
             delay = max(0.0, min(delay, MAX_TYPING_DELAY))
             if delay > 0:
                 time.sleep(delay)
-        result = task_fn(worker_id)
+        result = task_fn(*args, **kwargs)
         engine.reset_step_accumulator()
         sm.reset()
         return result
