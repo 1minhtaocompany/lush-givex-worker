@@ -23,6 +23,7 @@ from modules.rollout import main as rollout
 
 WARMUP_DELAY = 0.2
 CLEANUP_TIMEOUT = 2
+_THREAD_CLEANUP_DELAY = 0.05
 
 
 def _poll_until(predicate, timeout=2, interval=0.05):
@@ -40,7 +41,7 @@ class SafePointResetMixin:
         rollout.reset()
         monitor.reset()
         # Allow daemon threads from prior tests to finish cleanup.
-        time.sleep(0.05)
+        time.sleep(_THREAD_CLEANUP_DELAY)
 
     def tearDown(self):
         reset()

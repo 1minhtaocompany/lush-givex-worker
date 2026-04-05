@@ -72,6 +72,9 @@ def _worker_fn(worker_id, task_fn):
                         try:
                             _transition_worker_state_locked(worker_id, "IDLE")
                         except ValueError:
+                            # Recovery path: task left worker in unexpected state
+                            # (e.g. CRITICAL_SECTION). Bypass transition validation
+                            # to ensure worker returns to IDLE for the next cycle.
                             _logger.warning("Worker %s in unexpected state %s after task; forcing IDLE", worker_id, cur)
                             _worker_states[worker_id] = "IDLE"
                 try:
@@ -79,6 +82,9 @@ def _worker_fn(worker_id, task_fn):
                 except Exception:
                     _logger.warning("monitor.record_success() failed for %s", worker_id, exc_info=True)
             except Exception as exc:
+                # Error recovery: force worker state to IDLE regardless of current
+                # state.  Normal transition rules are intentionally bypassed to
+                # guarantee cleanup after a task failure.
                 with _lock:
                     if worker_id in _worker_states:
                         _worker_states[worker_id] = "IDLE"
