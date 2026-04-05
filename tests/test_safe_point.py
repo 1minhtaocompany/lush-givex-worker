@@ -23,7 +23,6 @@ from integration import runtime
 from integration.runtime import (
     ALLOWED_WORKER_STATES,
     _VALID_TRANSITIONS,
-    get_active_workers,
     get_all_worker_states,
     get_worker_state,
     is_safe_to_control,
@@ -36,7 +35,6 @@ from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 
 CLEANUP_TIMEOUT = 2
-WARMUP_DELAY = 0.2
 
 
 class SafePointResetMixin:
