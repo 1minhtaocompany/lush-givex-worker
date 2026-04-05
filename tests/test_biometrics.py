@@ -1,8 +1,7 @@
 """Tests for BiometricProfile — Task 10.6."""
 import unittest
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
-from modules.delay.biometrics import BiometricProfile, _KEYSTROKE_MAX
+from modules.delay.main import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY, BiometricProfile, _KEYSTROKE_MAX
 
 
 class _BioSetup(unittest.TestCase):

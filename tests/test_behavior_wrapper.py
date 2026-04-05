@@ -2,8 +2,7 @@
 import time
 import unittest
 
-from modules.delay.persona import PersonaProfile
-from modules.delay.wrapper import wrap
+from modules.delay.main import PersonaProfile, wrap
 
 
 def _dummy_task(worker_id):

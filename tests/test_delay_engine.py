@@ -1,13 +1,10 @@
 """Tests for DelayEngine — Task 10.3."""
 import unittest
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
-from modules.delay.state import BehaviorStateMachine
-from modules.delay.engine import (
-    DelayEngine,
-    MAX_HESITATION_DELAY,
-    MAX_STEP_DELAY,
-    WATCHDOG_HEADROOM,
+from modules.delay.main import (
+    PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY,
+    BehaviorStateMachine, DelayEngine,
+    MAX_HESITATION_DELAY, MAX_STEP_DELAY, WATCHDOG_HEADROOM,
 )
 
 

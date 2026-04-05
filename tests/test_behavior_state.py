@@ -2,7 +2,7 @@
 import threading
 import unittest
 
-from modules.delay.state import (
+from modules.delay.main import (
     BehaviorStateMachine,
     BEHAVIOR_STATES,
     _VALID_BEHAVIOR_TRANSITIONS,

@@ -5,12 +5,11 @@ End-to-end tests combining all modules in ``modules/delay/``.
 import threading
 import unittest
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
-from modules.delay.state import BehaviorStateMachine
-from modules.delay.engine import DelayEngine, MAX_STEP_DELAY
-from modules.delay.temporal import TemporalModel
-from modules.delay.biometrics import BiometricProfile
-from modules.delay.wrapper import wrap
+from modules.delay.main import (
+    PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY,
+    BehaviorStateMachine, DelayEngine, MAX_STEP_DELAY,
+    TemporalModel, BiometricProfile, wrap,
+)
 
 
 class TestFullPipeline(unittest.TestCase):
@@ -109,23 +108,19 @@ class TestConcurrentIntegration(unittest.TestCase):
 
 
 class TestModuleIsolation(unittest.TestCase):
-    """Verify that delay modules do not import from outside stdlib + modules/delay."""
+    """Verify that delay module does not import from outside stdlib + modules/delay."""
 
     def test_no_cross_module_imports(self):
-        import modules.delay.persona as persona_mod
-        import modules.delay.state as state_mod
-        import modules.delay.biometrics as bio_mod
+        import modules.delay.main as delay_mod
 
-        # persona and state should only import stdlib
-        for mod in (persona_mod, state_mod):
-            source_file = mod.__file__
-            with open(source_file) as f:
-                content = f.read()
-            # Should not import from integration/ or other modules/
-            self.assertNotIn("from integration", content)
-            self.assertNotIn("from modules.behavior", content)
-            self.assertNotIn("from modules.monitor", content)
-            self.assertNotIn("from modules.rollout", content)
+        source_file = delay_mod.__file__
+        with open(source_file) as f:
+            content = f.read()
+        # Should not import from integration/ or other modules/
+        self.assertNotIn("from integration", content)
+        self.assertNotIn("from modules.behavior", content)
+        self.assertNotIn("from modules.monitor", content)
+        self.assertNotIn("from modules.rollout", content)
 
 
 if __name__ == "__main__":

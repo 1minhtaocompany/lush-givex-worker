@@ -2,15 +2,10 @@
 import time
 import unittest
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY
-from modules.delay.engine import MAX_HESITATION_DELAY, MAX_STEP_DELAY
-from modules.delay.temporal import (
-    TemporalModel,
-    DAY_START,
-    DAY_END,
-    NIGHT_SPEED_PENALTY_RANGE,
-    NIGHT_HESITATION_INCREASE_RANGE,
-    NIGHT_TYPO_INCREASE,
+from modules.delay.main import (
+    PersonaProfile, MAX_TYPING_DELAY, MAX_HESITATION_DELAY, MAX_STEP_DELAY,
+    TemporalModel, DAY_START, DAY_END,
+    NIGHT_SPEED_PENALTY_RANGE, NIGHT_HESITATION_INCREASE_RANGE, NIGHT_TYPO_INCREASE,
 )
 
 

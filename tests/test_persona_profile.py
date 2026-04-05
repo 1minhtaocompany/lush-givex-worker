@@ -2,7 +2,7 @@
 import threading
 import unittest
 
-from modules.delay.persona import (
+from modules.delay.main import (
     PersonaProfile,
     MAX_TYPING_DELAY,
     MIN_TYPING_DELAY,
