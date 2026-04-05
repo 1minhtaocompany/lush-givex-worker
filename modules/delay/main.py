@@ -84,7 +84,7 @@ class DelayEngine:
     def calculate_click_delay(self) -> float: return 0.0
     def calculate_thinking_delay(self) -> float:
         if not self.is_delay_permitted(): return 0.0
-        with self._persona._rnd_lock: raw = self._persona._rnd.uniform(3.0, 5.0)
+        raw = self._persona.get_hesitation_delay()
         return self._accumulate(min(raw, MAX_HESITATION_DELAY))
     def calculate_delay(self, action_type: str) -> float:
         if action_type == "typing": return self.calculate_typing_delay(0)
@@ -164,6 +164,7 @@ def wrap(task_fn, persona: PersonaProfile):
             delay = engine.calculate_delay("typing")
             delay = temporal.apply_temporal_modifier(delay, "typing")
             delay = temporal.apply_micro_variation(delay)
+            delay = max(0.0, min(delay, MAX_TYPING_DELAY))
             if delay > 0: time.sleep(delay)
         result = task_fn(worker_id)
         engine.reset_step_accumulator(); sm.reset()

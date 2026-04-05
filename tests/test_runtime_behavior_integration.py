@@ -27,7 +27,7 @@ class TestWrapperApplied(_RuntimeReset):
             results.append(wid)
 
         wid = runtime.start_worker(task)
-        time.sleep(1.5)  # allow at least one cycle + behaviour delay
+        time.sleep(3.0)  # allow at least one cycle + max behaviour delay
         runtime.stop_worker(wid, timeout=5)
         self.assertGreater(len(results), 0)
 
@@ -38,7 +38,7 @@ class TestWrapperApplied(_RuntimeReset):
         wid = runtime.start_worker(task)
         time.sleep(0.5)
         stopped = runtime.stop_worker(wid, timeout=5)
-        # Worker should have stopped (or be stopping)
+        self.assertTrue(stopped, "worker did not stop within timeout")
         self.assertNotIn(wid, runtime.get_active_workers())
 
 

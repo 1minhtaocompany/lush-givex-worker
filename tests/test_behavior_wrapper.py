@@ -1,6 +1,7 @@
 """Tests for BehaviorWrapper — Task 10.5."""
 import time
 import unittest
+from unittest.mock import patch
 
 from modules.delay.main import PersonaProfile, wrap
 
@@ -26,11 +27,11 @@ class TestWrapAddsDelay(unittest.TestCase):
     def test_measurable_delay(self):
         persona = PersonaProfile(42)
         wrapped = wrap(_dummy_task, persona)
-        start = time.monotonic()
-        wrapped("w-1")
-        elapsed = time.monotonic() - start
-        # Should have *some* delay (even small) due to typing simulation
-        self.assertGreater(elapsed, 0.0)
+        with patch("modules.delay.main.time.sleep") as mock_sleep:
+            wrapped("w-1")
+            mock_sleep.assert_called_once()
+            delay_arg = mock_sleep.call_args[0][0]
+            self.assertGreater(delay_arg, 0.0, "sleep should be called with positive delay")
 
 
 class TestWrapPropagatesExceptions(unittest.TestCase):

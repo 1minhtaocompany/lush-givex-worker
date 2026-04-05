@@ -3,6 +3,7 @@ import logging
 import threading
 import time
 import uuid
+import zlib
 from modules.behavior import main as behavior
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
@@ -59,8 +60,10 @@ def _transition_worker_state_locked(worker_id, new_state):
 def _worker_fn(worker_id, task_fn):
     global _pending_restarts
     # Generate a deterministic persona from the worker id counter
-    if _behavior_delay_enabled:
-        _persona_seed = hash(worker_id) & 0xFFFFFFFF
+    with _lock:
+        delay_enabled = _behavior_delay_enabled
+    if delay_enabled:
+        _persona_seed = zlib.crc32(worker_id.encode()) & 0xFFFFFFFF
         _persona = PersonaProfile(_persona_seed)
         wrapped_task = _behavior_wrap(task_fn, _persona)
     else:
