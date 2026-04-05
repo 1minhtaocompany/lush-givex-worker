@@ -41,7 +41,7 @@ class TestThinkingDelay(_EngineSetup):
     def test_within_bounds(self):
         self.sm.transition("FILLING_FORM")
         d = self.engine.calculate_thinking_delay()
-        self.assertGreater(d, 0.0)
+        self.assertGreaterEqual(d, 3.0)
         self.assertLessEqual(d, MAX_HESITATION_DELAY)
 
     def test_zero_in_critical(self):
@@ -100,6 +100,17 @@ class TestCriticalSectionBypass(_EngineSetup):
         self.sm.transition("POST_ACTION")
         self.assertFalse(self.engine.is_delay_permitted())
 
+    def test_phase9_critical_section_flag(self):
+        """Phase 9 CRITICAL_SECTION flag → zero delay."""
+        self.sm.transition("FILLING_FORM")
+        self.assertTrue(self.engine.is_delay_permitted())
+        self.sm.set_critical_section(True)
+        self.assertFalse(self.engine.is_delay_permitted())
+        self.assertEqual(self.engine.calculate_delay("typing"), 0.0)
+        self.assertEqual(self.engine.calculate_delay("thinking"), 0.0)
+        self.sm.set_critical_section(False)
+        self.assertTrue(self.engine.is_delay_permitted())
+
 
 class TestDeterminism(_EngineSetup):
     def test_same_seed_same_delays(self):
@@ -119,6 +130,65 @@ class TestWatchdogHeadroom(unittest.TestCase):
 
     def test_max_step_plus_headroom(self):
         self.assertLessEqual(MAX_STEP_DELAY + WATCHDOG_HEADROOM, 10.0)
+
+
+class TestEngineModuleImport(unittest.TestCase):
+    """Verify engine.py is importable as a standalone module."""
+
+    def test_direct_import(self):
+        from modules.delay.engine import DelayEngine as DE
+        from modules.delay.engine import (
+            MAX_HESITATION_DELAY as MHD,
+            MAX_STEP_DELAY as MSD,
+            WATCHDOG_HEADROOM as WH,
+        )
+        from modules.delay.persona import PersonaProfile as PP
+        from modules.delay.persona import MAX_TYPING_DELAY as MTD
+        from modules.delay.state import BehaviorStateMachine as BSM
+        self.assertEqual(MHD, 5.0)
+        self.assertEqual(MSD, 7.0)
+        self.assertEqual(WH, 3.0)
+        p = PP(99)
+        sm = BSM()
+        e = DE(p, sm)
+        sm.transition("FILLING_FORM")
+        d = e.calculate_typing_delay(0)
+        self.assertGreaterEqual(d, 0.0)
+        self.assertLessEqual(d, MTD)
+
+
+class TestBoundaryConditions(_EngineSetup):
+    """Edge cases and boundary conditions."""
+
+    def test_idle_state_permits_typing(self):
+        """IDLE is a safe context — typing delay is positive."""
+        d = self.engine.calculate_delay("typing")
+        self.assertGreater(d, 0.0)
+
+    def test_accumulator_exact_ceiling(self):
+        """Accumulator stops exactly at MAX_STEP_DELAY."""
+        self.sm.transition("FILLING_FORM")
+        for _ in range(50):
+            self.engine.calculate_delay("thinking")
+        acc = self.engine.get_step_accumulated_delay()
+        self.assertLessEqual(acc, MAX_STEP_DELAY)
+        self.assertEqual(self.engine.calculate_delay("thinking"), 0.0)
+
+    def test_reset_then_accumulate_again(self):
+        """After reset, accumulator allows new delays."""
+        self.sm.transition("FILLING_FORM")
+        self.engine.calculate_delay("typing")
+        self.engine.reset_step_accumulator()
+        d = self.engine.calculate_delay("typing")
+        self.assertGreater(d, 0.0)
+
+    def test_click_always_zero_regardless_of_state(self):
+        """Click delay is always zero, even in safe state."""
+        self.sm.transition("FILLING_FORM")
+        self.assertEqual(self.engine.calculate_click_delay(), 0.0)
+        self.sm.transition("PAYMENT")
+        self.sm.transition("VBV")
+        self.assertEqual(self.engine.calculate_click_delay(), 0.0)
 
 
 if __name__ == "__main__":
