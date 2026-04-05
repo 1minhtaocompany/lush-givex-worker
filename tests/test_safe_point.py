@@ -426,7 +426,7 @@ class TestCleanupPaths(SafePointResetMixin, unittest.TestCase):
 
     def test_reset_clears_all_worker_states(self):
         barrier = threading.Event()
-        wid = start_worker(lambda _: barrier.wait(timeout=2))
+        start_worker(lambda _: barrier.wait(timeout=2))
         barrier.set()
         reset()
         self.assertEqual(get_all_worker_states(), {})
@@ -480,7 +480,6 @@ class TestThreadSafety(SafePointResetMixin, unittest.TestCase):
     def test_concurrent_start_stop_workers(self):
         """Multiple workers starting and stopping concurrently must not corrupt state."""
         barrier = threading.Event()
-        errors = []
 
         def task(wid):
             barrier.wait(timeout=3)
