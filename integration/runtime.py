@@ -8,7 +8,7 @@ from modules.behavior import main as behavior
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 from modules.delay.main import wrap as _behavior_wrap
-from modules.delay.main import PersonaProfile
+from modules.delay.persona import PersonaProfile
 _logger = logging.getLogger(__name__)
 ALLOWED_STATES = {"INIT", "RUNNING", "STOPPING", "STOPPED"}
 ALLOWED_WORKER_STATES = {"IDLE", "IN_CYCLE", "CRITICAL_SECTION", "SAFE_POINT"}

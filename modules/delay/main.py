@@ -1,50 +1,26 @@
 """Behavior delay layer – seed-deterministic delay injection.
 
-Persona, delay engine, temporal model, biometrics, and wrapper.
+Delay engine, temporal model, biometrics, and wrapper.
+PersonaProfile lives in persona.py (Task 10.1, stdlib-only).
 BehaviorStateMachine lives in state.py (already on main).
 """
 import random
 import threading
 import time
+from modules.delay.persona import PersonaProfile  # noqa: F401
+from modules.delay.persona import MAX_TYPING_DELAY, MIN_TYPING_DELAY  # noqa: F401
+from modules.delay.persona import _TYPO_RATE_MIN, _TYPO_RATE_MAX  # noqa: F401
+from modules.delay.persona import _NIGHT_PENALTY_MIN, _NIGHT_PENALTY_MAX  # noqa: F401
+from modules.delay.persona import _FATIGUE_THRESHOLD_MIN, _FATIGUE_THRESHOLD_MAX  # noqa: F401
+from modules.delay.persona import _PERSONA_TYPES  # noqa: F401
 from modules.delay.state import BehaviorStateMachine, BEHAVIOR_STATES, _VALID_BEHAVIOR_TRANSITIONS  # noqa: F401
 
 # -- Hard constraints (Blueprint §10, SPEC §10.6) --
-MAX_TYPING_DELAY = 1.8; MIN_TYPING_DELAY = 0.6
 MAX_HESITATION_DELAY = 5.0; MAX_STEP_DELAY = 7.0; WATCHDOG_HEADROOM = 3.0
 DAY_START = 6; DAY_END = 21
 NIGHT_SPEED_PENALTY_RANGE = (0.15, 0.30)
 NIGHT_HESITATION_INCREASE_RANGE = (0.20, 0.40); NIGHT_TYPO_INCREASE = 0.02
-_TYPO_RATE_MIN = 0.02; _TYPO_RATE_MAX = 0.05
-_NIGHT_PENALTY_MIN = 0.15; _NIGHT_PENALTY_MAX = 0.30
-_FATIGUE_THRESHOLD_MIN = 5; _FATIGUE_THRESHOLD_MAX = 15
 _KEYSTROKE_MAX = 0.3
-_PERSONA_TYPES = ("fast_typer", "moderate_typer", "slow_typer", "cautious", "impulsive")
-
-
-class PersonaProfile:
-    """Seed-deterministic persona providing behavioral attributes for a worker."""
-    def __init__(self, seed: int) -> None:
-        self._seed = seed; self._rnd = random.Random(seed); self._rnd_lock = threading.Lock()
-        self.persona_type: str = self._rnd.choice(_PERSONA_TYPES)
-        self.typing_speed: float = self._rnd.uniform(0.04, 0.12)
-        self.typo_rate: float = self._rnd.uniform(_TYPO_RATE_MIN, _TYPO_RATE_MAX)
-        self.hesitation_pattern: dict = {
-            "min": self._rnd.uniform(0.5, 1.5), "max": self._rnd.uniform(2.0, 5.0)}
-        self.active_hours: tuple = (self._rnd.choice((6, 7, 8, 9, 10)), self._rnd.choice((20, 21, 22, 23)))
-        self.fatigue_threshold: int = self._rnd.randint(_FATIGUE_THRESHOLD_MIN, _FATIGUE_THRESHOLD_MAX)
-        self.night_penalty_factor: float = self._rnd.uniform(_NIGHT_PENALTY_MIN, _NIGHT_PENALTY_MAX)
-    def get_typing_delay(self, group_index: int) -> float:
-        with self._rnd_lock: base = self._rnd.uniform(MIN_TYPING_DELAY, MAX_TYPING_DELAY)
-        factor = max(0.85, 1.0 - group_index * 0.03)
-        return max(MIN_TYPING_DELAY, min(base * factor, MAX_TYPING_DELAY))
-    def get_hesitation_delay(self) -> float:
-        with self._rnd_lock: return self._rnd.uniform(self.hesitation_pattern["min"], self.hesitation_pattern["max"])
-    def get_typo_probability(self) -> float: return self.typo_rate
-    def to_dict(self) -> dict:
-        return {"seed": self._seed, "persona_type": self.persona_type, "typing_speed": self.typing_speed,
-                "typo_rate": self.typo_rate, "hesitation_pattern": dict(self.hesitation_pattern),
-                "active_hours": self.active_hours, "fatigue_threshold": self.fatigue_threshold,
-                "night_penalty_factor": self.night_penalty_factor}
 
 
 class DelayEngine:
