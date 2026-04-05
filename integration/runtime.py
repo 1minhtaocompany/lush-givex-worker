@@ -92,8 +92,12 @@ def _worker_fn(worker_id, task_fn):
         _logger.error("Unexpected error in worker %s: %s", worker_id, exc, exc_info=True)
     finally:
         with _lock:
-            _stop_requests.discard(worker_id); _workers.pop(worker_id, None)
-            _worker_states.pop(worker_id, None)
+            # Only remove if this thread owns the worker entry (prevents
+            # stale threads from removing re-registered workers after reset)
+            if _workers.get(worker_id) is threading.current_thread():
+                _stop_requests.discard(worker_id)
+                _workers.pop(worker_id, None)
+                _worker_states.pop(worker_id, None)
         _log_event(worker_id, "stopped", "stop")
 def start_worker(task_fn):
     """Start a new worker thread running *task_fn*. Returns the worker id."""
