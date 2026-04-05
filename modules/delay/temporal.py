@@ -1,6 +1,6 @@
-"""Day / night temporal model for behavioural delay modulation.
+"""Day / night temporal model for behavioral delay modulation.
 
-Adjusts worker behaviour based on time-of-day, applying night penalties,
+Adjusts worker behavior based on time-of-day, applying night penalties,
 session fatigue, and micro-variation.  All modifiers remain within the
 hard delay constraints defined by the engine layer.
 """

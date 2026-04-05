@@ -1,7 +1,7 @@
-"""Behavioural anti-detection biometric layer (Layer 2).
+"""Behavioral anti-detection biometric layer (Layer 2).
 
 Generates realistic inter-keystroke timing, burst patterns, and noise
-to prevent behavioural fingerprinting.  Builds *on top of* the base
+to prevent behavioral fingerprinting.  Builds *on top of* the base
 delay engine — never replaces it.
 """
 import math

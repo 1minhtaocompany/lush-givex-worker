@@ -43,7 +43,7 @@ MIN_TYPING_DELAY = 0.6
 
 
 class PersonaProfile:
-    """Seed-deterministic persona providing behavioural attributes for a worker.
+    """Seed-deterministic persona providing behavioral attributes for a worker.
 
     Parameters
     ----------

@@ -1,6 +1,6 @@
-"""Context-aware behaviour state machine for delay decisions.
+"""Context-aware behavior state machine for delay decisions.
 
-Tracks the current behavioural context of a worker within a cycle.
+Tracks the current behavioral context of a worker within a cycle.
 Operates at a *different layer* from the worker lifecycle states
 (IDLE / IN_CYCLE / CRITICAL_SECTION / SAFE_POINT) defined in
 ``integration/runtime.py`` — the two state systems run in parallel.
@@ -10,7 +10,7 @@ import threading
 # Mandatory states (SPEC §10.2)
 BEHAVIOR_STATES = {"IDLE", "FILLING_FORM", "PAYMENT", "VBV", "POST_ACTION"}
 
-# Allowed transitions between behaviour states
+# Allowed transitions between behavior states
 _VALID_BEHAVIOR_TRANSITIONS = {
     "IDLE": {"FILLING_FORM", "PAYMENT"},
     "FILLING_FORM": {"PAYMENT", "IDLE"},
@@ -22,12 +22,12 @@ _VALID_BEHAVIOR_TRANSITIONS = {
 # States that represent critical / non-delayable contexts
 _CRITICAL_CONTEXTS = {"VBV", "POST_ACTION"}
 
-# States where behavioural delay *may* be injected (SPEC §10.4)
+# States where behavioral delay *may* be injected (SPEC §10.4)
 _SAFE_FOR_DELAY = {"IDLE", "FILLING_FORM", "PAYMENT"}
 
 
 class BehaviorStateMachine:
-    """Thread-safe FSM tracking the behavioural context of a worker.
+    """Thread-safe FSM tracking the behavioral context of a worker.
 
     Parameters
     ----------
@@ -57,7 +57,7 @@ class BehaviorStateMachine:
             return True
 
     def get_state(self) -> str:
-        """Return the current behaviour state."""
+        """Return the current behavior state."""
         with self._lock:
             return self._state
 

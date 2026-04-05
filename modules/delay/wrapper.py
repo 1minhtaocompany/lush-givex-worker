@@ -1,6 +1,6 @@
-"""Behaviour wrapper — decorates a task function with delay injection.
+"""Behavior wrapper — decorates a task function with delay injection.
 
-Wraps ``task_fn`` so that behavioural delay is injected at safe points
+Wraps ``task_fn`` so that behavioral delay is injected at safe points
 *without* altering execution logic, scaling, or orchestration flow.
 """
 import time
@@ -12,11 +12,11 @@ from modules.delay.temporal import TemporalModel
 
 
 def wrap(task_fn, persona: PersonaProfile):
-    """Return a wrapped version of *task_fn* with behavioural delay.
+    """Return a wrapped version of *task_fn* with behavioral delay.
 
     The wrapped function preserves the original signature and return
     value.  Delay is injected *before* each call only when the
-    behaviour state machine considers it safe (SAFE ZONE).
+    behavior state machine considers it safe (SAFE ZONE).
 
     Parameters
     ----------

@@ -1,6 +1,6 @@
 """Action-aware bounded delay calculator.
 
-Computes behavioural delays based on action type, BehaviorState context,
+Computes behavioral delays based on action type, BehaviorState context,
 and PersonaProfile.  All delays are clamped to hard constraints before
 being returned.
 """
@@ -33,7 +33,7 @@ class DelayEngine:
     persona : PersonaProfile
         The worker's persona providing base delay values.
     state_machine : BehaviorStateMachine
-        The current behavioural context FSM.
+        The current behavioral context FSM.
     """
 
     def __init__(self, persona: PersonaProfile, state_machine: BehaviorStateMachine) -> None:
@@ -96,7 +96,7 @@ class DelayEngine:
             self._step_accumulated = 0.0
 
     def is_delay_permitted(self) -> bool:
-        """Return ``True`` only when the behaviour state allows delay.
+        """Return ``True`` only when the behavior state allows delay.
 
         Checks that the current BehaviorState is safe *and* that adding
         more delay would not breach the per-step ceiling.
@@ -105,7 +105,6 @@ class DelayEngine:
             return False
         with self._lock:
             return self._step_accumulated < MAX_STEP_DELAY
-        return False  # pragma: no cover – unreachable defensive guard
 
     # --- internal ---
 
