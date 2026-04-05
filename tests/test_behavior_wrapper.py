@@ -103,8 +103,8 @@ class TestDeterminism(unittest.TestCase):
                 wrapped("w-1")
                 if mock_sleep.called:
                     delays.append(mock_sleep.call_args[0][0])
-        self.assertEqual(delays_a, delays_b, "Same seed must yield identical delay sequence")
         self.assertTrue(len(delays_a) > 0, "At least one delay should be generated")
+        self.assertEqual(delays_a, delays_b, "Same seed must yield identical delay sequence")
 
 
 if __name__ == "__main__":
