@@ -8,9 +8,17 @@ from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 _logger = logging.getLogger(__name__)
 ALLOWED_STATES = {"INIT", "RUNNING", "STOPPING", "STOPPED"}
+ALLOWED_WORKER_STATES = {"IDLE", "IN_CYCLE", "CRITICAL_SECTION", "SAFE_POINT"}
+_VALID_TRANSITIONS = {
+    "IDLE": {"IN_CYCLE"},
+    "IN_CYCLE": {"CRITICAL_SECTION", "SAFE_POINT", "IDLE"},
+    "CRITICAL_SECTION": {"IN_CYCLE"},
+    "SAFE_POINT": {"IN_CYCLE", "IDLE"},
+}
 _lock = threading.Lock()
 _state = "INIT"
 _workers: dict = {}
+_worker_states: dict = {}
 _worker_counter = 0
 _loop_thread = None
 _trace_id = None
@@ -37,6 +45,15 @@ def _ensure_rollout_configured():
         check_fn = rollout._check_rollback_fn; save_fn = rollout._save_baseline_fn
     if check_fn is None and save_fn is None:
         rollout.configure(monitor.check_rollback_needed, monitor.save_baseline)
+def _transition_worker_state_locked(worker_id, new_state):
+    """Transition worker to *new_state*. Must be called with ``_lock`` held."""
+    current = _worker_states.get(worker_id)
+    if current is None:
+        return
+    valid = _VALID_TRANSITIONS.get(current, set())
+    if new_state not in valid:
+        raise ValueError(f"Invalid transition: {current} -> {new_state}")
+    _worker_states[worker_id] = new_state
 def _worker_fn(worker_id, task_fn):
     global _pending_restarts
     try:
@@ -46,12 +63,25 @@ def _worker_fn(worker_id, task_fn):
                 if _should_stop_worker(worker_id):
                     break
             try:
+                with _lock:
+                    _transition_worker_state_locked(worker_id, "IN_CYCLE")
                 task_fn(worker_id)
+                with _lock:
+                    cur = _worker_states.get(worker_id)
+                    if cur is not None and cur != "IDLE":
+                        try:
+                            _transition_worker_state_locked(worker_id, "IDLE")
+                        except ValueError:
+                            _logger.warning("Worker %s in unexpected state %s after task; forcing IDLE", worker_id, cur)
+                            _worker_states[worker_id] = "IDLE"
                 try:
                     monitor.record_success()
                 except Exception:
                     _logger.warning("monitor.record_success() failed for %s", worker_id, exc_info=True)
             except Exception as exc:
+                with _lock:
+                    if worker_id in _worker_states:
+                        _worker_states[worker_id] = "IDLE"
                 try:
                     monitor.record_error()
                 except Exception:
@@ -64,6 +94,7 @@ def _worker_fn(worker_id, task_fn):
         _logger.error("Unexpected error in worker %s: %s", worker_id, exc, exc_info=True)
     finally:
         with _lock:
+            _worker_states.pop(worker_id, None)
             _stop_requests.discard(worker_id); _workers.pop(worker_id, None)
         _log_event(worker_id, "stopped", "stop")
 def start_worker(task_fn):
@@ -74,11 +105,13 @@ def start_worker(task_fn):
         wid = f"worker-{_worker_counter}"
         t = threading.Thread(target=_worker_fn, args=(wid, task_fn), daemon=True)
         _workers[wid] = t
+        _worker_states[wid] = "IDLE"
     try:
         t.start()
     except (RuntimeError, OSError):
         with _lock:
             _workers.pop(wid, None)
+            _worker_states.pop(wid, None)
         raise
     return wid
 def stop_worker(worker_id, timeout=None):
@@ -105,15 +138,56 @@ def stop_worker(worker_id, timeout=None):
         _logger.warning("Worker %s did not stop within timeout", worker_id)
         with _lock:
             _workers.pop(worker_id, None)
+            _worker_states.pop(worker_id, None)
             _stop_requests.discard(worker_id)
         return False
     with _lock:
-        _stop_requests.discard(worker_id); _workers.pop(worker_id, None)
+        _stop_requests.discard(worker_id); _workers.pop(worker_id, None); _worker_states.pop(worker_id, None)
     _log_event(worker_id, "stopped", "stop_requested")
     return True
 def get_active_workers():
     """Return a list of active worker ids."""
     with _lock: return list(_workers.keys())
+def set_worker_state(worker_id, new_state):
+    """Transition a worker to *new_state* with strict validation.
+
+    Raises ``ValueError`` if *worker_id* is not registered, *new_state* is not
+    in ``ALLOWED_WORKER_STATES``, or the transition from the current state is
+    not permitted by ``_VALID_TRANSITIONS``.
+    """
+    with _lock:
+        if worker_id not in _workers:
+            raise ValueError(f"Unknown worker: {worker_id}")
+        if new_state not in ALLOWED_WORKER_STATES:
+            raise ValueError(f"Invalid worker state: {new_state}")
+        current = _worker_states.get(worker_id)
+        if current is not None:
+            valid = _VALID_TRANSITIONS.get(current, set())
+            if new_state not in valid:
+                raise ValueError(f"Invalid transition: {current} -> {new_state}")
+        _worker_states[worker_id] = new_state
+def get_worker_state(worker_id):
+    """Return the current execution state of a worker, or ``None``."""
+    with _lock:
+        return _worker_states.get(worker_id)
+def get_all_worker_states():
+    """Return a snapshot ``{worker_id: state}`` of all worker execution states."""
+    with _lock:
+        return dict(_worker_states)
+def is_safe_to_control():
+    """Return ``True`` when every active worker is IDLE or SAFE_POINT.
+
+    Treats a missing state entry as *unsafe* (returns ``False``).
+    Returns ``True`` when there are no active workers.
+    """
+    with _lock:
+        if not _workers:
+            return True
+        for wid in _workers:
+            state = _worker_states.get(wid)
+            if state is None or state not in ("IDLE", "SAFE_POINT"):
+                return False
+        return True
 def _apply_scale(target_count, task_fn):
     global _pending_restarts
     with _lock: current_ids = list(_workers.keys())
@@ -307,10 +381,10 @@ def get_trace_id():
     with _trace_lock: return _trace_id
 def reset():
     """Reset all runtime state. Intended for testing."""
-    global _state, _loop_thread, _workers, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id
+    global _state, _loop_thread, _workers, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id, _worker_states
     stop(timeout=2)
     with _lock:
-        _state = "INIT"; _loop_thread = None; _workers = {}; _worker_counter = 0
+        _state = "INIT"; _loop_thread = None; _workers = {}; _worker_states = {}; _worker_counter = 0
         _consecutive_rollbacks = 0; _pending_restarts = 0; _stop_requests.clear()
     with _trace_lock:
         _trace_id = None
