@@ -1,0 +1,84 @@
+"""Tests for BiometricProfile — Task 10.6."""
+import unittest
+
+from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
+from modules.delay.biometrics import BiometricProfile, _KEYSTROKE_MAX
+
+
+class _BioSetup(unittest.TestCase):
+    def setUp(self):
+        self.persona = PersonaProfile(42)
+        self.bio = BiometricProfile(self.persona)
+
+
+class TestKeystrokeDelay(_BioSetup):
+    def test_within_bounds(self):
+        for i in range(100):
+            d = self.bio.generate_keystroke_delay(i)
+            self.assertGreaterEqual(d, 0.0)
+            self.assertLessEqual(d, _KEYSTROKE_MAX)
+
+
+class TestBurstPattern(_BioSetup):
+    def test_length_matches(self):
+        pattern = self.bio.generate_burst_pattern(16)
+        # 16 chars: pauses at positions i=4,8,12 replace the fast keystroke
+        # so total length is still 16
+        self.assertEqual(len(pattern), 16)
+
+    def test_pause_at_group_boundaries(self):
+        pattern = self.bio.generate_burst_pattern(8)
+        # 8 chars: pause at i=4, total length = 8
+        self.assertEqual(len(pattern), 8)
+        # The pause (index 4) should be larger than typical fast key
+        self.assertGreater(pattern[4], 0.1)
+
+    def test_all_positive(self):
+        pattern = self.bio.generate_burst_pattern(20)
+        for d in pattern:
+            self.assertGreater(d, 0.0)
+
+
+class TestFourByFourPattern(_BioSetup):
+    def test_length(self):
+        pattern = self.bio.generate_4x4_pattern()
+        # 4 groups × 4 digits + 3 pauses = 19
+        self.assertEqual(len(pattern), 19)
+
+    def test_pause_clamped(self):
+        pattern = self.bio.generate_4x4_pattern()
+        # Pauses are at indices 4, 9, 14
+        for idx in (4, 9, 14):
+            self.assertGreaterEqual(pattern[idx], MIN_TYPING_DELAY)
+            self.assertLessEqual(pattern[idx], MAX_TYPING_DELAY)
+
+    def test_fast_keys_small(self):
+        pattern = self.bio.generate_4x4_pattern()
+        fast_indices = [i for i in range(len(pattern)) if i not in (4, 9, 14)]
+        for idx in fast_indices:
+            self.assertLess(pattern[idx], 0.1)
+
+
+class TestNoise(_BioSetup):
+    def test_noise_positive(self):
+        for _ in range(100):
+            n = self.bio.apply_noise(1.0)
+            self.assertGreaterEqual(n, 0.0)
+
+    def test_noise_around_base(self):
+        values = [self.bio.apply_noise(1.0) for _ in range(200)]
+        avg = sum(values) / len(values)
+        # Average should be close to 1.0 (within 20%)
+        self.assertAlmostEqual(avg, 1.0, delta=0.2)
+
+
+class TestDeterminism(_BioSetup):
+    def test_same_seed_same_pattern(self):
+        bio2 = BiometricProfile(PersonaProfile(42))
+        p1 = self.bio.generate_4x4_pattern()
+        p2 = bio2.generate_4x4_pattern()
+        self.assertEqual(p1, p2)
+
+
+if __name__ == "__main__":
+    unittest.main()

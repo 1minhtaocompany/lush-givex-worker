@@ -6,6 +6,8 @@ import uuid
 from modules.behavior import main as behavior
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
+from modules.delay.wrapper import wrap as _behavior_wrap
+from modules.delay.persona import PersonaProfile
 _logger = logging.getLogger(__name__)
 ALLOWED_STATES = {"INIT", "RUNNING", "STOPPING", "STOPPED"}
 ALLOWED_WORKER_STATES = {"IDLE", "IN_CYCLE", "CRITICAL_SECTION", "SAFE_POINT"}
@@ -31,6 +33,7 @@ _MAX_CONSECUTIVE_ROLLBACKS = 3
 _consecutive_rollbacks = 0
 _pending_restarts = 0
 _stop_requests = set()
+_behavior_delay_enabled = True
 def _should_stop_worker(worker_id):
     return worker_id not in _workers or worker_id in _stop_requests or _state == "STOPPING"
 def _log_event(worker_id, state, action, metrics=None):
@@ -55,6 +58,13 @@ def _transition_worker_state_locked(worker_id, new_state):
     _worker_states[worker_id] = new_state
 def _worker_fn(worker_id, task_fn):
     global _pending_restarts
+    # Generate a deterministic persona from the worker id counter
+    if _behavior_delay_enabled:
+        _persona_seed = hash(worker_id) & 0xFFFFFFFF
+        _persona = PersonaProfile(_persona_seed)
+        wrapped_task = _behavior_wrap(task_fn, _persona)
+    else:
+        wrapped_task = task_fn
     try:
         _log_event(worker_id, "running", "start")
         while True:
@@ -63,7 +73,7 @@ def _worker_fn(worker_id, task_fn):
                     break
                 _transition_worker_state_locked(worker_id, "IN_CYCLE")
             try:
-                task_fn(worker_id)
+                wrapped_task(worker_id)
                 try:
                     monitor.record_success()
                 except Exception:
@@ -424,16 +434,22 @@ def verify_deployment():
 def get_state():
     """Return the current lifecycle state."""
     with _lock: return _state
+def set_behavior_delay_enabled(enabled):
+    """Enable or disable behavioral delay wrapping for workers."""
+    global _behavior_delay_enabled
+    with _lock:
+        _behavior_delay_enabled = bool(enabled)
 def get_trace_id():
     """Return the current trace_id, or None if not started."""
     with _trace_lock: return _trace_id
 def reset():
     """Reset all runtime state. Intended for testing."""
-    global _state, _loop_thread, _workers, _worker_states, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id
+    global _state, _loop_thread, _workers, _worker_states, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id, _behavior_delay_enabled
     stop(timeout=2)
     with _lock:
         _state = "INIT"; _loop_thread = None; _workers = {}; _worker_states = {}; _worker_counter = 0
         _consecutive_rollbacks = 0; _pending_restarts = 0; _stop_requests.clear()
+        _behavior_delay_enabled = False
     with _trace_lock:
         _trace_id = None
     behavior.reset()

@@ -1,0 +1,132 @@
+"""Phase 10 integration tests — Task 10.8.
+
+End-to-end tests combining all modules in ``modules/delay/``.
+"""
+import threading
+import unittest
+
+from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
+from modules.delay.state import BehaviorStateMachine
+from modules.delay.engine import DelayEngine, MAX_STEP_DELAY
+from modules.delay.temporal import TemporalModel
+from modules.delay.biometrics import BiometricProfile
+from modules.delay.wrapper import wrap
+
+
+class TestFullPipeline(unittest.TestCase):
+    """Persona → Engine → Temporal → Biometrics end-to-end."""
+
+    def test_typing_pipeline(self):
+        p = PersonaProfile(100)
+        sm = BehaviorStateMachine()
+        e = DelayEngine(p, sm)
+        tm = TemporalModel(p)
+        sm.transition("FILLING_FORM")
+
+        raw = e.calculate_typing_delay(0)
+        modified = tm.apply_temporal_modifier(raw, "typing")
+        varied = tm.apply_micro_variation(modified)
+        self.assertGreater(varied, 0.0)
+        self.assertLessEqual(varied, MAX_TYPING_DELAY * 1.1 + 0.01)  # micro-var tolerance
+
+    def test_thinking_pipeline(self):
+        p = PersonaProfile(101)
+        sm = BehaviorStateMachine()
+        e = DelayEngine(p, sm)
+        tm = TemporalModel(p)
+        sm.transition("FILLING_FORM")
+
+        raw = e.calculate_thinking_delay()
+        fatigued = tm.apply_fatigue(raw, p.fatigue_threshold + 5)
+        varied = tm.apply_micro_variation(fatigued)
+        self.assertGreater(varied, 0.0)
+
+    def test_biometric_keystroke_overlay(self):
+        p = PersonaProfile(102)
+        bio = BiometricProfile(p)
+        pattern = bio.generate_4x4_pattern()
+        self.assertEqual(len(pattern), 19)
+        noisy = [bio.apply_noise(d) for d in pattern]
+        for d in noisy:
+            self.assertGreaterEqual(d, 0.0)
+
+
+class TestWrapperEndToEnd(unittest.TestCase):
+    def test_wrapped_task_returns_correctly(self):
+        def task(wid):
+            return {"status": "ok", "worker": wid}
+
+        p = PersonaProfile(200)
+        wrapped = wrap(task, p)
+        result = wrapped("w-200")
+        self.assertEqual(result, {"status": "ok", "worker": "w-200"})
+
+    def test_multiple_calls_accumulate_differently(self):
+        call_count = [0]
+
+        def task(wid):
+            call_count[0] += 1
+            return call_count[0]
+
+        p = PersonaProfile(201)
+        wrapped = wrap(task, p)
+        r1 = wrapped("w-1")
+        r2 = wrapped("w-2")
+        self.assertEqual(r1, 1)
+        self.assertEqual(r2, 2)
+
+
+class TestConcurrentIntegration(unittest.TestCase):
+    def test_10_workers_no_crash(self):
+        errors = []
+
+        def task(wid):
+            return wid
+
+        def run(seed):
+            try:
+                p = PersonaProfile(seed)
+                wrapped = wrap(task, p)
+                sm = BehaviorStateMachine()
+                e = DelayEngine(p, sm)
+                sm.transition("FILLING_FORM")
+                # exercise all components
+                e.calculate_typing_delay(0)
+                tm = TemporalModel(p)
+                tm.apply_micro_variation(1.0)
+                bio = BiometricProfile(p)
+                bio.generate_4x4_pattern()
+                wrapped(f"w-{seed}")
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=run, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+
+
+class TestModuleIsolation(unittest.TestCase):
+    """Verify that delay modules do not import from outside stdlib + modules/delay."""
+
+    def test_no_cross_module_imports(self):
+        import modules.delay.persona as persona_mod
+        import modules.delay.state as state_mod
+        import modules.delay.biometrics as bio_mod
+
+        # persona and state should only import stdlib
+        for mod in (persona_mod, state_mod):
+            source_file = mod.__file__
+            with open(source_file) as f:
+                content = f.read()
+            # Should not import from integration/ or other modules/
+            self.assertNotIn("from integration", content)
+            self.assertNotIn("from modules.behavior", content)
+            self.assertNotIn("from modules.monitor", content)
+            self.assertNotIn("from modules.rollout", content)
+
+
+if __name__ == "__main__":
+    unittest.main()
