@@ -2,6 +2,7 @@
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from integration import runtime
 
@@ -154,7 +155,6 @@ class TestOverheadWithin15Percent(_RuntimeReset):
         runtime.reset()
 
         # --- Measure WITH behaviour delay (mocked sleep) ---
-        from unittest.mock import patch
         runtime.set_behavior_delay_enabled(True)
         with patch("modules.delay.wrapper.time.sleep"):
             wid = runtime.start_worker(timed_task)
