@@ -169,6 +169,17 @@ def get_all_worker_states():
     """Return a snapshot dict of all worker execution states."""
     with _lock:
         return dict(_worker_states)
+def _is_safe_locked():
+    """Check worker safety while _lock is already held.
+
+    Returns True only when every registered worker is IDLE or SAFE_POINT.
+    Missing state entries → unsafe.  No workers → safe (vacuous truth).
+    """
+    for wid in _workers:
+        ws = _worker_states.get(wid)
+        if ws is None or ws not in ("IDLE", "SAFE_POINT"):
+            return False
+    return True
 def is_safe_to_control():
     """Return True only when all tracked workers are IDLE or SAFE_POINT.
 
@@ -176,11 +187,7 @@ def is_safe_to_control():
     Returns True when there are no workers (vacuous truth for empty set).
     """
     with _lock:
-        for wid in _workers:
-            ws = _worker_states.get(wid)
-            if ws is None or ws not in ("IDLE", "SAFE_POINT"):
-                return False
-        return True
+        return _is_safe_locked()
 def _apply_scale(target_count, task_fn):
     global _pending_restarts
     with _lock: current_ids = list(_workers.keys())
@@ -228,7 +235,8 @@ def _runtime_loop(task_fn, interval):
                     _consecutive_rollbacks = 0
             with _lock:
                 current_count = len(_workers)
-            if target != current_count and not is_safe_to_control():
+                workers_safe = _is_safe_locked()
+            if target != current_count and not workers_safe:
                 _log_event("runtime", "scaling_deferred", "unsafe_state", {"target": target, "current": current_count})
             else:
                 _apply_scale(target, task_fn)

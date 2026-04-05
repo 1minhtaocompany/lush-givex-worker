@@ -22,7 +22,6 @@ from integration import runtime
 from integration.runtime import (
     get_status,
     is_running,
-    is_safe_to_control,
     reset,
     start,
     stop,
@@ -334,7 +333,7 @@ class TestSafeGuardGating(ScalingResetMixin, unittest.TestCase):
     """_apply_scale() must be gated by is_safe_to_control() when target != current."""
 
     def test_scaling_deferred_when_workers_unsafe(self):
-        """When is_safe_to_control() is False and scaling needed, _apply_scale is skipped."""
+        """When workers are unsafe and scaling needed, _apply_scale is skipped."""
         rollout.configure(check_rollback_fn=lambda: [],
                           save_baseline_fn=lambda: None)
         apply_called = threading.Event()
@@ -344,10 +343,10 @@ class TestSafeGuardGating(ScalingResetMixin, unittest.TestCase):
             apply_called.set()
             return original_apply(target, task_fn)
 
-        # Mock is_safe_to_control to return False, and behavior to return SCALE_UP
+        # Mock _is_safe_locked to return False, and behavior to return SCALE_UP
         with patch.object(behavior, "evaluate",
                           return_value=(behavior.SCALE_UP, ["test_scale_up"])), \
-             patch("integration.runtime.is_safe_to_control", return_value=False), \
+             patch("integration.runtime._is_safe_locked", return_value=False), \
              patch("integration.runtime._apply_scale", side_effect=tracking_apply):
             start(lambda _: time.sleep(0.5), interval=0.05)
             time.sleep(0.3)
@@ -357,14 +356,13 @@ class TestSafeGuardGating(ScalingResetMixin, unittest.TestCase):
                          "_apply_scale should NOT be called when workers are unsafe")
 
     def test_scaling_proceeds_when_workers_safe(self):
-        """When is_safe_to_control() is True, _apply_scale proceeds normally."""
+        """When workers are safe, _apply_scale proceeds normally."""
         rollout.configure(check_rollback_fn=lambda: [],
                           save_baseline_fn=lambda: None)
-        apply_called = threading.Event()
 
         with patch.object(behavior, "evaluate",
                           return_value=(behavior.SCALE_UP, ["test_scale_up"])), \
-             patch("integration.runtime.is_safe_to_control", return_value=True):
+             patch("integration.runtime._is_safe_locked", return_value=True):
             start(lambda _: time.sleep(0.5), interval=0.05)
             time.sleep(0.3)
             step = rollout.get_current_step_index()
@@ -387,7 +385,7 @@ class TestSafeGuardGating(ScalingResetMixin, unittest.TestCase):
         try:
             with patch.object(behavior, "evaluate",
                               return_value=(behavior.SCALE_UP, ["test"])), \
-                 patch("integration.runtime.is_safe_to_control", return_value=False):
+                 patch("integration.runtime._is_safe_locked", return_value=False):
                 start(lambda _: time.sleep(0.5), interval=0.05)
                 time.sleep(0.3)
                 stop(timeout=2)
@@ -402,25 +400,14 @@ class TestSafeGuardGating(ScalingResetMixin, unittest.TestCase):
         """HOLD decision (target == current) does not require safe check."""
         rollout.configure(check_rollback_fn=lambda: [],
                           save_baseline_fn=lambda: None)
-        # Start with HOLD decision — no scaling change needed
-        safe_checked = []
-        original_safe = runtime.is_safe_to_control
-
-        def tracking_safe():
-            result = original_safe()
-            safe_checked.append(result)
-            return result
 
         with patch.object(behavior, "evaluate",
-                          return_value=(behavior.HOLD, ["cooldown"])), \
-             patch("integration.runtime.is_safe_to_control",
-                   side_effect=tracking_safe):
+                          return_value=(behavior.HOLD, ["cooldown"])):
             start(lambda _: time.sleep(0.5), interval=0.05)
             time.sleep(0.2)
             stop(timeout=2)
 
-        # is_safe_to_control may or may not be called, but _apply_scale
-        # should still run (target == current → no guard needed)
+        # HOLD should not change scaling step regardless of worker safety
         step = rollout.get_current_step_index()
         self.assertEqual(step, 0, "HOLD should not change scaling step")
 
