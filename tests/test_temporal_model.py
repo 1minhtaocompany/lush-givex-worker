@@ -94,7 +94,7 @@ class TestFatigue(_TemporalSetup):
         self.assertLessEqual(result - base, 1.0 + 1e-9)
 
     def test_fatigue_clamped_to_hard_limit(self):
-        """apply_fatigue() must never exceed MAX_STEP_DELAY (Blueprint §14 safety)."""
+        """apply_fatigue() must never exceed MAX_STEP_DELAY (Blueprint §10 safety)."""
         result = self.tm.apply_fatigue(MAX_HESITATION_DELAY, self.persona.fatigue_threshold + 1000)
         self.assertLessEqual(result, MAX_STEP_DELAY)
 

@@ -227,9 +227,9 @@ Ràng buộc bộ đếm swap chung:
 
 ---
 
-8. KIẾN TRÚC HÀNH VI (BEHAVIOR ARCHITECTURE)
+8. KIẾN TRÚC HÀNH VI — PHASE 10 BEHAVIOR LAYER (BEHAVIOR ARCHITECTURE)
 
-Mapping giữa Blueprint và Phase 10 Behavior Layer:
+Mapping giữa Blueprint và Phase 10 Behavior Layer.
 
 · PersonaProfile (Nhân Cách Worker):
 
@@ -243,26 +243,15 @@ Mapping giữa Blueprint và Phase 10 Behavior Layer:
 
   · Vòng đời: Cố định suốt cycle. Không thay đổi khi swap thẻ.
 
-· BehaviorState (Trạng Thái Thao Tác):
-
-  · Theo dõi ngữ cảnh hiện tại của worker trong cycle:
-    - IDLE — chờ bước tiếp theo (giữa các thao tác)
-    - FILLING_FORM — đang điền form (recipient, billing — §4)
-    - PAYMENT — đang nhập thẻ thanh toán (card number, CVV — §5)
-    - VBV — đang xử lý 3DS iframe (§6 Ngã rẽ 3)
-    - POST_ACTION — chờ kết quả sau submit (§6 Gatekeeper)
-
-  · Quy tắc: Quyết định delay PHẢI dựa trên BehaviorState hiện tại.
-
 · AntiDetection Layer:
 
   · Tầng điều khiển hành vi theo thời gian (temporal behavior control).
   · Hoạt động song song với PersonaProfile để tạo biometrics giống người thật.
-  · Chi tiết xem §12 (Anti-Detect Layer 2 Tầng).
+  · Chi tiết xem §9 (Anti-Detect Layer 2 Tầng).
 
 ---
 
-9. TÍCH HỢP THỰC THI (EXECUTION INTEGRATION)
+§8.1. TÍCH HỢP THỰC THI — ARCHITECTURE (↔ Spec §10.1)
 
 · Cơ chế: Behavior được inject tại worker execution layer thông qua pattern wrapper:
 
@@ -276,11 +265,74 @@ Mapping giữa Blueprint và Phase 10 Behavior Layer:
   - Monitor (giám sát metrics)
   - FSM (máy trạng thái — flow §6 giữ nguyên 100%)
 
-· Nguyên tắc: Wrapper chỉ thêm delay tại các điểm an toàn (SAFE ZONE). Logic execution không bị thay đổi. Kết quả success/failure không bị ảnh hưởng.
+---
+
+§8.2. FSM CONTEXT — BEHAVIORSTATE (↔ Spec §10.2)
+
+· Theo dõi ngữ cảnh hiện tại của worker trong cycle:
+  - IDLE — chờ bước tiếp theo (giữa các thao tác)
+  - FILLING_FORM — đang điền form (recipient, billing — §4)
+  - PAYMENT — đang nhập thẻ thanh toán (card number, CVV — §5)
+  - VBV — đang xử lý 3DS iframe (§6 Ngã rẽ 3)
+  - POST_ACTION — chờ kết quả sau submit (§6 Gatekeeper)
+
+· Quy tắc: Quyết định delay PHẢI dựa trên BehaviorState hiện tại.
 
 ---
 
-10. KIỂM SOÁT HIỆU NĂNG (PERFORMANCE CONTROL)
+§8.3. CRITICAL_SECTION AWARENESS (↔ Spec §10.3)
+
+· Behavior layer KHÔNG can thiệp CRITICAL_SECTION:
+
+  Các điểm CRITICAL_SECTION (zero delay):
+  - Payment submit — click "Complete Purchase" (§5, §6)
+  - VBV/3DS handling — iframe interaction + chờ loading (§6 Ngã rẽ 3)
+  - API wait — CDP Network.responseReceived pending (§5 Watchdog)
+  - Page reload operations (§6 Ngã rẽ 3, 4)
+
+· Quy tắc: Nếu đang trong CRITICAL_SECTION → KHÔNG inject delay.
+
+---
+
+§8.4. SAFE POINT / SAFE ZONE RULE (↔ Spec §10.4)
+
+· Nguyên tắc: Wrapper chỉ thêm delay tại các điểm an toàn (SAFE ZONE). Logic execution không bị thay đổi. Kết quả success/failure không bị ảnh hưởng.
+
+· Delay CHỈ được phép tại (SAFE ZONE):
+  - UI interaction (typing, click, hover)
+  - Non-critical steps (form navigation, field focus)
+
+· Delay KHÔNG được phép tại:
+  - Execution control (scaling, lifecycle transitions)
+  - System coordination (runtime loop, watchdog checks)
+
+· Stagger start (§1: random.uniform(12, 25)s) là cơ chế RIÊNG BIỆT:
+  - Stagger hoạt động giữa các worker launches
+  - Behavior delay hoạt động trong cycle
+  - Hai cơ chế KHÔNG can thiệp lẫn nhau
+
+---
+
+§8.5. VÙNG CẤM DELAY — NO-DELAY ZONE (↔ Spec §10.5)
+
+· Behavior layer KHÔNG được inject delay vào:
+  - Payment submit (Complete Purchase click event)
+  - Watchdog timeout checks
+  - Network wait (CDP Network.responseReceived)
+  - VBV iframe load/interaction
+  - Page reload operations
+
+· Behavior layer KHÔNG phá watchdog:
+  - Tổng delay mỗi bước ≤ 7.0s, watchdog timeout = 10s → headroom ≥ 3s
+  - Delay bị clamp cứng trước khi áp dụng
+
+· VBV 8–12s wait (§6 Ngã rẽ 3) là OPERATIONAL wait:
+  - Chờ iframe loading — không phải behavioral delay
+  - KHÔNG được thay thế hoặc bổ sung bởi behavior layer
+
+---
+
+§8.6. KIỂM SOÁT HIỆU NĂNG & MÔ HÌNH XÁC ĐỊNH — ACTION-AWARE DELAY (↔ Spec §10.6)
 
 · Hard constraints (ràng buộc cứng):
 
@@ -295,10 +347,6 @@ Mapping giữa Blueprint và Phase 10 Behavior Layer:
   - Không ảnh hưởng watchdog timeout hoặc system-level deadlines
 
 · Overhead trung bình: ≤ 15% so với thời gian cycle không có behavior.
-
----
-
-11. MÔ HÌNH XÁC ĐỊNH (DETERMINISTIC MODEL)
 
 · Hệ thống random:
 
@@ -319,7 +367,27 @@ Mapping giữa Blueprint và Phase 10 Behavior Layer:
 
 ---
 
-12. ANTI-DETECT LAYER 2 TẦNG
+§8.7. QUY TẮC KHÔNG CAN THIỆP — NON-INTERFERENCE RULE (↔ Spec §10.7)
+
+· Behavior layer KHÔNG thay đổi outcome:
+  - FSM flow giữ nguyên 100% (4 ngã rẽ — §6)
+  - Thứ tự bước execution không đổi
+  - Kết quả success/failure không bị ảnh hưởng bởi delay
+  - State transitions không bị behavior can thiệp
+
+---
+
+§8.8. ĐỒNG BỘ VỚI PHASE 9 — PHASE 9 ALIGNMENT (↔ Spec §10.8)
+
+· Phase 10 PHẢI tuân thủ:
+  - SAFE_POINT — behavior chỉ hoạt động trong ranh giới an toàn (§8.4)
+  - CRITICAL_SECTION — zero can thiệp trong các thao tác quan trọng (§8.3)
+
+· Phase 10 KHÔNG ĐƯỢC hoạt động ngoài phạm vi cho phép.
+
+---
+
+9. ANTI-DETECT LAYER 2 TẦNG
 
 TẦNG 1 — ENVIRONMENT & INTERACTION (ĐÃ CÓ TRONG §1-§7):
 
@@ -354,38 +422,7 @@ TẦNG 2 — BEHAVIORAL BIOMETRICS (BỔ SUNG — Phase 10):
 
 ---
 
-13. SAFETY ALIGNMENT (ĐỐI CHIẾU AN TOÀN)
-
-· Behavior layer KHÔNG can thiệp CRITICAL_SECTION:
-
-  Các điểm CRITICAL_SECTION (zero delay):
-  - Payment submit — click "Complete Purchase" (§5, §6)
-  - VBV/3DS handling — iframe interaction + chờ loading (§6 Ngã rẽ 3)
-  - API wait — CDP Network.responseReceived pending (§5 Watchdog)
-  - Page reload operations (§6 Ngã rẽ 3, 4)
-
-· Behavior layer KHÔNG phá watchdog:
-  - Tổng delay mỗi bước ≤ 7.0s, watchdog timeout = 10s → headroom ≥ 3s
-  - Delay bị clamp cứng trước khi áp dụng
-
-· Behavior layer KHÔNG thay đổi outcome:
-  - FSM flow giữ nguyên 100% (4 ngã rẽ — §6)
-  - Thứ tự bước execution không đổi
-  - Kết quả success/failure không bị ảnh hưởng bởi delay
-  - State transitions không bị behavior can thiệp
-
-· Stagger start (§1: random.uniform(12, 25)s) là cơ chế RIÊNG BIỆT:
-  - Stagger hoạt động giữa các worker launches
-  - Behavior delay hoạt động trong cycle
-  - Hai cơ chế KHÔNG can thiệp lẫn nhau
-
-· VBV 8–12s wait (§6 Ngã rẽ 3) là OPERATIONAL wait:
-  - Chờ iframe loading — không phải behavioral delay
-  - KHÔNG được thay thế hoặc bổ sung bởi behavior layer
-
----
-
-14. MÔ PHỎNG HÀNH VI NGÀY/ĐÊM (DAY/NIGHT BEHAVIOR SIMULATION)
+10. MÔ PHỎNG HÀNH VI NGÀY/ĐÊM (DAY/NIGHT BEHAVIOR SIMULATION)
 
 Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường anti-detect bằng temporal realism.
 
@@ -402,17 +439,17 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
 
   DAY mode:
   - Tốc độ gõ: ổn định, phù hợp với persona_type (§8 PersonaProfile)
-  - Hesitation: ngắn (theo seed — §11), ít ngập ngừng
+  - Hesitation: ngắn (theo seed — §8.6), ít ngập ngừng
   - Typo rate: baseline theo seed (2–5% — §4)
   - Inter-action delay: đều, biến thiên thấp
 
   NIGHT mode:
-  - Tốc độ gõ: chậm hơn DAY 15–30% (scale factor từ rnd — §11)
+  - Tốc độ gõ: chậm hơn DAY 15–30% (scale factor từ rnd — §8.6)
   - Hesitation: tăng 20–40% so với DAY (fatigue simulation)
   - Typo rate: tăng 1–2% tuyệt đối so với DAY baseline
   - Inter-action delay: không đều hơn, variance cao hơn (mô phỏng buồn ngủ)
 
-  Tất cả giá trị vẫn BỊ CLAMP bởi hard constraints §10:
+  Tất cả giá trị vẫn BỊ CLAMP bởi hard constraints §8.6:
   - max_delay_per_action ≤ 1.8s
   - max_delay_per_hesitation ≤ 5.0s
   - total_behavioral_delay_per_step ≤ 7.0s
@@ -421,7 +458,7 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
 
   Hành vi KHÔNG cố định mà biến động theo thời gian trong cycle:
   - Gradual drift: hành vi thay đổi từ từ qua các bước cycle (không nhảy đột ngột)
-  - Micro-variation: mỗi thao tác có nhiễu nhỏ (±5–10%) từ rnd (§11)
+  - Micro-variation: mỗi thao tác có nhiễu nhỏ (±5–10%) từ rnd (§8.6)
   - Session fatigue: sau 3+ cycles liên tiếp, hesitation tăng nhẹ (mô phỏng mệt mỏi tích lũy)
 
   Tất cả variation được tạo từ rnd = random.Random(seed) → reproducible + testable.
@@ -437,7 +474,7 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
 
 · Anti-Detect Enhancement:
 
-  Day/Night model tăng cường Tầng 2 (§12 Behavioral Biometrics):
+  Day/Night model tăng cường Tầng 2 (§9 Behavioral Biometrics):
   - Temporal fingerprint đa dạng: cùng persona nhưng hành vi khác nhau theo giờ
   - Phá pattern đồng nhất: workers chạy cùng lúc nhưng có penalty factor khác nhau
   - Non-periodic: kết hợp DAY/NIGHT + burst typing + hesitation → không có pattern lặp
@@ -445,62 +482,59 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
 
 · Quy tắc an toàn:
 
-  - Day/Night model KHÔNG can thiệp CRITICAL_SECTION (§13) — zero delay tại payment submit, VBV, API wait
-  - Day/Night model KHÔNG phá watchdog — tất cả delay vẫn bị clamp bởi §10 hard constraints
+  - Day/Night model KHÔNG can thiệp CRITICAL_SECTION (§8.3) — zero delay tại payment submit, VBV, API wait
+  - Day/Night model KHÔNG phá watchdog — tất cả delay vẫn bị clamp bởi §8.6 hard constraints
   - Day/Night model KHÔNG ảnh hưởng FSM — flow §6 giữ nguyên 100%, chỉ timing thay đổi
   - Day/Night model KHÔNG thay đổi outcome — kết quả success/failure không phụ thuộc thời gian ngày/đêm
 
 ---
 
-15. ĐỒNG BỘ SPEC ↔ BLUEPRINT (SYNCHRONIZATION MATRIX)
+11. ĐỒNG BỘ SPEC ↔ BLUEPRINT (SYNCHRONIZATION MATRIX)
 
-Ma trận đối chiếu giữa Spec Phase 10 và Blueprint:
+Ma trận đối chiếu giữa Spec Phase 10 và Blueprint (1-to-1 structural alignment):
 
-· Spec §10.1 (Architecture) ↔ Blueprint §9 (Execution Integration):
+· Spec §10.1 (Architecture) ↔ Blueprint §8.1 (Tích Hợp Thực Thi — Architecture):
   - Spec: wrapper ONLY tại worker execution layer
   - Blueprint: task_fn = wrap(task_fn, persona) tại worker function
   - Status: ✓ ĐỒNG BỘ
 
-· Spec §10.2 (FSM Context) ↔ Blueprint §8 (BehaviorState):
+· Spec §10.2 (FSM Context) ↔ Blueprint §8.2 (FSM Context — BehaviorState):
   - Spec: IDLE, FILLING_FORM, PAYMENT, VBV, POST_ACTION
   - Blueprint: IDLE, FILLING_FORM, PAYMENT, VBV, POST_ACTION
   - Status: ✓ ĐỒNG BỘ
 
-· Spec §10.3 (CRITICAL_SECTION) ↔ Blueprint §13 (Safety Alignment):
+· Spec §10.3 (CRITICAL_SECTION) ↔ Blueprint §8.3 (CRITICAL_SECTION Awareness):
   - Spec: Payment submit, VBV/3DS, API wait → NO delay
   - Blueprint: Payment submit, VBV/3DS, API wait, Page reload → zero delay
   - Status: ✓ ĐỒNG BỘ (Blueprint mở rộng thêm Page reload — an toàn hơn)
 
-· Spec §10.4 (SAFE POINT/SAFE ZONE) ↔ Blueprint §9 + §13:
+· Spec §10.4 (SAFE POINT/SAFE ZONE) ↔ Blueprint §8.4 (SAFE POINT / SAFE ZONE Rule):
   - Spec: delay chỉ tại UI interaction, non-critical steps
   - Blueprint: wrapper chỉ thêm delay tại SAFE ZONE, stagger tách biệt
   - Status: ✓ ĐỒNG BỘ
 
-· Spec §10.5 (NO-DELAY Zone) ↔ Blueprint §13:
+· Spec §10.5 (NO-DELAY Zone) ↔ Blueprint §8.5 (Vùng Cấm Delay — NO-DELAY Zone):
   - Spec: Payment submit, Watchdog, Network wait, VBV iframe, Page reload
-  - Blueprint: Payment submit, VBV/3DS, API wait, Page reload
+  - Blueprint: Payment submit, Watchdog, Network wait, VBV iframe, Page reload
   - Status: ✓ ĐỒNG BỘ
 
-· Spec §10.6 (Action-Aware Delay) ↔ Blueprint §10 (Performance Control):
+· Spec §10.6 (Action-Aware Delay) ↔ Blueprint §8.6 (Kiểm Soát Hiệu Năng & Mô Hình Xác Định):
   - Spec: typing max 1.8s/group, thinking max 5s, total ≤7.0s/step, ≥3s headroom
   - Blueprint: max_delay_per_action ≤ 1.8s, max_delay_per_hesitation ≤ 5.0s, total ≤ 7.0s, ≥3s headroom
-  - Status: ✓ ĐỒNG BỘ
-
-· Spec §10.6 (Deterministic) ↔ Blueprint §11 (Deterministic Model):
   - Spec: Seed-based random, reproducible execution
   - Blueprint: rnd = random.Random(seed), reproducible + testable + isolated
   - Status: ✓ ĐỒNG BỘ
 
-· Spec §10.7 (Non-Interference) ↔ Blueprint §13 (Safety Alignment):
+· Spec §10.7 (Non-Interference) ↔ Blueprint §8.7 (Quy Tắc Không Can Thiệp):
   - Spec: no CRITICAL_SECTION delay, no FSM disruption, no side-effects, no order change, no outcome change
   - Blueprint: FSM giữ nguyên, thứ tự không đổi, outcome không ảnh hưởng, state transitions không bị can thiệp
   - Status: ✓ ĐỒNG BỘ
 
-· Spec §10.8 (Phase 9 Alignment) ↔ Blueprint §13:
+· Spec §10.8 (Phase 9 Alignment) ↔ Blueprint §8.8 (Đồng Bộ Với Phase 9):
   - Spec: respect SAFE_POINT, respect CRITICAL_SECTION
-  - Blueprint: CRITICAL_SECTION zero delay, stagger tách biệt, VBV operational wait tách biệt
+  - Blueprint: SAFE_POINT (§8.4), CRITICAL_SECTION (§8.3), phạm vi cho phép
   - Status: ✓ ĐỒNG BỘ
 
-· Kết luận: Zero mismatch. Blueprint phản ánh đúng và đầy đủ Spec Phase 10.
+· Kết luận: Zero mismatch. Blueprint §8.1–§8.8 khớp chính xác 1-to-1 với Spec §10.1–§10.8. Cấu trúc đồng bộ hoàn toàn, sẵn sàng cho audit.
 
 ---

@@ -16,7 +16,7 @@ from modules.delay.persona import (
 
 
 class TestDeterminism(unittest.TestCase):
-    """Same seed → same profile (Blueprint §11, SPEC §10.6)."""
+    """Same seed → same profile (Blueprint §8.6, SPEC §10.6)."""
 
     def test_same_seed_produces_same_profile(self):
         a = PersonaProfile(42)

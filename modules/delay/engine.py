@@ -14,7 +14,7 @@ import threading
 from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
 from modules.delay.state import BehaviorStateMachine
 
-# ── Hard constraints (Blueprint §10, SPEC §10.6) ────────────────
+# ── Hard constraints (Blueprint §8.6, SPEC §10.6) ────────────────
 MAX_HESITATION_DELAY: float = 5.0
 MAX_STEP_DELAY: float = 7.0
 WATCHDOG_HEADROOM: float = 3.0
