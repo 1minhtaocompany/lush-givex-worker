@@ -4,7 +4,8 @@ Calculates delays based on action type (typing/click/thinking),
 BehaviorState context, and PersonaProfile.  All delays are clamped
 by hard constraints before being applied.
 
-Thread-safe via threading.Lock.  No cross-module imports.
+Thread-safe via threading.Lock.  Imports are limited to modules
+within ``modules.delay``; no imports from outside that package.
 Deterministic via random.Random instance from PersonaProfile.
 """
 
@@ -57,8 +58,10 @@ class DelayEngine:
         return 0.0
 
     def calculate_thinking_delay(self) -> float:
-        """Return thinking/hesitation delay (3–5 s, clamped).
+        """Return thinking/hesitation delay (clamped at MAX_HESITATION_DELAY).
 
+        The raw value comes from PersonaProfile.get_hesitation_delay()
+        and is upper-bounded by MAX_HESITATION_DELAY before accumulation.
         Returns 0.0 when delay is not permitted.
         """
         if not self.is_delay_permitted():

@@ -142,23 +142,26 @@ class TestEngineModuleImport(unittest.TestCase):
             MAX_STEP_DELAY as MSD,
             WATCHDOG_HEADROOM as WH,
         )
+        from modules.delay.persona import PersonaProfile as PP
+        from modules.delay.persona import MAX_TYPING_DELAY as MTD
+        from modules.delay.state import BehaviorStateMachine as BSM
         self.assertEqual(MHD, 5.0)
         self.assertEqual(MSD, 7.0)
         self.assertEqual(WH, 3.0)
-        p = PersonaProfile(99)
-        sm = BehaviorStateMachine()
+        p = PP(99)
+        sm = BSM()
         e = DE(p, sm)
         sm.transition("FILLING_FORM")
         d = e.calculate_typing_delay(0)
         self.assertGreaterEqual(d, 0.0)
-        self.assertLessEqual(d, MAX_TYPING_DELAY)
+        self.assertLessEqual(d, MTD)
 
 
 class TestBoundaryConditions(_EngineSetup):
     """Edge cases and boundary conditions."""
 
-    def test_idle_state_no_delay(self):
-        """IDLE state permits delay but typing returns valid value."""
+    def test_idle_state_permits_typing(self):
+        """IDLE is a safe context — typing delay is positive."""
         d = self.engine.calculate_delay("typing")
         self.assertGreater(d, 0.0)
 
