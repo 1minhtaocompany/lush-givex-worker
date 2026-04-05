@@ -153,6 +153,20 @@ class TestNightTypoIncrease(_TemporalSetup):
         self.assertGreaterEqual(increase, NIGHT_TYPO_INCREASE_RANGE[0] - 1e-9)
         self.assertLessEqual(increase, NIGHT_TYPO_INCREASE_RANGE[1] + 1e-9)
 
+    def test_night_typo_increase_is_random_in_range(self):
+        """Multiple NIGHT calls must produce values across the 1–2% range (not fixed)."""
+        utc_hour = time.gmtime().tm_hour
+        offset = (3 - utc_hour) % 24
+        if offset > 12:
+            offset -= 24
+        results = {self.tm.get_night_typo_increase(offset) for _ in range(20)}
+        # All values must be within range
+        for v in results:
+            self.assertGreaterEqual(v, NIGHT_TYPO_INCREASE_RANGE[0] - 1e-9)
+            self.assertLessEqual(v, NIGHT_TYPO_INCREASE_RANGE[1] + 1e-9)
+        # With 20 calls from a seeded RNG, we should see at least 2 distinct values
+        self.assertGreater(len(results), 1, "get_night_typo_increase() must be random, not fixed")
+
     def test_day_typo_no_increase(self):
         utc_hour = time.gmtime().tm_hour
         offset = (12 - utc_hour) % 24
