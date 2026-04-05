@@ -7,9 +7,9 @@ Validates:
   - transition() returns True for valid, False for invalid
   - get_state() returns current state under lock
   - is_critical_context() True for VBV/POST_ACTION, False otherwise
-  - is_safe_for_delay() True for IDLE/FILLING_FORM/PAYMENT when not in CS
-  - is_safe_for_delay() False when critical-section flag is set
-  - reset() restores IDLE and clears critical-section flag
+  - is_safe_for_delay() True for IDLE/FILLING_FORM/PAYMENT
+  - is_safe_for_delay() False for VBV/POST_ACTION
+  - reset() restores IDLE
   - Thread safety via threading.Lock
   - Invalid initial state raises ValueError
 """
@@ -17,7 +17,7 @@ Validates:
 import threading
 import unittest
 
-from modules.delay.state import (
+from modules.delay.main import (
     BEHAVIOR_STATES,
     BehaviorStateMachine,
     _VALID_BEHAVIOR_TRANSITIONS,
@@ -229,20 +229,17 @@ class TestIsSafeForDelay(unittest.TestCase):
         sm = BehaviorStateMachine(initial_state="POST_ACTION")
         self.assertFalse(sm.is_safe_for_delay())
 
-    def test_safe_state_but_critical_section_active(self):
-        sm = BehaviorStateMachine()
-        sm.set_critical_section(True)
+    def test_safe_state_but_critical_context_via_vbv(self):
+        sm = BehaviorStateMachine(initial_state="VBV")
         self.assertFalse(sm.is_safe_for_delay())
 
-    def test_safe_after_critical_section_cleared(self):
-        sm = BehaviorStateMachine()
-        sm.set_critical_section(True)
-        sm.set_critical_section(False)
+    def test_safe_after_returning_to_idle(self):
+        sm = BehaviorStateMachine(initial_state="VBV")
+        sm.transition("IDLE")
         self.assertTrue(sm.is_safe_for_delay())
 
-    def test_critical_state_with_critical_section_flag(self):
-        sm = BehaviorStateMachine(initial_state="VBV")
-        sm.set_critical_section(True)
+    def test_critical_state_post_action(self):
+        sm = BehaviorStateMachine(initial_state="POST_ACTION")
         self.assertFalse(sm.is_safe_for_delay())
 
 
@@ -259,9 +256,9 @@ class TestReset(unittest.TestCase):
         sm.reset()
         self.assertEqual(sm.get_state(), "IDLE")
 
-    def test_reset_clears_critical_section(self):
+    def test_reset_clears_state_to_idle(self):
         sm = BehaviorStateMachine()
-        sm.set_critical_section(True)
+        sm.transition("FILLING_FORM")
         sm.reset()
         self.assertTrue(sm.is_safe_for_delay())
 
@@ -306,18 +303,24 @@ class TestThreadSafety(unittest.TestCase):
         self.assertEqual(alive, [], f"threads still alive: {alive}")
         self.assertEqual(errors, [])
 
-    def test_concurrent_critical_section_flag(self):
+    def test_concurrent_state_checks(self):
         sm = BehaviorStateMachine()
         errors = []
         barrier = threading.Barrier(10)
 
-        def worker(flag_value):
+        def worker(use_vbv):
             try:
                 barrier.wait(timeout=2)
                 for _ in range(100):
-                    sm.set_critical_section(flag_value)
+                    if use_vbv:
+                        ok = sm.transition("FILLING_FORM")
+                        if ok:
+                            ok = sm.transition("PAYMENT")
+                        if ok:
+                            sm.transition("VBV")
                     # is_safe_for_delay must not raise
                     sm.is_safe_for_delay()
+                    sm.reset()
             except Exception as exc:
                 errors.append(str(exc))
 
