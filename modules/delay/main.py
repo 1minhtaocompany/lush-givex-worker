@@ -3,6 +3,7 @@
 Delay engine, temporal model, biometrics, and wrapper.
 PersonaProfile lives in persona.py (Task 10.1, stdlib-only).
 BehaviorStateMachine lives in state.py (already on main).
+DelayEngine lives in engine.py (Task 10.3).
 """
 import random
 import threading
@@ -14,46 +15,14 @@ from modules.delay.persona import _NIGHT_PENALTY_MIN, _NIGHT_PENALTY_MAX  # noqa
 from modules.delay.persona import _FATIGUE_THRESHOLD_MIN, _FATIGUE_THRESHOLD_MAX  # noqa: F401
 from modules.delay.persona import _PERSONA_TYPES  # noqa: F401
 from modules.delay.state import BehaviorStateMachine, BEHAVIOR_STATES, _VALID_BEHAVIOR_TRANSITIONS  # noqa: F401
+from modules.delay.engine import DelayEngine  # noqa: F401
+from modules.delay.engine import MAX_HESITATION_DELAY, MAX_STEP_DELAY, WATCHDOG_HEADROOM  # noqa: F401
 
-# -- Hard constraints (Blueprint §10, SPEC §10.6) --
-MAX_HESITATION_DELAY = 5.0; MAX_STEP_DELAY = 7.0; WATCHDOG_HEADROOM = 3.0
+# -- Additional constants (Blueprint §10, SPEC §10.6) --
 DAY_START = 6; DAY_END = 21
 NIGHT_SPEED_PENALTY_RANGE = (0.15, 0.30)
 NIGHT_HESITATION_INCREASE_RANGE = (0.20, 0.40); NIGHT_TYPO_INCREASE = 0.02
 _KEYSTROKE_MAX = 0.3
-
-
-class DelayEngine:
-    """Calculate bounded delays for worker actions."""
-    def __init__(self, persona: PersonaProfile, state_machine: BehaviorStateMachine) -> None:
-        self._persona = persona; self._state_machine = state_machine
-        self._step_accumulated: float = 0.0; self._lock = threading.Lock()
-    def calculate_typing_delay(self, group_index: int) -> float:
-        if not self.is_delay_permitted(): return 0.0
-        raw = self._persona.get_typing_delay(group_index)
-        return self._accumulate(max(MIN_TYPING_DELAY, min(raw, MAX_TYPING_DELAY)))
-    def calculate_click_delay(self) -> float: return 0.0
-    def calculate_thinking_delay(self) -> float:
-        if not self.is_delay_permitted(): return 0.0
-        raw = self._persona.get_hesitation_delay()
-        return self._accumulate(min(raw, MAX_HESITATION_DELAY))
-    def calculate_delay(self, action_type: str) -> float:
-        if action_type == "typing": return self.calculate_typing_delay(0)
-        if action_type == "click": return self.calculate_click_delay()
-        if action_type == "thinking": return self.calculate_thinking_delay()
-        return 0.0
-    def get_step_accumulated_delay(self) -> float:
-        with self._lock: return self._step_accumulated
-    def reset_step_accumulator(self) -> None:
-        with self._lock: self._step_accumulated = 0.0
-    def is_delay_permitted(self) -> bool:
-        if not self._state_machine.is_safe_for_delay(): return False
-        with self._lock: return self._step_accumulated < MAX_STEP_DELAY
-    def _accumulate(self, delay: float) -> float:
-        with self._lock:
-            headroom = MAX_STEP_DELAY - self._step_accumulated
-            if headroom <= 0: return 0.0
-            actual = min(delay, headroom); self._step_accumulated += actual; return actual
 
 
 class TemporalModel:

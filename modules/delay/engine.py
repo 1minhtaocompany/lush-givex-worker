@@ -1,0 +1,122 @@
+"""DelayEngine — Action-Aware Bounded Delay Calculator (Task 10.3).
+
+Calculates delays based on action type (typing/click/thinking),
+BehaviorState context, and PersonaProfile.  All delays are clamped
+by hard constraints before being applied.
+
+Thread-safe via threading.Lock.  No cross-module imports.
+Deterministic via random.Random instance from PersonaProfile.
+"""
+
+import threading
+
+from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
+from modules.delay.state import BehaviorStateMachine
+
+# ── Hard constraints (Blueprint §10, SPEC §10.6) ────────────────
+MAX_HESITATION_DELAY: float = 5.0
+MAX_STEP_DELAY: float = 7.0
+WATCHDOG_HEADROOM: float = 3.0
+
+
+class DelayEngine:
+    """Calculate bounded delays for worker actions.
+
+    Parameters
+    ----------
+    persona : PersonaProfile
+        Seed-deterministic persona providing timing attributes.
+    state_machine : BehaviorStateMachine
+        FSM that tracks the current behavioral context.
+    """
+
+    def __init__(
+        self, persona: PersonaProfile, state_machine: BehaviorStateMachine
+    ) -> None:
+        self._persona = persona
+        self._state_machine = state_machine
+        self._step_accumulated: float = 0.0
+        self._lock = threading.Lock()
+
+    # ── action-specific calculators ──────────────────────────────
+
+    def calculate_typing_delay(self, group_index: int) -> float:
+        """Return typing delay for a 4-digit group (0.6–1.8 s, clamped).
+
+        Returns 0.0 when delay is not permitted (critical context or
+        accumulator exhausted).
+        """
+        if not self.is_delay_permitted():
+            return 0.0
+        raw = self._persona.get_typing_delay(group_index)
+        clamped = max(MIN_TYPING_DELAY, min(raw, MAX_TYPING_DELAY))
+        return self._accumulate(clamped)
+
+    def calculate_click_delay(self) -> float:
+        """Return click delay (≈0, spatial offset only)."""
+        return 0.0
+
+    def calculate_thinking_delay(self) -> float:
+        """Return thinking/hesitation delay (3–5 s, clamped).
+
+        Returns 0.0 when delay is not permitted.
+        """
+        if not self.is_delay_permitted():
+            return 0.0
+        raw = self._persona.get_hesitation_delay()
+        clamped = min(raw, MAX_HESITATION_DELAY)
+        return self._accumulate(clamped)
+
+    # ── dispatcher ───────────────────────────────────────────────
+
+    def calculate_delay(self, action_type: str) -> float:
+        """Dispatch to the appropriate calculator by *action_type*.
+
+        Supported types: ``"typing"``, ``"click"``, ``"thinking"``.
+        Unknown types return 0.0.
+        """
+        if action_type == "typing":
+            return self.calculate_typing_delay(0)
+        if action_type == "click":
+            return self.calculate_click_delay()
+        if action_type == "thinking":
+            return self.calculate_thinking_delay()
+        return 0.0
+
+    # ── accumulator ──────────────────────────────────────────────
+
+    def get_step_accumulated_delay(self) -> float:
+        """Return the total delay accumulated in the current step."""
+        with self._lock:
+            return self._step_accumulated
+
+    def reset_step_accumulator(self) -> None:
+        """Reset the step accumulator to zero."""
+        with self._lock:
+            self._step_accumulated = 0.0
+
+    # ── guards ───────────────────────────────────────────────────
+
+    def is_delay_permitted(self) -> bool:
+        """Return *True* when delay injection is safe.
+
+        Delay is **not** permitted when the state machine is in a critical
+        context (VBV, POST_ACTION, or Phase-9 CRITICAL_SECTION) or when
+        the step accumulator has reached *MAX_STEP_DELAY*.
+        """
+        if not self._state_machine.is_safe_for_delay():
+            return False
+        with self._lock:
+            return self._step_accumulated < MAX_STEP_DELAY
+
+    # ── internal ─────────────────────────────────────────────────
+
+    def _accumulate(self, delay: float) -> float:
+        """Clamp *delay* against remaining step headroom and record it."""
+        with self._lock:
+            headroom = MAX_STEP_DELAY - self._step_accumulated
+            if headroom <= 0:
+                return 0.0
+            actual = min(delay, headroom)
+            self._step_accumulated += actual
+            return actual
