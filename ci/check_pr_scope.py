@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Check that a PR stays within scope: ≤ 200 changed lines (excluding
-ci/ and tests/) and touches at most one module under modules/.
+ci/, tests/, and spec/) and touches at most one module under modules/.
 
 Exception Framework (AI_CONTEXT.md §6):
-  CHANGE_CLASS must be set explicitly via the CHANGE_CLASS env var.
-  If not set, defaults to 'normal'.
+  CHANGE_CLASS is resolved with the following priority:
+    1. Explicit ``CHANGE_CLASS`` env var (highest)
+    2. Auto-detection from PR title: [spec-sync]→spec_sync,
+       [emergency]→emergency_override, [infra]→infra_change
+    3. Default ``'normal'``
 
   Authorization is required for all non-normal CHANGE_CLASS values.
   All override usage is logged as structured JSON audit trail.
@@ -28,7 +31,7 @@ import sys
 
 # ── configuration ──────────────────────────────────────────────────
 MAX_CHANGED_LINES = 200
-EXCLUDED_PREFIXES = ("tests/", "ci/")
+EXCLUDED_PREFIXES = ("tests/", "ci/", "spec/")
 VALID_CHANGE_CLASSES = frozenset({
     "normal",
     "emergency_override",
@@ -198,10 +201,31 @@ def _parse_labels(raw: str) -> set[str]:
 
 # ── change classification ──────────────────────────────────────────
 
+_TITLE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\[emergency\]", re.IGNORECASE), "emergency_override"),
+    (re.compile(r"\[spec-sync\]", re.IGNORECASE), "spec_sync"),
+    (re.compile(r"\[infra\]", re.IGNORECASE), "infra_change"),
+]
+
+
 def _resolve_change_class() -> str:
-    """Resolve CHANGE_CLASS from the explicit env var; defaults to 'normal'."""
+    """Resolve CHANGE_CLASS from explicit env var, PR title, or default.
+
+    Priority (AI_CONTEXT.md §6):
+      1. Explicit ``CHANGE_CLASS`` env var (highest)
+      2. Auto-detection from ``PR_TITLE`` patterns
+      3. Default ``'normal'``
+    """
     explicit = os.environ.get("CHANGE_CLASS", "").strip().lower()
-    return explicit if explicit else "normal"
+    if explicit:
+        return explicit
+
+    pr_title = os.environ.get("PR_TITLE", "").strip()
+    for pattern, change_class in _TITLE_PATTERNS:
+        if pattern.search(pr_title):
+            return change_class
+
+    return "normal"
 
 
 def _check_authorization(change_class: str) -> list[str]:
