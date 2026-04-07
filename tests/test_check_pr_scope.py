@@ -18,6 +18,7 @@ from ci.check_pr_scope import (
     main,
     EXCLUDED_PREFIXES,
     MAX_CHANGED_LINES,
+    MODULE_MINOR_THRESHOLD,
     VALID_CHANGE_CLASSES,
 )
 
@@ -137,10 +138,19 @@ class CheckTests(unittest.TestCase):
     @patch("ci.check_pr_scope.get_numstat")
     def test_fail_multiple_modules(self, mock_numstat):
         mock_numstat.return_value = [
-            (10, 5, "modules/fsm/main.py"),
-            (10, 5, "modules/auth/main.py"),
+            (20, 10, "modules/fsm/main.py"),
+            (20, 10, "modules/auth/main.py"),
         ]
         self.assertEqual(check("fake...range"), 1)
+
+    @patch("ci.check_pr_scope.get_numstat")
+    def test_minor_module_excluded_from_count(self, mock_numstat):
+        """A module with ≤ MODULE_MINOR_THRESHOLD lines is incidental."""
+        mock_numstat.return_value = [
+            (50, 50, "modules/watchdog/main.py"),  # 100 lines — primary
+            (5, 3, "modules/delay/wrapper.py"),     # 8 lines — minor
+        ]
+        self.assertEqual(check("fake...range"), 0)
 
     @patch("ci.check_pr_scope.get_numstat")
     def test_single_module_pass(self, mock_numstat):
@@ -412,8 +422,8 @@ class ChangeClassIntegrationTests(unittest.TestCase):
     def test_infra_still_enforces_module_limit(self, mock_resolve, mock_numstat, mock_files):
         mock_numstat.return_value = [
             (10, 5, "ci/check_pr_scope.py"),
-            (10, 5, "modules/fsm/main.py"),
-            (10, 5, "modules/watchdog/main.py"),
+            (20, 10, "modules/fsm/main.py"),
+            (20, 10, "modules/watchdog/main.py"),
         ]
         self.assertEqual(main(), 1)
 
@@ -442,6 +452,9 @@ class ChangeClassIntegrationTests(unittest.TestCase):
 class ConstantsTests(unittest.TestCase):
     def test_max_lines(self):
         self.assertEqual(MAX_CHANGED_LINES, 200)
+
+    def test_module_minor_threshold(self):
+        self.assertEqual(MODULE_MINOR_THRESHOLD, 20)
 
     def test_excluded_prefixes(self):
         self.assertIn("tests/", EXCLUDED_PREFIXES)
