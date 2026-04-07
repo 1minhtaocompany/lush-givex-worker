@@ -1,7 +1,11 @@
 # Interface Contract — Integration (Watchdog, Billing, CDP)
 
-spec-version: 2.0
+spec-version: 3.0
 
+> **v3.0 Breaking Changes:**
+> - enable_network_monitor and wait_for_total now require worker_id parameter
+> - Added notify_total function
+>
 > **v2.0 Breaking Changes:**
 > - Exception types (SessionFlaggedError) moved to modules.common.exceptions
 > - Data types moved to modules.common.types
@@ -10,13 +14,27 @@ spec-version: 2.0
 ## Module: watchdog
 
 Function: enable_network_monitor
-Input: None
+Input:
+  - worker_id
 Output: None
 
 Function: wait_for_total
 Input:
+  - worker_id
   - timeout
 Output: total value
+Error:
+  - Raise RuntimeError if enable_network_monitor() was not called for worker_id
+  - Raise SessionFlaggedError if timeout expires
+
+Function: notify_total
+Input:
+  - worker_id
+  - value
+Output: None
+Notes:
+  - Safe to call from any thread (browser CDP event thread, worker thread, etc.)
+  - No-op if no session exists for worker_id
 
 ## Module: billing
 

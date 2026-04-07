@@ -1,6 +1,6 @@
 # Interface Contract (Aggregated)
 
-spec-version: 2.0
+spec-version: 3.0
 
 > **Contract Segmentation (v2.0):** Interface contracts have been split into
 > two separate groups. This file aggregates both groups to maintain backward
@@ -47,13 +47,27 @@ Notes:
 ## Module: watchdog
 
 Function: enable_network_monitor
-Input: None
+Input:
+  - worker_id
 Output: None
 
 Function: wait_for_total
 Input:
+  - worker_id
   - timeout
 Output: total value
+Error:
+  - Raise RuntimeError if enable_network_monitor() was not called for worker_id
+  - Raise SessionFlaggedError if timeout expires
+
+Function: notify_total
+Input:
+  - worker_id
+  - value
+Output: None
+Notes:
+  - Safe to call from any thread (browser CDP event thread, worker thread, etc.)
+  - No-op if no session exists for worker_id
 
 ## Module: billing
 

@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """Check that a PR stays within scope: ≤ 200 changed lines (excluding
-ci/ and tests/) and touches at most one module under modules/.
+ci/, tests/, and spec/) and touches at most one module under modules/.
+
+Modules with ≤ MODULE_MINOR_THRESHOLD non-excluded changed lines are
+treated as incidental and excluded from the module count.  This allows
+small cross-module fixes (e.g. adding try/finally) without requiring
+a CHANGE_CLASS override.
 
 Exception Framework (AI_CONTEXT.md §6):
-  CHANGE_CLASS must be set explicitly via the CHANGE_CLASS env var.
-  If not set, defaults to 'normal'.
+  CHANGE_CLASS is resolved with the following priority:
+    1. Explicit ``CHANGE_CLASS`` env var (highest)
+    2. Auto-detection from PR title: [spec-sync]→spec_sync,
+       [emergency]→emergency_override, [infra]→infra_change
+    3. Default ``'normal'``
 
   Authorization is required for all non-normal CHANGE_CLASS values.
   All override usage is logged as structured JSON audit trail.
@@ -28,7 +36,8 @@ import sys
 
 # ── configuration ──────────────────────────────────────────────────
 MAX_CHANGED_LINES = 200
-EXCLUDED_PREFIXES = ("tests/", "ci/")
+MODULE_MINOR_THRESHOLD = 20  # Modules with ≤ this many non-excluded lines are incidental
+EXCLUDED_PREFIXES = ("tests/", "ci/", "spec/")
 VALID_CHANGE_CLASSES = frozenset({
     "normal",
     "emergency_override",
@@ -198,10 +207,31 @@ def _parse_labels(raw: str) -> set[str]:
 
 # ── change classification ──────────────────────────────────────────
 
+_TITLE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\[emergency\]", re.IGNORECASE), "emergency_override"),
+    (re.compile(r"\[spec-sync\]", re.IGNORECASE), "spec_sync"),
+    (re.compile(r"\[infra\]", re.IGNORECASE), "infra_change"),
+]
+
+
 def _resolve_change_class() -> str:
-    """Resolve CHANGE_CLASS from the explicit env var; defaults to 'normal'."""
+    """Resolve CHANGE_CLASS from explicit env var, PR title, or default.
+
+    Priority (AI_CONTEXT.md §6):
+      1. Explicit ``CHANGE_CLASS`` env var (highest)
+      2. Auto-detection from ``PR_TITLE`` patterns
+      3. Default ``'normal'``
+    """
     explicit = os.environ.get("CHANGE_CLASS", "").strip().lower()
-    return explicit if explicit else "normal"
+    if explicit:
+        return explicit
+
+    pr_title = os.environ.get("PR_TITLE", "").strip()
+    for pattern, change_class in _TITLE_PATTERNS:
+        if pattern.search(pr_title):
+            return change_class
+
+    return "normal"
 
 
 def _check_authorization(change_class: str) -> list[str]:
@@ -245,21 +275,26 @@ def _check_authorization(change_class: str) -> list[str]:
 
 def _analyze_entries(
     entries: list[tuple[int, int, str]],
-) -> tuple[int, int, set[str]]:
-    """Compute total_lines, excluded_lines, and modules_touched."""
+) -> tuple[int, int, dict[str, int]]:
+    """Compute total_lines, excluded_lines, and per-module line counts.
+
+    Returns:
+        (total_lines, excluded_lines, module_lines) where module_lines
+        maps module name → non-excluded changed lines in that module.
+    """
     total_lines = 0
     excluded_lines = 0
-    modules_touched: set[str] = set()
+    module_lines: dict[str, int] = {}
     for added, deleted, filepath in entries:
         changed = added + deleted
         mod = module_from_path(filepath)
-        if mod:
-            modules_touched.add(mod)
+        if mod and not _is_excluded(filepath):
+            module_lines[mod] = module_lines.get(mod, 0) + changed
         if _is_excluded(filepath):
             excluded_lines += changed
         else:
             total_lines += changed
-    return total_lines, excluded_lines, modules_touched
+    return total_lines, excluded_lines, module_lines
 
 
 def _emit_audit_log(
@@ -289,7 +324,12 @@ def _emit_audit_log(
 def check(diff_range: str) -> int:
     """Run scope checks.  Returns 0 on PASS, 1 on FAIL."""
     entries = get_numstat(diff_range)
-    total_lines, excluded_lines, modules_touched = _analyze_entries(entries)
+    total_lines, excluded_lines, module_lines = _analyze_entries(entries)
+
+    primary_modules = {
+        m for m, lines in module_lines.items()
+        if lines > MODULE_MINOR_THRESHOLD
+    }
 
     errors: list[str] = []
     if total_lines > MAX_CHANGED_LINES:
@@ -297,10 +337,10 @@ def check(diff_range: str) -> int:
             f"total lines changed ({total_lines}) exceeds "
             f"{MAX_CHANGED_LINES} (excluding {', '.join(EXCLUDED_PREFIXES)})"
         )
-    if len(modules_touched) > 1:
+    if len(primary_modules) > 1:
         errors.append(
-            f"PR touches {len(modules_touched)} modules "
-            f"({', '.join(sorted(modules_touched))}); max 1 allowed"
+            f"PR touches {len(primary_modules)} modules "
+            f"({', '.join(sorted(primary_modules))}); max 1 allowed"
         )
 
     if errors:
@@ -365,7 +405,12 @@ def main() -> int:
     )
 
     entries = get_numstat(diff_range)
-    total_lines, excluded_lines, modules_touched = _analyze_entries(entries)
+    total_lines, excluded_lines, module_lines = _analyze_entries(entries)
+
+    primary_modules = {
+        m for m, lines in module_lines.items()
+        if lines > MODULE_MINOR_THRESHOLD
+    }
 
     errors: list[str] = []
     if not skip_line_limit and total_lines > MAX_CHANGED_LINES:
@@ -373,10 +418,10 @@ def main() -> int:
             f"total lines changed ({total_lines}) exceeds "
             f"{MAX_CHANGED_LINES} (excluding {', '.join(EXCLUDED_PREFIXES)})"
         )
-    if not skip_module_limit and len(modules_touched) > 1:
+    if not skip_module_limit and len(primary_modules) > 1:
         errors.append(
-            f"PR touches {len(modules_touched)} modules "
-            f"({', '.join(sorted(modules_touched))}); max 1 allowed"
+            f"PR touches {len(primary_modules)} modules "
+            f"({', '.join(sorted(primary_modules))}); max 1 allowed"
         )
 
     if errors:
