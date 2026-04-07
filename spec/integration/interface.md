@@ -11,12 +11,12 @@ spec-version: 2.0
 
 Function: enable_network_monitor
 Input:
-  - worker_id (str)
+  - worker_id
 Output: None
 
 Function: wait_for_total
 Input:
-  - worker_id (str)
+  - worker_id
   - timeout
 Output: total value
 Error:
@@ -25,7 +25,7 @@ Error:
 
 Function: notify_total
 Input:
-  - worker_id (str)
+  - worker_id
   - value
 Output: None
 Notes:
