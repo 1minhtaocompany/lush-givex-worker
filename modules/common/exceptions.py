@@ -12,3 +12,11 @@ class InvalidStateError(Exception):
 
 class InvalidTransitionError(Exception):
     pass
+
+
+class CDPTimeoutError(Exception):
+    pass
+
+
+class CDPNavigationError(Exception):
+    pass

@@ -1,4 +1,6 @@
 from .exceptions import (
+    CDPNavigationError,
+    CDPTimeoutError,
     CycleExhaustedError,
     InvalidStateError,
     InvalidTransitionError,
@@ -8,6 +10,8 @@ from .types import BillingProfile, CardInfo, State, WorkerTask
 
 __all__ = [
     "BillingProfile",
+    "CDPNavigationError",
+    "CDPTimeoutError",
     "CardInfo",
     "CycleExhaustedError",
     "InvalidStateError",
