@@ -62,6 +62,9 @@ def run_payment_step(task, zip_code=None, worker_id: str = "default"):
         cdp.fill_card(task.primary_card)
         total = watchdog.wait_for_total(worker_id, timeout=_WATCHDOG_TIMEOUT)
     except Exception:
+        # Clean up the orphaned watchdog session to prevent memory leaks.
+        # _reset_session is an internal helper; this integration layer is the
+        # designated coordinator between modules and may use it directly.
         watchdog._reset_session(worker_id)
         raise
     state = fsm.get_current_state_for_worker(worker_id)

@@ -88,7 +88,8 @@ def _generate_phone():
     return f"{first}{rest}"
 
 
-def _generate_email(first_name, last_name):
+def _generate_email(first_name=None, last_name=None):
+    # Parameters unused intentionally; UUID token prevents PII leakage via name-derived emails
     token = uuid.uuid4().hex[:8]
     domain = random.choice(_EMAIL_DOMAINS)
     return f"user{token}@{domain}"

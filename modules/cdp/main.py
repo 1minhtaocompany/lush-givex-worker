@@ -26,6 +26,10 @@ def unregister_driver(worker_id: str) -> None:
 def detect_page_state() -> str:
     """Detect the current page state via the registered driver.
 
+    Note: The spec interface does not include a worker_id parameter for CDP
+    functions; this implementation retrieves the sole registered driver.
+    In a single-driver-per-process deployment this is correct behaviour.
+
     Returns:
         The detected page state as a string.
 
