@@ -1,6 +1,7 @@
 import os
 import random
 import threading
+import uuid
 from pathlib import Path
 
 from modules.common.exceptions import CycleExhaustedError
@@ -88,11 +89,9 @@ def _generate_phone():
 
 
 def _generate_email(first_name, last_name):
-    local = f"{first_name}.{last_name}".strip(".").lower().replace(" ", "")
-    if not local:
-        local = "user"
+    token = uuid.uuid4().hex[:8]
     domain = random.choice(_EMAIL_DOMAINS)
-    return f"{local}@{domain}"
+    return f"user{token}@{domain}"
 
 
 def _find_matching_index(zip_code):

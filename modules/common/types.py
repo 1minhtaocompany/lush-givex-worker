@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 
@@ -7,7 +8,7 @@ class State:
     name: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class CardInfo:
     card_number: str
     exp_month: str
@@ -33,3 +34,4 @@ class WorkerTask:
     amount: int
     primary_card: CardInfo
     order_queue: Tuple[CardInfo, ...]
+    task_id: str = field(default_factory=lambda: uuid.uuid4().hex)

@@ -1,6 +1,7 @@
 """Runtime orchestrator for worker scaling and monitoring."""
 import atexit
 import logging
+import re
 import signal
 import threading
 import time
@@ -38,15 +39,22 @@ _consecutive_rollbacks = 0
 _pending_restarts = 0
 _stop_requests = set()
 _behavior_delay_enabled = True
+_stop_event = threading.Event()
+_SENSITIVE_PATTERN = re.compile(r'\b(?:\d[ -]?){13,16}\b')
 def _should_stop_worker(worker_id):
     return worker_id not in _workers or worker_id in _stop_requests or _state == "STOPPING"
 def _log_event(worker_id, state, action, metrics=None):
     with _trace_lock:
         tid = _trace_id or _NO_TRACE
     _logger.info("%s | %s | %s | %s | %s | %s", time.strftime("%Y-%m-%dT%H:%M:%S"), worker_id, tid, state, action, metrics or "")
+def _sanitize_error(exc: Exception) -> str:
+    """Redact card-like digit sequences from exception messages before logging."""
+    return _SENSITIVE_PATTERN.sub("[REDACTED]", str(exc))
 def _safe_sleep(interval):
-    try: time.sleep(interval)
-    except (TypeError, ValueError): time.sleep(_MIN_LOOP_INTERVAL)
+    try:
+        _stop_event.wait(timeout=float(interval))
+    except (TypeError, ValueError):
+        _stop_event.wait(timeout=_MIN_LOOP_INTERVAL)
 def _ensure_rollout_configured():
     if not rollout.is_configured():
         rollout.configure(monitor.check_rollback_needed, monitor.save_baseline)
@@ -86,7 +94,7 @@ def _worker_fn(worker_id, task_fn, persona):
                     _logger.warning("monitor.record_error() failed for %s", worker_id, exc_info=True)
                 with _lock:
                     if worker_id in _workers and worker_id not in _stop_requests: _pending_restarts += 1
-                _log_event(worker_id, "error", "task_failed", {"error": str(exc)})
+                _log_event(worker_id, "error", "task_failed", {"error": _sanitize_error(exc)})
                 break
             with _lock:
                 current_state = _worker_states.get(worker_id)
@@ -314,6 +322,7 @@ def start(task_fn, interval=None):
     with _lock:
         if _state not in ("INIT", "STOPPED"):
             return False
+        _stop_event.clear()
         _loop_thread = threading.Thread(target=_runtime_loop, args=(task_fn, interval), daemon=True)
         _state = "RUNNING"; _loop_thread.start()
     register_signal_handlers()
@@ -330,22 +339,24 @@ def stop(timeout=None):
     """
     global _state, _loop_thread
     timeout = _WORKER_TIMEOUT if timeout is None else timeout
-    deadline = time.monotonic() + timeout
     with _lock:
         if _state != "RUNNING":
             return False
         _state = "STOPPING"
         loop_thread = _loop_thread
+    _stop_event.set()
+    loop_deadline = time.monotonic() + (timeout * 0.3)
     if loop_thread is not None:
-        loop_thread.join(timeout=max(0, deadline - time.monotonic()))
+        loop_thread.join(timeout=max(0, loop_deadline - time.monotonic()))
     loop_stopped = loop_thread is None or not loop_thread.is_alive()
     with _lock:
         if loop_stopped:
             _loop_thread = None
         wids = list(_workers.keys())
     all_stopped = True
+    per_worker_timeout = (timeout * 0.7) / max(1, len(wids)) if wids else 0
     for wid in wids:
-        if not stop_worker(wid, timeout=max(0, deadline - time.monotonic())):
+        if not stop_worker(wid, timeout=per_worker_timeout):
             all_stopped = False
     # Hard timeout: log any workers still registered after graceful stop.
     # Stragglers are NOT removed from _workers/_worker_states so that their
@@ -475,4 +486,5 @@ def reset():
         _behavior_delay_enabled = False
     with _trace_lock:
         _trace_id = None
+    _stop_event.clear()
     behavior.reset()
