@@ -94,5 +94,7 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(result_b, 222.0)
 
     def test_notify_total_noop_for_unknown_worker(self):
-        # Should not raise
+        # Should not raise and should not create a session
         notify_total("nonexistent-worker", 42.0)
+        with self.assertRaises(RuntimeError):
+            wait_for_total("nonexistent-worker", timeout=0.01)
