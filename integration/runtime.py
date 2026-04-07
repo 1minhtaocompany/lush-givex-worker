@@ -345,8 +345,7 @@ def register_signal_handlers() -> None:
     from a non-main thread the signal registration is silently skipped but
     the atexit hook is still installed.
     """
-    import threading as _th
-    if _th.current_thread() is _th.main_thread():
+    if threading.current_thread() is threading.main_thread():
         signal.signal(signal.SIGTERM, _handle_shutdown)
         signal.signal(signal.SIGINT, _handle_shutdown)
     atexit.register(stop, timeout=_WORKER_TIMEOUT)

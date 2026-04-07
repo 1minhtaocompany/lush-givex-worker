@@ -62,8 +62,7 @@ def notify_total(worker_id: str, value) -> None:
         session = _watchdog_registry.get(worker_id)
         if session is not None:
             session.total_value = value
-    if session is not None:
-        session.event.set()
+            session.event.set()
 
 
 def _reset_session(worker_id: str) -> None:
