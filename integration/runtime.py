@@ -6,8 +6,6 @@ import threading
 import time
 import uuid
 import zlib
-from typing import Callable, Optional
-
 from modules.behavior import main as behavior
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
@@ -38,36 +36,21 @@ _MAX_CONSECUTIVE_ROLLBACKS = 3
 _CIRCUIT_BREAKER_PAUSE = 300
 _consecutive_rollbacks = 0
 _pending_restarts = 0
-_stop_requests: set = set()
+_stop_requests = set()
 _behavior_delay_enabled = True
-
-
-def _should_stop_worker(worker_id: str) -> bool:
+def _should_stop_worker(worker_id):
     return worker_id not in _workers or worker_id in _stop_requests or _state == "STOPPING"
-
-
-def _log_event(worker_id: str, state: str, action: str, metrics: object = None) -> None:
+def _log_event(worker_id, state, action, metrics=None):
     with _trace_lock:
         tid = _trace_id or _NO_TRACE
-    _logger.info(
-        "%s | %s | %s | %s | %s | %s",
-        time.strftime("%Y-%m-%dT%H:%M:%S"), worker_id, tid, state, action,
-        metrics or "",
-    )
-
-
-def _safe_sleep(interval: float) -> None:
-    try:
-        time.sleep(interval)
-    except (TypeError, ValueError):
-        time.sleep(_MIN_LOOP_INTERVAL)
-
-
-def _ensure_rollout_configured() -> None:
+    _logger.info("%s | %s | %s | %s | %s | %s", time.strftime("%Y-%m-%dT%H:%M:%S"), worker_id, tid, state, action, metrics or "")
+def _safe_sleep(interval):
+    try: time.sleep(interval)
+    except (TypeError, ValueError): time.sleep(_MIN_LOOP_INTERVAL)
+def _ensure_rollout_configured():
     if not rollout.is_configured():
         rollout.configure(monitor.check_rollback_needed, monitor.save_baseline)
-
-def _transition_worker_state_locked(worker_id: str, new_state: str) -> None:
+def _transition_worker_state_locked(worker_id, new_state):
     """Transition worker state while holding _lock. Raises ValueError on invalid transition."""
     current = _worker_states.get(worker_id)
     if current is None:
@@ -75,9 +58,7 @@ def _transition_worker_state_locked(worker_id: str, new_state: str) -> None:
     if new_state not in _VALID_TRANSITIONS.get(current, set()):
         raise ValueError(f"Invalid worker state transition: {current} -> {new_state} for {worker_id}")
     _worker_states[worker_id] = new_state
-
-
-def _worker_fn(worker_id: str, task_fn: Callable[[str], None], persona: Optional[PersonaProfile]) -> None:
+def _worker_fn(worker_id, task_fn, persona):
     global _pending_restarts
     with _lock:
         delay_enabled = _behavior_delay_enabled
@@ -104,8 +85,7 @@ def _worker_fn(worker_id: str, task_fn: Callable[[str], None], persona: Optional
                 except Exception:
                     _logger.warning("monitor.record_error() failed for %s", worker_id, exc_info=True)
                 with _lock:
-                    if worker_id in _workers and worker_id not in _stop_requests:
-                        _pending_restarts += 1
+                    if worker_id in _workers and worker_id not in _stop_requests: _pending_restarts += 1
                 _log_event(worker_id, "error", "task_failed", {"error": str(exc)})
                 break
             with _lock:
@@ -130,7 +110,7 @@ def _worker_fn(worker_id: str, task_fn: Callable[[str], None], persona: Optional
                 _workers.pop(worker_id, None)
                 _worker_states.pop(worker_id, None)
         _log_event(worker_id, "stopped", "stop")
-def start_worker(task_fn: Callable[[str], None]) -> str:
+def start_worker(task_fn):
     """Start a new worker thread running *task_fn*. Returns the worker id."""
     global _worker_counter
     with _lock:
@@ -150,7 +130,7 @@ def start_worker(task_fn: Callable[[str], None]) -> str:
             _worker_states.pop(wid, None)
         raise
     return wid
-def stop_worker(worker_id: str, timeout: Optional[float] = None) -> bool:
+def stop_worker(worker_id, timeout=None):
     """Remove a worker from the active set and join its thread.
 
     Respects worker execution boundaries:
@@ -190,18 +170,14 @@ def stop_worker(worker_id: str, timeout: Optional[float] = None) -> bool:
         # the thread eventually exits.
         return False
     with _lock:
-        _stop_requests.discard(worker_id)
-        _workers.pop(worker_id, None)
+        _stop_requests.discard(worker_id); _workers.pop(worker_id, None)
         _worker_states.pop(worker_id, None)
     _log_event(worker_id, "stopped", "stop_requested")
     return True
-def get_active_workers() -> list:
+def get_active_workers():
     """Return a list of active worker ids."""
-    with _lock:
-        return list(_workers.keys())
-
-
-def set_worker_state(worker_id: str, new_state: str) -> None:
+    with _lock: return list(_workers.keys())
+def set_worker_state(worker_id, new_state):
     """Set the execution state of a worker with validated transitions.
 
     Raises ValueError if worker_id is not registered or the transition is invalid.
@@ -212,7 +188,7 @@ def set_worker_state(worker_id: str, new_state: str) -> None:
         if worker_id not in _workers:
             raise ValueError(f"Worker {worker_id} not registered in _workers")
         _transition_worker_state_locked(worker_id, new_state)
-def get_worker_state(worker_id: str) -> str:
+def get_worker_state(worker_id):
     """Return the current execution state of a worker.
 
     Raises ValueError if worker_id is not tracked.
@@ -222,7 +198,7 @@ def get_worker_state(worker_id: str) -> str:
         if state is None:
             raise ValueError(f"Worker {worker_id} has no tracked state")
         return state
-def get_all_worker_states() -> dict:
+def get_all_worker_states():
     """Return a snapshot dict of all worker execution states."""
     with _lock:
         return dict(_worker_states)
@@ -245,15 +221,13 @@ def is_safe_to_control():
     """
     with _lock:
         return _is_safe_locked()
-def _apply_scale(target_count: int, task_fn: Callable[[str], None]) -> None:
+def _apply_scale(target_count, task_fn):
     global _pending_restarts
-    with _lock:
-        current_ids = list(_workers.keys())
+    with _lock: current_ids = list(_workers.keys())
     current_count = len(current_ids)
     if target_count > current_count:
         with _lock:
-            restarted = min(_pending_restarts, target_count - current_count)
-            _pending_restarts -= restarted
+            restarted = min(_pending_restarts, target_count - current_count); _pending_restarts -= restarted
         for i in range(target_count - current_count):
             start_worker(task_fn)
             if i < restarted: monitor.record_restart()
@@ -261,10 +235,9 @@ def _apply_scale(target_count: int, task_fn: Callable[[str], None]) -> None:
     elif target_count < current_count:
         for wid in current_ids[target_count:]:
             stop_worker(wid, timeout=5)
-        with _lock:
-            _pending_restarts = 0
+        with _lock: _pending_restarts = 0
         _log_event("runtime", "scaling", "scale_down", {"from": current_count, "to": target_count})
-def _runtime_loop(task_fn: Callable[[str], None], interval: float) -> None:
+def _runtime_loop(task_fn, interval):
     global _consecutive_rollbacks
     while True:
         with _lock:
@@ -274,9 +247,7 @@ def _runtime_loop(task_fn: Callable[[str], None], interval: float) -> None:
             try:
                 metrics = monitor.get_metrics()
             except Exception as exc:
-                _log_event("runtime", "warning", "monitor_unavailable", {"error": str(exc)})
-                _safe_sleep(interval)
-                continue
+                _log_event("runtime", "warning", "monitor_unavailable", {"error": str(exc)}); _safe_sleep(interval); continue
             step_index = rollout.get_current_step_index()
             max_index = len(rollout.SCALE_STEPS) - 1
             decision, decision_reasons = behavior.evaluate(metrics, step_index, max_index)
@@ -305,28 +276,17 @@ def _runtime_loop(task_fn: Callable[[str], None], interval: float) -> None:
                 if action == "rollback":
                     _consecutive_rollbacks += 1
                     if _consecutive_rollbacks >= _MAX_CONSECUTIVE_ROLLBACKS:
-                        _log_event("runtime", "critical", "circuit_breaker_triggered",
-                                   {"count": _consecutive_rollbacks})
-                        _logger.error(
-                            "Circuit breaker: %d consecutive rollbacks. "
-                            "Halting scale-up for %ds.",
-                            _consecutive_rollbacks, _CIRCUIT_BREAKER_PAUSE,
-                        )
-                        cb_pause = _CIRCUIT_BREAKER_PAUSE
-                        _consecutive_rollbacks = 0
+                        _log_event("runtime", "critical", "circuit_breaker_triggered", {"count": _consecutive_rollbacks})
+                        _logger.error("Circuit breaker: %d consecutive rollbacks. Halting scale-up for %ds.", _consecutive_rollbacks, _CIRCUIT_BREAKER_PAUSE)
+                        cb_pause = _CIRCUIT_BREAKER_PAUSE; _consecutive_rollbacks = 0
                     else:
                         cb_pause = 0
                 elif action == "scaled_up":
-                    _consecutive_rollbacks = 0
-                    cb_pause = 0
+                    _consecutive_rollbacks = 0; cb_pause = 0
                 else:
                     cb_pause = 0
             _apply_scale(target, task_fn)
-            _logger.debug(
-                "loop_tick | target=%s | decision=%s | metrics=%s",
-                target, decision, metrics,
-            )
-            _log_event("runtime", action, "loop_tick", {"target": target, "decision": decision})
+            _log_event("runtime", action, "loop_tick", {"target": target, "metrics": metrics, "decision": decision})
             if cb_pause > 0:
                 _safe_sleep(cb_pause)
         except Exception as exc:
@@ -336,28 +296,18 @@ def _handle_shutdown(signum, frame):
     """Signal handler for SIGTERM/SIGINT — initiate graceful shutdown."""
     _logger.info("Received signal %d, initiating graceful shutdown...", signum)
     stop(timeout=_WORKER_TIMEOUT)
-
-
-def register_signal_handlers() -> None:
-    """Register SIGTERM/SIGINT handlers and atexit hook for graceful shutdown.
-
-    Signal handlers can only be registered from the main thread.  If called
-    from a non-main thread the signal registration is silently skipped but
-    the atexit hook is still installed.
-    """
+def register_signal_handlers():
+    """Register SIGTERM/SIGINT handlers and atexit hook for graceful shutdown."""
     if threading.current_thread() is threading.main_thread():
         signal.signal(signal.SIGTERM, _handle_shutdown)
         signal.signal(signal.SIGINT, _handle_shutdown)
     atexit.register(stop, timeout=_WORKER_TIMEOUT)
-
-
-def start(task_fn: Callable[[str], None], interval: Optional[float] = None) -> bool:
+def start(task_fn, interval=None):
     """Start the runtime loop. Returns True if started, False if already running."""
     global _state, _loop_thread, _trace_id
     interval = _DEFAULT_LOOP_INTERVAL if interval is None else interval
     try:
-        if interval <= 0:
-            interval = _MIN_LOOP_INTERVAL
+        if interval <= 0: interval = _MIN_LOOP_INTERVAL
     except TypeError:
         interval = _MIN_LOOP_INTERVAL
     _ensure_rollout_configured()
@@ -365,14 +315,13 @@ def start(task_fn: Callable[[str], None], interval: Optional[float] = None) -> b
         if _state not in ("INIT", "STOPPED"):
             return False
         _loop_thread = threading.Thread(target=_runtime_loop, args=(task_fn, interval), daemon=True)
-        _state = "RUNNING"
-        _loop_thread.start()
+        _state = "RUNNING"; _loop_thread.start()
     register_signal_handlers()
     with _trace_lock:
         _trace_id = uuid.uuid4().hex[:12]
     _log_event("runtime", "started", "runtime_start")
     return True
-def stop(timeout: Optional[float] = None) -> bool:
+def stop(timeout=None):
     """Stop the runtime loop and all active workers.
 
     Sets state to STOPPING so workers check _should_stop_worker() at safe
@@ -416,9 +365,8 @@ def stop(timeout: Optional[float] = None) -> bool:
         return False
     _log_event("runtime", "stopped", "runtime_stop")
     return True
-def is_running() -> bool:
-    with _lock:
-        return _state == "RUNNING"
+def is_running():
+    with _lock: return _state == "RUNNING"
 def get_status():
     """Return a snapshot of the runtime state."""
     with _trace_lock:
@@ -506,33 +454,24 @@ def verify_deployment():
         },
         "errors": errors,
     }
-def get_state() -> str:
+def get_state():
     """Return the current lifecycle state."""
-    with _lock:
-        return _state
-def set_behavior_delay_enabled(enabled: bool) -> None:
+    with _lock: return _state
+def set_behavior_delay_enabled(enabled):
     """Enable or disable behavioral delay wrapping for workers."""
     global _behavior_delay_enabled
     with _lock:
         _behavior_delay_enabled = bool(enabled)
-def get_trace_id() -> Optional[str]:
+def get_trace_id():
     """Return the current trace_id, or None if not started."""
-    with _trace_lock:
-        return _trace_id
+    with _trace_lock: return _trace_id
 def reset():
     """Reset all runtime state. Intended for testing."""
-    global _state, _loop_thread, _workers, _worker_states, _worker_counter
-    global _consecutive_rollbacks, _pending_restarts, _trace_id, _behavior_delay_enabled
+    global _state, _loop_thread, _workers, _worker_states, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id, _behavior_delay_enabled
     stop(timeout=2)
     with _lock:
-        _state = "INIT"
-        _loop_thread = None
-        _workers = {}
-        _worker_states = {}
-        _worker_counter = 0
-        _consecutive_rollbacks = 0
-        _pending_restarts = 0
-        _stop_requests.clear()
+        _state = "INIT"; _loop_thread = None; _workers = {}; _worker_states = {}; _worker_counter = 0
+        _consecutive_rollbacks = 0; _pending_restarts = 0; _stop_requests.clear()
         _behavior_delay_enabled = False
     with _trace_lock:
         _trace_id = None
