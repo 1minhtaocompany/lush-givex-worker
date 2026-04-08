@@ -98,3 +98,48 @@ class WatchdogTests(unittest.TestCase):
         notify_total("nonexistent-worker", 42.0)
         with self.assertRaises(RuntimeError):
             wait_for_total("nonexistent-worker", timeout=0.01)
+
+    def test_concurrent_enable_does_not_delete_new_session(self):
+        """TOCTOU fix: the finally block in wait_for_total must not delete a
+        replacement session that was created by a concurrent enable_network_monitor()
+        call while wait_for_total was blocked inside session.event.wait().
+        """
+        import time
+
+        # --- Phase 1: create session A and start a thread blocked on it ---
+        enable_network_monitor(_WID)  # session A
+
+        errors = []
+        thread_done = threading.Event()
+
+        def blocked_wait():
+            try:
+                # This will block on session A's event for up to 0.5 s then timeout
+                wait_for_total(_WID, timeout=0.5)
+            except SessionFlaggedError:
+                pass  # expected – session A times out
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                thread_done.set()
+
+        t = threading.Thread(target=blocked_wait)
+        t.start()
+
+        # Give the thread time to enter session.event.wait() before we replace it
+        time.sleep(0.05)
+
+        # --- Phase 2: concurrently create session B and pre-signal it ---
+        enable_network_monitor(_WID)   # session B replaces session A in registry
+        notify_total(_WID, 77.0)       # signal session B so it's ready to return
+
+        # Wait for the blocked thread to finish (it times out on session A)
+        t.join(timeout=2)
+        self.assertFalse(t.is_alive(), "blocked_wait thread did not finish in time")
+        self.assertEqual(errors, [], f"unexpected error in blocked_wait: {errors}")
+
+        # --- Phase 3: session B must still be alive in the registry ---
+        # With the TOCTOU bug, the finally block would have deleted session B.
+        # With the fix (identity check), session B is preserved.
+        result = wait_for_total(_WID, timeout=1)
+        self.assertEqual(result, 77.0)

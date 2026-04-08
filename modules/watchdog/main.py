@@ -49,7 +49,9 @@ def wait_for_total(worker_id: str, timeout) -> object:
         with _registry_lock:
             return _watchdog_registry[worker_id].total_value
     finally:
-        _reset_session(worker_id)
+        with _registry_lock:
+            if _watchdog_registry.get(worker_id) is session:
+                _watchdog_registry.pop(worker_id, None)
 
 
 def notify_total(worker_id: str, value) -> None:
