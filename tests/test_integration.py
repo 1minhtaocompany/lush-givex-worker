@@ -1,3 +1,4 @@
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,7 @@ from modules.watchdog.main import reset as _reset_watchdog
 from integration.orchestrator import (
     _completed_task_ids,
     _idempotency_lock,
+    _in_flight_task_ids,
     handle_outcome,
     initialize_cycle,
     run_cycle,
@@ -93,7 +95,7 @@ class HandleOutcomeTests(unittest.TestCase):
         with patch("integration.orchestrator.cdp") as mock_cdp:
             result = handle_outcome(State("vbv_3ds"), [])
         self.assertEqual(result, "await_3ds")
-        mock_cdp.clear_card_fields.assert_called_once()
+        mock_cdp.clear_card_fields.assert_called_once_with(worker_id="default")
 
     def test_vbv_3ds_cdp_failure_still_returns_await_3ds(self):
         """BUG-003: CDP error in clear_card_fields must be swallowed; await_3ds returned."""
@@ -148,7 +150,7 @@ class RunPaymentStepTests(unittest.TestCase):
             mock_watchdog.wait_for_total.return_value = 25.0
             mock_fsm.get_current_state_for_worker.return_value = None
             run_payment_step(task)
-        mock_cdp.fill_card.assert_called_once_with(task.primary_card)
+        mock_cdp.fill_card.assert_called_once_with(task.primary_card, worker_id="default")
 
     def test_raises_session_flagged_on_watchdog_timeout(self):
         with (
@@ -316,6 +318,7 @@ class IdempotencyTests(unittest.TestCase):
     def setUp(self):
         with _idempotency_lock:
             _completed_task_ids.clear()
+            _in_flight_task_ids.clear()
         _reset_watchdog()
         reset_states()
         cleanup_worker("default")
@@ -323,12 +326,32 @@ class IdempotencyTests(unittest.TestCase):
     def tearDown(self):
         with _idempotency_lock:
             _completed_task_ids.clear()
+            _in_flight_task_ids.clear()
         cleanup_worker("default")
 
     def test_duplicate_task_id_skipped(self):
         task = _make_task()
         with _idempotency_lock:
-            _completed_task_ids.add(task.task_id)
+            _completed_task_ids[task.task_id] = time.monotonic()
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm") as mock_fsm,
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.return_value = 50.0
+            mock_fsm.get_current_state_for_worker.return_value = State("success")
+            action, state, total = run_cycle(task)
+        self.assertEqual(action, "complete")
+        self.assertIsNone(state)
+        self.assertIsNone(total)
+        mock_billing.select_profile.assert_not_called()
+
+    def test_in_flight_task_id_skipped(self):
+        task = _make_task()
+        with _idempotency_lock:
+            _in_flight_task_ids.add(task.task_id)
         with (
             patch("integration.orchestrator.billing") as mock_billing,
             patch("integration.orchestrator.cdp"),

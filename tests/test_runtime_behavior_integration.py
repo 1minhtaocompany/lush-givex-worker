@@ -2,7 +2,6 @@
 import threading
 import time
 import unittest
-from unittest.mock import patch
 
 from integration import runtime
 
@@ -154,14 +153,20 @@ class TestOverheadWithin15Percent(_RuntimeReset):
         baseline_elapsed = time.monotonic() - t0
         runtime.reset()
 
-        # --- Measure WITH behaviour delay (mocked sleep) ---
+        # --- Measure WITH behaviour delay disabled via injected stop event ---
         runtime.set_behavior_delay_enabled(True)
-        with patch("modules.delay.wrapper.time.sleep"):
-            wid = runtime.start_worker(timed_task)
-            t0 = time.monotonic()
-            time.sleep(1.0)
-            runtime.stop_worker(wid, timeout=5)
-            enabled_elapsed = time.monotonic() - t0
+        # The wrapper now uses stop_event.wait(timeout=delay) when a
+        # stop_event is injected by the runtime.  Setting the stop event
+        # makes wait() return immediately (same idea as mocking sleep).
+        # The worker loop itself does not check _stop_event, so this is
+        # safe for the measurement.
+        runtime._stop_event.set()
+        wid = runtime.start_worker(timed_task)
+        t0 = time.monotonic()
+        time.sleep(1.0)
+        runtime.stop_worker(wid, timeout=5)
+        enabled_elapsed = time.monotonic() - t0
+        runtime._stop_event.clear()
 
         # Overhead should be within 15%
         if baseline_elapsed > 0:
