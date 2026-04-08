@@ -49,6 +49,10 @@ def wait_for_total(worker_id: str, timeout) -> object:
         with _registry_lock:
             return _watchdog_registry[worker_id].total_value
     finally:
+        # Re-acquire the lock and verify identity before removing.  A concurrent
+        # enable_network_monitor() call may have replaced the registry entry with a
+        # new session object while we were blocked in event.wait(); using `is` ensures
+        # we only clean up the exact session we were waiting on, never a newer one.
         with _registry_lock:
             if _watchdog_registry.get(worker_id) is session:
                 _watchdog_registry.pop(worker_id, None)
