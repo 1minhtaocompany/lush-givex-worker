@@ -16,7 +16,7 @@ from pathlib import Path
 from modules.billing import main as billing
 from modules.cdp import main as cdp
 from modules.fsm import main as fsm
-from modules.fsm.main import ALLOWED_STATES as _FSM_STATES  # Imported from fsm canonical source — see spec/audit-lock.md INV-FSM-01
+from modules.fsm.main import ALLOWED_STATES as _FSM_STATES  # noqa: F401 — Imported from fsm canonical source; intentionally unused but enforces INV-FSM-01 at import time
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 from modules.watchdog import main as watchdog
@@ -63,7 +63,7 @@ def _load_idempotency_store() -> None:
                         if age < _IDEMPOTENCY_TTL:
                             _completed_task_ids[k] = now_mono - age
                     except (ValueError, TypeError):
-                        pass
+                        pass  # Malformed timestamp — skip this entry, don't block other valid ones
             if isinstance(submitted, list):
                 _submitted_task_ids.update(str(s) for s in submitted)
     except Exception:
