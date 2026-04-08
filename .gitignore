@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 .venv/
 .idempotency_store.json
+.pytest_cache/
