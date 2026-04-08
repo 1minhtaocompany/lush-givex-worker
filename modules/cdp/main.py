@@ -45,7 +45,7 @@ def _get_driver(worker_id: str) -> object:
     return driver
 
 
-def detect_page_state(worker_id: str = "default") -> str:
+def detect_page_state(worker_id: str) -> str:
     """Detect the current page state via the registered driver.
 
     Args:
@@ -60,7 +60,7 @@ def detect_page_state(worker_id: str = "default") -> str:
     return _get_driver(worker_id).detect_page_state()
 
 
-def fill_card(card_info, worker_id: str = "default") -> None:
+def fill_card(card_info, worker_id: str) -> None:
     """Fill card form fields via the registered driver.
 
     Args:
@@ -73,7 +73,7 @@ def fill_card(card_info, worker_id: str = "default") -> None:
     _get_driver(worker_id).fill_card(card_info)
 
 
-def fill_billing(billing_profile, worker_id: str = "default") -> None:
+def fill_billing(billing_profile, worker_id: str) -> None:
     """Fill billing form fields via the registered driver.
 
     Args:
@@ -86,7 +86,7 @@ def fill_billing(billing_profile, worker_id: str = "default") -> None:
     _get_driver(worker_id).fill_billing(billing_profile)
 
 
-def clear_card_fields(worker_id: str = "default") -> None:
+def clear_card_fields(worker_id: str) -> None:
     """Clear card form fields via the registered driver.
 
     Args:
