@@ -21,6 +21,9 @@ _WATCHDOG_TIMEOUT = 30
 _lock = threading.Lock()
 _logger = logging.getLogger(__name__)
 
+_completed_task_ids: set = set()
+_idempotency_lock = threading.Lock()
+
 
 def initialize_cycle(worker_id: str = "default"):
     """Reset FSM registry and register all valid states for a new cycle."""
@@ -50,13 +53,20 @@ def run_payment_step(task, zip_code=None, worker_id: str = "default"):
     Raises:
         CycleExhaustedError: if the billing pool is empty.
         SessionFlaggedError: if the watchdog times out waiting for the total.
-        NotImplementedError: if CDP functions are not yet implemented.
+        RuntimeError: if no CDP driver has been registered.
     """
     profile = billing.select_profile(zip_code)
     watchdog.enable_network_monitor(worker_id)
-    cdp.fill_billing(profile)
-    cdp.fill_card(task.primary_card)
-    total = watchdog.wait_for_total(worker_id, timeout=_WATCHDOG_TIMEOUT)
+    try:
+        cdp.fill_billing(profile)
+        cdp.fill_card(task.primary_card)
+        total = watchdog.wait_for_total(worker_id, timeout=_WATCHDOG_TIMEOUT)
+    except Exception:
+        # Clean up the orphaned watchdog session to prevent memory leaks.
+        # _reset_session is an internal helper; this integration layer is the
+        # designated coordinator between modules and may use it directly.
+        watchdog._reset_session(worker_id)
+        raise
     state = fsm.get_current_state_for_worker(worker_id)
     return state, total
 
@@ -112,10 +122,18 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
     Raises:
         CycleExhaustedError: if the billing pool is empty.
         SessionFlaggedError: if the watchdog times out.
-        NotImplementedError: if CDP functions are not yet implemented.
+        RuntimeError: if no CDP driver has been registered.
     """
-    with _lock:
-        initialize_cycle(worker_id)
+    task_id = getattr(task, "task_id", None)
+    if task_id is not None:
+        with _idempotency_lock:
+            if task_id in _completed_task_ids:
+                _logger.warning("Duplicate task_id=%s detected; skipping.", task_id)
+                return "complete", None, None
+    initialize_cycle(worker_id)
     state, total = run_payment_step(task, zip_code, worker_id=worker_id)
     action = handle_outcome(state, task.order_queue, worker_id=worker_id)
+    if task_id is not None:
+        with _idempotency_lock:
+            _completed_task_ids.add(task_id)
     return action, state, total

@@ -11,6 +11,8 @@ from modules.fsm.main import (
 )
 from modules.watchdog.main import reset as _reset_watchdog
 from integration.orchestrator import (
+    _completed_task_ids,
+    _idempotency_lock,
     handle_outcome,
     initialize_cycle,
     run_cycle,
@@ -113,10 +115,10 @@ class RunPaymentStepTests(unittest.TestCase):
     def tearDown(self):
         cleanup_worker("default")
 
-    def test_raises_not_implemented_from_cdp(self):
+    def test_raises_runtime_error_when_no_driver_registered(self):
         with patch("integration.orchestrator.billing") as mock_billing:
             mock_billing.select_profile.return_value = MagicMock()
-            with self.assertRaises(NotImplementedError):
+            with self.assertRaises(RuntimeError):
                 run_payment_step(_make_task())
 
     def test_raises_cycle_exhausted_from_billing(self):
@@ -252,6 +254,21 @@ class WorkerTaskFrozenTests(unittest.TestCase):
         self.assertEqual(task.primary_card.card_number, "4111111111111111")
         self.assertEqual(task.order_queue, ())
 
+    def test_worker_task_has_task_id(self):
+        task = _make_task()
+        self.assertIsInstance(task.task_id, str)
+        self.assertGreater(len(task.task_id), 0)
+
+    def test_worker_task_task_id_unique(self):
+        task1 = _make_task()
+        task2 = _make_task()
+        self.assertNotEqual(task1.task_id, task2.task_id)
+
+    def test_card_info_is_frozen(self):
+        card = CardInfo(card_number="4111111111111111", exp_month="07", exp_year="27", cvv="123")
+        with self.assertRaises(AttributeError):
+            card.card_number = "tampered"
+
 
 class WorkerIdPropagationTests(unittest.TestCase):
     """Verify worker_id is correctly threaded through the orchestrator calls."""
@@ -271,6 +288,76 @@ class WorkerIdPropagationTests(unittest.TestCase):
         mock_watchdog.wait_for_total.assert_called_once_with(
             "worker-42", timeout=30,
         )
+
+
+class WatchdogCleanupTests(unittest.TestCase):
+    """Verify watchdog session is cleaned up when CDP raises an exception."""
+
+    def setUp(self):
+        _reset_watchdog()
+        reset_states()
+        cleanup_worker("default")
+
+    def tearDown(self):
+        cleanup_worker("default")
+
+    def test_watchdog_session_cleaned_up_on_cdp_error(self):
+        from modules.watchdog.main import _watchdog_registry
+        with patch("integration.orchestrator.billing") as mock_billing:
+            mock_billing.select_profile.return_value = MagicMock()
+            with self.assertRaises(RuntimeError):
+                run_payment_step(_make_task())
+        self.assertNotIn("default", _watchdog_registry)
+
+
+class IdempotencyTests(unittest.TestCase):
+    """Verify duplicate task_ids are detected and skipped."""
+
+    def setUp(self):
+        with _idempotency_lock:
+            _completed_task_ids.clear()
+        _reset_watchdog()
+        reset_states()
+        cleanup_worker("default")
+
+    def tearDown(self):
+        with _idempotency_lock:
+            _completed_task_ids.clear()
+        cleanup_worker("default")
+
+    def test_duplicate_task_id_skipped(self):
+        task = _make_task()
+        with _idempotency_lock:
+            _completed_task_ids.add(task.task_id)
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm") as mock_fsm,
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.return_value = 50.0
+            mock_fsm.get_current_state_for_worker.return_value = State("success")
+            action, state, total = run_cycle(task)
+        self.assertEqual(action, "complete")
+        self.assertIsNone(state)
+        self.assertIsNone(total)
+        mock_billing.select_profile.assert_not_called()
+
+    def test_completed_task_id_recorded(self):
+        task = _make_task()
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm") as mock_fsm,
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.return_value = 99.0
+            mock_fsm.get_current_state_for_worker.return_value = State("success")
+            run_cycle(task)
+        with _idempotency_lock:
+            self.assertIn(task.task_id, _completed_task_ids)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Runtime orchestrator for worker scaling and monitoring."""
 import atexit
 import logging
+import re
 import signal
 import threading
 import time
@@ -38,15 +39,27 @@ _consecutive_rollbacks = 0
 _pending_restarts = 0
 _stop_requests = set()
 _behavior_delay_enabled = True
+_stop_event = threading.Event()
+_SENSITIVE_PATTERN = re.compile(r'\b(?:\d[ -]?){13,16}\b')
+_restart_backoff: dict[str, float] = {}
+_MAX_RESTART_BACKOFF = 60
+_restart_delay: float = 0
+_loop_error_count = 0
+_MAX_LOOP_ERRORS = 10
 def _should_stop_worker(worker_id):
     return worker_id not in _workers or worker_id in _stop_requests or _state == "STOPPING"
 def _log_event(worker_id, state, action, metrics=None):
     with _trace_lock:
         tid = _trace_id or _NO_TRACE
     _logger.info("%s | %s | %s | %s | %s | %s", time.strftime("%Y-%m-%dT%H:%M:%S"), worker_id, tid, state, action, metrics or "")
+def _sanitize_error(exc: Exception) -> str:
+    """Redact card-like digit sequences from exception messages before logging."""
+    return _SENSITIVE_PATTERN.sub("[REDACTED]", str(exc))
 def _safe_sleep(interval):
-    try: time.sleep(interval)
-    except (TypeError, ValueError): time.sleep(_MIN_LOOP_INTERVAL)
+    try:
+        _stop_event.wait(timeout=float(interval))
+    except (TypeError, ValueError):
+        _stop_event.wait(timeout=_MIN_LOOP_INTERVAL)
 def _ensure_rollout_configured():
     if not rollout.is_configured():
         rollout.configure(monitor.check_rollback_needed, monitor.save_baseline)
@@ -59,7 +72,7 @@ def _transition_worker_state_locked(worker_id, new_state):
         raise ValueError(f"Invalid worker state transition: {current} -> {new_state} for {worker_id}")
     _worker_states[worker_id] = new_state
 def _worker_fn(worker_id, task_fn, persona):
-    global _pending_restarts
+    global _pending_restarts, _restart_delay
     with _lock:
         delay_enabled = _behavior_delay_enabled
     if delay_enabled and persona is not None:
@@ -79,6 +92,8 @@ def _worker_fn(worker_id, task_fn, persona):
                     monitor.record_success()
                 except Exception:
                     _logger.warning("monitor.record_success() failed for %s", worker_id, exc_info=True)
+                with _lock:
+                    _restart_delay = 0
             except Exception as exc:
                 try:
                     monitor.record_error()
@@ -86,7 +101,7 @@ def _worker_fn(worker_id, task_fn, persona):
                     _logger.warning("monitor.record_error() failed for %s", worker_id, exc_info=True)
                 with _lock:
                     if worker_id in _workers and worker_id not in _stop_requests: _pending_restarts += 1
-                _log_event(worker_id, "error", "task_failed", {"error": str(exc)})
+                _log_event(worker_id, "error", "task_failed", {"error": _sanitize_error(exc)})
                 break
             with _lock:
                 current_state = _worker_states.get(worker_id)
@@ -112,10 +127,18 @@ def _worker_fn(worker_id, task_fn, persona):
         _log_event(worker_id, "stopped", "stop")
 def start_worker(task_fn):
     """Start a new worker thread running *task_fn*. Returns the worker id."""
-    global _worker_counter
+    global _worker_counter, _restart_delay
+    # Compute backoff delay outside lock to avoid blocking other threads
+    with _lock:
+        delay = _restart_delay if _pending_restarts > 0 else 0
+    if delay > 0:
+        _safe_sleep(delay)
     with _lock:
         _worker_counter += 1
         wid = f"worker-{_worker_counter}"
+        # Exponential backoff: increase delay for next restart, capped
+        if _pending_restarts > 0:
+            _restart_delay = min(_MAX_RESTART_BACKOFF, max(1, _restart_delay * 2) if _restart_delay > 0 else 1)
         # Generate a deterministic persona seed from the worker id
         persona_seed = zlib.crc32(wid.encode()) & 0xFFFFFFFF
         persona = PersonaProfile(persona_seed)
@@ -238,7 +261,7 @@ def _apply_scale(target_count, task_fn):
         with _lock: _pending_restarts = 0
         _log_event("runtime", "scaling", "scale_down", {"from": current_count, "to": target_count})
 def _runtime_loop(task_fn, interval):
-    global _consecutive_rollbacks
+    global _consecutive_rollbacks, _loop_error_count
     while True:
         with _lock:
             if _state != "RUNNING":
@@ -287,10 +310,15 @@ def _runtime_loop(task_fn, interval):
                     cb_pause = 0
             _apply_scale(target, task_fn)
             _log_event("runtime", action, "loop_tick", {"target": target, "metrics": metrics, "decision": decision})
+            _loop_error_count = 0
             if cb_pause > 0:
                 _safe_sleep(cb_pause)
         except Exception as exc:
-            _log_event("runtime", "error", "loop_error", {"error": str(exc)})
+            _loop_error_count += 1
+            _log_event("runtime", "error", "loop_error", {"error": str(exc), "count": _loop_error_count})
+            if _loop_error_count >= _MAX_LOOP_ERRORS:
+                _logger.critical("Runtime loop exceeded %d consecutive errors; halting.", _MAX_LOOP_ERRORS)
+                break
         _safe_sleep(interval)
 def _handle_shutdown(signum, frame):
     """Signal handler for SIGTERM/SIGINT — initiate graceful shutdown."""
@@ -314,6 +342,7 @@ def start(task_fn, interval=None):
     with _lock:
         if _state not in ("INIT", "STOPPED"):
             return False
+        _stop_event.clear()
         _loop_thread = threading.Thread(target=_runtime_loop, args=(task_fn, interval), daemon=True)
         _state = "RUNNING"; _loop_thread.start()
     register_signal_handlers()
@@ -330,22 +359,24 @@ def stop(timeout=None):
     """
     global _state, _loop_thread
     timeout = _WORKER_TIMEOUT if timeout is None else timeout
-    deadline = time.monotonic() + timeout
     with _lock:
         if _state != "RUNNING":
             return False
         _state = "STOPPING"
         loop_thread = _loop_thread
+    _stop_event.set()
+    loop_deadline = time.monotonic() + (timeout * 0.3)
     if loop_thread is not None:
-        loop_thread.join(timeout=max(0, deadline - time.monotonic()))
+        loop_thread.join(timeout=max(0, loop_deadline - time.monotonic()))
     loop_stopped = loop_thread is None or not loop_thread.is_alive()
     with _lock:
         if loop_stopped:
             _loop_thread = None
         wids = list(_workers.keys())
     all_stopped = True
+    per_worker_timeout = (timeout * 0.7) / max(1, len(wids)) if wids else 0
     for wid in wids:
-        if not stop_worker(wid, timeout=max(0, deadline - time.monotonic())):
+        if not stop_worker(wid, timeout=per_worker_timeout):
             all_stopped = False
     # Hard timeout: log any workers still registered after graceful stop.
     # Stragglers are NOT removed from _workers/_worker_states so that their
@@ -467,12 +498,14 @@ def get_trace_id():
     with _trace_lock: return _trace_id
 def reset():
     """Reset all runtime state. Intended for testing."""
-    global _state, _loop_thread, _workers, _worker_states, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id, _behavior_delay_enabled
+    global _state, _loop_thread, _workers, _worker_states, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id, _behavior_delay_enabled, _loop_error_count, _restart_delay
     stop(timeout=2)
     with _lock:
         _state = "INIT"; _loop_thread = None; _workers = {}; _worker_states = {}; _worker_counter = 0
         _consecutive_rollbacks = 0; _pending_restarts = 0; _stop_requests.clear()
         _behavior_delay_enabled = False
+        _restart_backoff.clear(); _loop_error_count = 0; _restart_delay = 0
     with _trace_lock:
         _trace_id = None
+    _stop_event.clear()
     behavior.reset()
