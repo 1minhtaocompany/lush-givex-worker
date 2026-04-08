@@ -10,8 +10,9 @@ from modules.fsm.main import (
     transition_for_worker,
 )
 from modules.watchdog.main import reset as _reset_watchdog
-import integration.orchestrator as orch
 from integration.orchestrator import (
+    _completed_task_ids,
+    _idempotency_lock,
     handle_outcome,
     initialize_cycle,
     run_cycle,
@@ -313,21 +314,21 @@ class IdempotencyTests(unittest.TestCase):
     """Verify duplicate task_ids are detected and skipped."""
 
     def setUp(self):
-        with orch._idempotency_lock:
-            orch._completed_task_ids.clear()
+        with _idempotency_lock:
+            _completed_task_ids.clear()
         _reset_watchdog()
         reset_states()
         cleanup_worker("default")
 
     def tearDown(self):
-        with orch._idempotency_lock:
-            orch._completed_task_ids.clear()
+        with _idempotency_lock:
+            _completed_task_ids.clear()
         cleanup_worker("default")
 
     def test_duplicate_task_id_skipped(self):
         task = _make_task()
-        with orch._idempotency_lock:
-            orch._completed_task_ids.add(task.task_id)
+        with _idempotency_lock:
+            _completed_task_ids.add(task.task_id)
         with (
             patch("integration.orchestrator.billing") as mock_billing,
             patch("integration.orchestrator.cdp"),
@@ -355,8 +356,8 @@ class IdempotencyTests(unittest.TestCase):
             mock_watchdog.wait_for_total.return_value = 99.0
             mock_fsm.get_current_state_for_worker.return_value = State("success")
             run_cycle(task)
-        with orch._idempotency_lock:
-            self.assertIn(task.task_id, orch._completed_task_ids)
+        with _idempotency_lock:
+            self.assertIn(task.task_id, _completed_task_ids)
 
 
 if __name__ == "__main__":
