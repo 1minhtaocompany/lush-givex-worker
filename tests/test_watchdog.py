@@ -145,8 +145,8 @@ class WatchdogTests(unittest.TestCase):
         )
 
         # --- Phase 2: replace session A with session B, pre-signal B ---
-        enable_network_monitor(_WID)   # session B replaces session A
-        notify_total(_WID, 77.0)       # signal session B
+        enable_network_monitor(_WID)  # session B replaces session A
+        notify_total(_WID, 77.0)  # signal session B
 
         # Unblock session A so the thread finishes quickly
         session_a.event.set()
