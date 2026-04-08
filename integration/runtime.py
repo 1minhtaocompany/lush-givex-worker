@@ -41,6 +41,10 @@ _stop_requests = set()
 _behavior_delay_enabled = True
 _stop_event = threading.Event()
 _SENSITIVE_PATTERN = re.compile(r'\b(?:\d[ -]?){13,16}\b')
+_restart_backoff: dict[str, float] = {}
+_MAX_RESTART_BACKOFF = 60
+_loop_error_count = 0
+_MAX_LOOP_ERRORS = 10
 def _should_stop_worker(worker_id):
     return worker_id not in _workers or worker_id in _stop_requests or _state == "STOPPING"
 def _log_event(worker_id, state, action, metrics=None):
@@ -124,6 +128,19 @@ def start_worker(task_fn):
     with _lock:
         _worker_counter += 1
         wid = f"worker-{_worker_counter}"
+        # Exponential backoff: compute delay while holding lock
+        next_allowed = _restart_backoff.get(wid, 0)
+        now = time.monotonic()
+        backoff_delay = max(0, next_allowed - now) if next_allowed > 0 else 0
+    # Sleep outside lock to avoid blocking other threads
+    if backoff_delay > 0:
+        _log_event(wid, "backoff", "restart_deferred", {"delay": round(backoff_delay, 1)})
+        _safe_sleep(backoff_delay)
+    with _lock:
+        # Record next backoff for this wid: doubles each time, capped
+        prev = _restart_backoff.get(wid, 0)
+        backoff = min(_MAX_RESTART_BACKOFF, max(1, (prev - time.monotonic()) * 2)) if prev > 0 else 1
+        _restart_backoff[wid] = time.monotonic() + backoff
         # Generate a deterministic persona seed from the worker id
         persona_seed = zlib.crc32(wid.encode()) & 0xFFFFFFFF
         persona = PersonaProfile(persona_seed)
@@ -246,7 +263,7 @@ def _apply_scale(target_count, task_fn):
         with _lock: _pending_restarts = 0
         _log_event("runtime", "scaling", "scale_down", {"from": current_count, "to": target_count})
 def _runtime_loop(task_fn, interval):
-    global _consecutive_rollbacks
+    global _consecutive_rollbacks, _loop_error_count
     while True:
         with _lock:
             if _state != "RUNNING":
@@ -295,10 +312,15 @@ def _runtime_loop(task_fn, interval):
                     cb_pause = 0
             _apply_scale(target, task_fn)
             _log_event("runtime", action, "loop_tick", {"target": target, "metrics": metrics, "decision": decision})
+            _loop_error_count = 0
             if cb_pause > 0:
                 _safe_sleep(cb_pause)
         except Exception as exc:
-            _log_event("runtime", "error", "loop_error", {"error": str(exc)})
+            _loop_error_count += 1
+            _log_event("runtime", "error", "loop_error", {"error": str(exc), "count": _loop_error_count})
+            if _loop_error_count >= _MAX_LOOP_ERRORS:
+                _logger.critical("Runtime loop exceeded %d consecutive errors; halting.", _MAX_LOOP_ERRORS)
+                break
         _safe_sleep(interval)
 def _handle_shutdown(signum, frame):
     """Signal handler for SIGTERM/SIGINT — initiate graceful shutdown."""
@@ -478,12 +500,13 @@ def get_trace_id():
     with _trace_lock: return _trace_id
 def reset():
     """Reset all runtime state. Intended for testing."""
-    global _state, _loop_thread, _workers, _worker_states, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id, _behavior_delay_enabled
+    global _state, _loop_thread, _workers, _worker_states, _worker_counter, _consecutive_rollbacks, _pending_restarts, _trace_id, _behavior_delay_enabled, _loop_error_count
     stop(timeout=2)
     with _lock:
         _state = "INIT"; _loop_thread = None; _workers = {}; _worker_states = {}; _worker_counter = 0
         _consecutive_rollbacks = 0; _pending_restarts = 0; _stop_requests.clear()
         _behavior_delay_enabled = False
+        _restart_backoff.clear(); _loop_error_count = 0
     with _trace_lock:
         _trace_id = None
     _stop_event.clear()
