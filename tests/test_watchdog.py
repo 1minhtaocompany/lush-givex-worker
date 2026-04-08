@@ -122,6 +122,40 @@ class WatchdogTests(unittest.TestCase):
                 errors.append(exc)
             finally:
                 thread_done.set()
+        """TOCTOU regression: finally must not delete a replacement session.
+
+        Verifies that when enable_network_monitor() replaces the registry entry
+        while wait_for_total() is blocked on session A's event, the identity-
+        check cleanup in finally only removes session A, leaving session B
+        intact and usable.
+        """
+        from modules.watchdog.main import _watchdog_registry, _registry_lock
+
+        # --- Phase 1: create session A; instrument its wait to signal entry ---
+        enable_network_monitor(_WID)  # session A
+
+        wait_entered = threading.Event()
+
+        with _registry_lock:
+            session_a = _watchdog_registry[_WID]
+
+        original_wait = session_a.event.wait
+
+        def instrumented_wait(timeout=None):
+            wait_entered.set()
+            return original_wait(timeout=timeout)
+
+        session_a.event.wait = instrumented_wait
+
+        errors = []
+
+        def blocked_wait():
+            try:
+                wait_for_total(_WID, timeout=2.0)
+            except SessionFlaggedError:
+                pass  # expected if session A times out
+            except Exception as exc:
+                errors.append(exc)
 
         t = threading.Thread(target=blocked_wait)
         t.start()
@@ -134,6 +168,19 @@ class WatchdogTests(unittest.TestCase):
         notify_total(_WID, 77.0)       # signal session B so it's ready to return
 
         # Wait for the blocked thread to finish (it times out on session A)
+        # Deterministic: wait until thread is actually inside event.wait()
+        self.assertTrue(
+            wait_entered.wait(timeout=2),
+            "blocked_wait thread did not enter event.wait() in time",
+        )
+
+        # --- Phase 2: replace session A with session B, pre-signal B ---
+        enable_network_monitor(_WID)  # session B replaces session A
+        notify_total(_WID, 77.0)  # signal session B
+
+        # Unblock session A so the thread finishes quickly
+        session_a.event.set()
+
         t.join(timeout=2)
         self.assertFalse(t.is_alive(), "blocked_wait thread did not finish in time")
         self.assertEqual(errors, [], f"unexpected error in blocked_wait: {errors}")

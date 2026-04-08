@@ -28,7 +28,7 @@ def enable_network_monitor(worker_id: str) -> None:
         _watchdog_registry[worker_id] = session
 
 
-def wait_for_total(worker_id: str, timeout) -> object:
+def wait_for_total(worker_id: str, timeout: float | None) -> object:
     """Block until notify_total() is called for worker_id, or timeout expires.
 
     Raises:
@@ -46,8 +46,7 @@ def wait_for_total(worker_id: str, timeout) -> object:
             raise SessionFlaggedError(
                 f"Timeout ({timeout}s) waiting for total amount for worker '{worker_id}'"
             )
-        with _registry_lock:
-            return _watchdog_registry[worker_id].total_value
+        return session.total_value
     finally:
         # Re-acquire the lock and verify identity before removing.  A concurrent
         # enable_network_monitor() call may have replaced the registry entry with a
