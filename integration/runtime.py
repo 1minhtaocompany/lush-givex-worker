@@ -72,7 +72,7 @@ def _transition_worker_state_locked(worker_id, new_state):
         raise ValueError(f"Invalid worker state transition: {current} -> {new_state} for {worker_id}")
     _worker_states[worker_id] = new_state
 def _worker_fn(worker_id, task_fn, persona):
-    global _pending_restarts
+    global _pending_restarts, _restart_delay
     with _lock:
         delay_enabled = _behavior_delay_enabled
     if delay_enabled and persona is not None:
