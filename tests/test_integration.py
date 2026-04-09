@@ -586,7 +586,7 @@ class FsmRegistryLeakTests(unittest.TestCase):
 
     def test_fsm_registry_cleaned_up_after_run_cycle(self):
         """run_cycle must remove each worker FSM entry before returning."""
-        worker_ids = ("worker-101", "worker-102", "worker-103")
+        worker_ids = ["worker-101", "worker-102", "worker-103"]
         self._prepare_workers(*worker_ids)
         with (
             patch("integration.orchestrator.billing") as mock_billing,
