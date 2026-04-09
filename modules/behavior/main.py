@@ -148,7 +148,11 @@ def get_decision_history():
 
 
 def get_last_decision_time():
-    """Return the epoch timestamp of the last decision."""
+    """Return the monotonic timestamp of the last decision.
+
+    The value is produced by :func:`time.monotonic` and is only meaningful
+    for computing elapsed durations — it is **not** a wall-clock epoch.
+    """
     with _lock:
         return _last_decision_time
 

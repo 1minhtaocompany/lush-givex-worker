@@ -369,7 +369,7 @@ def stop(timeout=None):
         loop_thread = _loop_thread
     _stop_event.set()
     loop_deadline = time.monotonic() + (timeout * 0.3)
-    if loop_thread is not None:
+    if loop_thread is not None and loop_thread.is_alive():
         loop_thread.join(timeout=max(0, loop_deadline - time.monotonic()))
     loop_stopped = loop_thread is None or not loop_thread.is_alive()
     with _lock:
@@ -515,3 +515,4 @@ def reset():
     rollout.reset()
     monitor.reset()
     fsm.reset_states()
+    fsm.reset_registry()

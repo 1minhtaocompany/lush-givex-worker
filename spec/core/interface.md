@@ -54,6 +54,14 @@ Output: None
 Notes:
   - Resets and re-registers all allowed states for the given worker_id
 
+Function: get_current_state_for_worker
+Input:
+  - worker_id: str
+Output: State | None
+Notes:
+  - Returns the current state for the given worker_id
+  - Returns None if no current state exists for the given worker_id
+
 Function: transition_for_worker
 Input:
   - worker_id: str

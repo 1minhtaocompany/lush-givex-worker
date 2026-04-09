@@ -1,3 +1,4 @@
+import collections
 import logging
 import os
 import random
@@ -9,7 +10,7 @@ from modules.common.exceptions import CycleExhaustedError
 from modules.common.types import BillingProfile
 
 _lock = threading.Lock()
-_profiles = []
+_profiles: collections.deque = collections.deque()
 _logger = logging.getLogger(__name__)
 
 _EMAIL_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "icloud.com")
@@ -43,7 +44,7 @@ def _pool_dir():
 def _reset_state():
     global _profiles
     with _lock:
-        _profiles = []
+        _profiles = collections.deque()
 
 
 def _normalize_zip(zip_code):
@@ -95,7 +96,7 @@ def _read_profiles_from_disk():
                 if profile is not None:
                     profiles.append(profile)
     random.shuffle(profiles)
-    return profiles
+    return collections.deque(profiles)
 
 
 def _generate_phone():
@@ -172,8 +173,8 @@ def select_profile(zip_code):
 
         index = _find_matching_index(normalized_zip)
         if index is None:
-            # Atomic queue rotation: pop from front, enrich if needed, append to back
-            profile = _profiles.pop(0)
+            # Atomic queue rotation: popleft from front, enrich if needed, append to back
+            profile = _profiles.popleft()
             if profile.phone is None or profile.email is None:
                 profile = _fill_missing(profile)
             _profiles.append(profile)
