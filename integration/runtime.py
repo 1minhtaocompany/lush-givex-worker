@@ -345,10 +345,11 @@ def start(task_fn, interval=None):
             return False
         _stop_event.clear()
         _loop_thread = threading.Thread(target=_runtime_loop, args=(task_fn, interval), daemon=True)
+        with _trace_lock:
+            _trace_id = uuid.uuid4().hex[:12]
         _state = "RUNNING"
-    with _trace_lock:
-        _trace_id = uuid.uuid4().hex[:12]
-    _loop_thread.start()
+        loop_thread = _loop_thread
+    loop_thread.start()
     register_signal_handlers()
     _log_event("runtime", "started", "runtime_start")
     return True
@@ -402,9 +403,9 @@ def is_running():
     with _lock: return _state == "RUNNING"
 def get_status():
     """Return a snapshot of the runtime state."""
-    with _trace_lock:
-        tid = _trace_id
     with _lock:
+        with _trace_lock:
+            tid = _trace_id
         return {"running": _state == "RUNNING", "state": _state, "active_workers": list(_workers.keys()), "worker_count": len(_workers), "consecutive_rollbacks": _consecutive_rollbacks, "trace_id": tid}
 def get_deployment_status():
     """Return a comprehensive production deployment health snapshot.
