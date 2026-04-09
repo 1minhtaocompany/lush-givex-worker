@@ -20,3 +20,29 @@ from modules.delay.temporal import DAY_START, DAY_END  # noqa: F401
 from modules.delay.temporal import NIGHT_SPEED_PENALTY_RANGE, NIGHT_HESITATION_INCREASE_RANGE, NIGHT_TYPO_INCREASE_RANGE  # noqa: F401
 from modules.delay.biometrics import BiometricProfile, _KEYSTROKE_MAX  # noqa: F401
 from modules.delay.wrapper import wrap  # noqa: F401  — Task 10.5
+
+__all__ = [
+    "PersonaProfile",
+    "MAX_TYPING_DELAY",
+    "MIN_TYPING_DELAY",
+    "TYPO_RATE_MIN",
+    "TYPO_RATE_MAX",
+    "NIGHT_PENALTY_MIN",
+    "NIGHT_PENALTY_MAX",
+    "FATIGUE_THRESHOLD_MIN",
+    "FATIGUE_THRESHOLD_MAX",
+    "BehaviorStateMachine",
+    "BEHAVIOR_STATES",
+    "DelayEngine",
+    "MAX_HESITATION_DELAY",
+    "MAX_STEP_DELAY",
+    "WATCHDOG_HEADROOM",
+    "TemporalModel",
+    "DAY_START",
+    "DAY_END",
+    "NIGHT_SPEED_PENALTY_RANGE",
+    "NIGHT_HESITATION_INCREASE_RANGE",
+    "NIGHT_TYPO_INCREASE_RANGE",
+    "BiometricProfile",
+    "wrap",
+]
