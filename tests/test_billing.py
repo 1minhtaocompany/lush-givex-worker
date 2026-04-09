@@ -15,10 +15,9 @@ class BillingTests(unittest.TestCase):
     def tearDown(self):
         billing._reset_state()
 
-    def _set_profiles(self, profiles, cursor=0):
+    def _set_profiles(self, profiles):
         with billing._lock:
-            billing._profiles = profiles
-            billing._cursor = cursor
+            billing._profiles = list(profiles)
 
     def test_select_profile_valid_input_returns_profile(self):
         profile = BillingProfile(
@@ -31,7 +30,7 @@ class BillingTests(unittest.TestCase):
             phone="2125550100",
             email="ana.bell@example.com",
         )
-        self._set_profiles([profile], cursor=0)
+        self._set_profiles([profile])
 
         result = billing.select_profile("10001")
 

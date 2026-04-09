@@ -9,6 +9,7 @@ import time
 import uuid
 import zlib
 from modules.behavior import main as behavior
+from modules.fsm import main as fsm
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 from modules.delay.wrapper import wrap as _behavior_wrap
@@ -344,10 +345,11 @@ def start(task_fn, interval=None):
             return False
         _stop_event.clear()
         _loop_thread = threading.Thread(target=_runtime_loop, args=(task_fn, interval), daemon=True)
-        _state = "RUNNING"; _loop_thread.start()
-    register_signal_handlers()
+        _state = "RUNNING"
     with _trace_lock:
         _trace_id = uuid.uuid4().hex[:12]
+    _loop_thread.start()
+    register_signal_handlers()
     _log_event("runtime", "started", "runtime_start")
     return True
 def stop(timeout=None):
@@ -509,3 +511,6 @@ def reset():
         _trace_id = None
     _stop_event.clear()
     behavior.reset()
+    rollout.reset()
+    monitor.reset()
+    fsm.reset_states()
