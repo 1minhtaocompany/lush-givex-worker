@@ -11,14 +11,13 @@ from modules.delay.persona import MAX_TYPING_DELAY, MIN_TYPING_DELAY  # noqa: F4
 from modules.delay.persona import TYPO_RATE_MIN, TYPO_RATE_MAX  # noqa: F401
 from modules.delay.persona import NIGHT_PENALTY_MIN, NIGHT_PENALTY_MAX  # noqa: F401
 from modules.delay.persona import FATIGUE_THRESHOLD_MIN, FATIGUE_THRESHOLD_MAX  # noqa: F401
-from modules.delay.persona import _PERSONA_TYPES  # noqa: F401
-from modules.delay.state import BehaviorStateMachine, BEHAVIOR_STATES, _VALID_BEHAVIOR_TRANSITIONS  # noqa: F401
+from modules.delay.state import BehaviorStateMachine, BEHAVIOR_STATES  # noqa: F401
 from modules.delay.engine import DelayEngine  # noqa: F401
 from modules.delay.engine import MAX_HESITATION_DELAY, MAX_STEP_DELAY, WATCHDOG_HEADROOM  # noqa: F401
 from modules.delay.temporal import TemporalModel  # noqa: F401
 from modules.delay.temporal import DAY_START, DAY_END  # noqa: F401
 from modules.delay.temporal import NIGHT_SPEED_PENALTY_RANGE, NIGHT_HESITATION_INCREASE_RANGE, NIGHT_TYPO_INCREASE_RANGE  # noqa: F401
-from modules.delay.biometrics import BiometricProfile, _KEYSTROKE_MAX  # noqa: F401
+from modules.delay.biometrics import BiometricProfile  # noqa: F401
 from modules.delay.wrapper import wrap  # noqa: F401  — Task 10.5
 
 __all__ = [

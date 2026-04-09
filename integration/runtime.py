@@ -394,12 +394,17 @@ def stop(timeout=None):
         all_stopped = False
     with _lock:
         _state = "STOPPED"
+    flush_ok = False
     try:
         from integration.orchestrator import _flush_idempotency_store
         _flush_idempotency_store()
+        flush_ok = True
     except Exception:
         _logger.warning("Failed to flush idempotency store during shutdown", exc_info=True)
-    _logger.info("All workers stopped. Idempotency store flushed.")
+    if flush_ok:
+        _logger.info("All workers stopped. Idempotency store flushed.")
+    else:
+        _logger.warning("All workers stopped. Idempotency store flush skipped or failed.")
     if not loop_stopped or not all_stopped:
         _log_event("runtime", "stopped", "runtime_stop_partial")
         return False

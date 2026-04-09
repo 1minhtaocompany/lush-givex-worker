@@ -294,7 +294,17 @@ def _build_idempotency_store() -> _IdempotencyStore:
     return _FileIdempotencyStore()
 
 
-_idempotency_store: _IdempotencyStore = _build_idempotency_store()
+_idempotency_store: _IdempotencyStore | None = None
+_idempotency_store_lock = threading.Lock()
+
+
+def _get_idempotency_store() -> _IdempotencyStore:
+    """Build the idempotency store lazily so imports stay side-effect free."""
+    global _idempotency_store
+    with _idempotency_store_lock:
+        if _idempotency_store is None:
+            _idempotency_store = _build_idempotency_store()
+        return _idempotency_store
 
 # ── Lazy store loading (HIGH-03) ───────────────────────────────────
 
@@ -307,13 +317,13 @@ def _ensure_store_loaded() -> None:
     global _store_loaded
     with _store_loaded_lock:
         if not _store_loaded:
-            _idempotency_store.load()
+            _get_idempotency_store().load()
             _store_loaded = True
 
 
 def _flush_idempotency_store() -> None:
     """Force-persist idempotency store. Called by runtime on graceful shutdown."""
-    _idempotency_store.flush()
+    _get_idempotency_store().flush()
 
 
 def _evict_expired_task_ids() -> None:
@@ -398,7 +408,7 @@ def run_payment_step(task, zip_code=None, worker_id: str = "default"):
         # If the process crashes here, the submitted state records that payment was sent.
         _task_id = getattr(task, "task_id", None)
         if _task_id is not None:
-            _idempotency_store.mark_submitted(_task_id)
+            _get_idempotency_store().mark_submitted(_task_id)
         total = watchdog.wait_for_total(worker_id, timeout=_WATCHDOG_TIMEOUT)
     except Exception as exc:
         _logger.error(
@@ -471,7 +481,7 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
     """
     task_id = getattr(task, "task_id", None)
     if task_id is not None:
-        if _idempotency_store.is_duplicate(task_id):
+        if _get_idempotency_store().is_duplicate(task_id):
             _logger.warning(
                 "[trace=%s] Duplicate task_id=%s detected; skipping.",
                 _get_trace_id(),
@@ -483,7 +493,7 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         state, total = run_payment_step(task, zip_code, worker_id=worker_id)
         action = handle_outcome(state, task.order_queue, worker_id=worker_id)
         if task_id is not None:
-            _idempotency_store.mark_completed(task_id)
+            _get_idempotency_store().mark_completed(task_id)
         return action, state, total
     except Exception as exc:
         _logger.error(
@@ -496,7 +506,7 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         raise
     finally:
         if task_id is not None:
-            _idempotency_store.release_inflight(task_id)
+            _get_idempotency_store().release_inflight(task_id)
         # Clean up CDP driver to prevent registry memory leak (GAP-CDP-01).
         cdp.unregister_driver(worker_id)
         # Clean up FSM state to prevent registry memory leak (HIGH-02 / FSM-002).
