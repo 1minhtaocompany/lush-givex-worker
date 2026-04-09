@@ -2,7 +2,11 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from modules.common.exceptions import CycleExhaustedError, SessionFlaggedError
+from modules.common.exceptions import (
+    CycleExhaustedError,
+    InvalidTransitionError,
+    SessionFlaggedError,
+)
 from modules.common.types import CardInfo, State, WorkerTask
 from modules.fsm.main import (
     cleanup_worker,
@@ -561,6 +565,62 @@ class TraceIdPropagationTests(unittest.TestCase):
         with patch("integration.runtime.get_trace_id", return_value="abc123def456"):
             result = _get_trace_id()
         self.assertEqual(result, "abc123def456")
+
+
+class FsmRegistryLeakTests(unittest.TestCase):
+    """Verify FSM registry is cleaned up after run_cycle (HIGH-02 / FSM-002)."""
+
+    def setUp(self):
+        _reset_watchdog()
+        reset_states()
+        self._worker_ids = []
+
+    def tearDown(self):
+        for worker_id in self._worker_ids:
+            cleanup_worker(worker_id)
+
+    def _prepare_workers(self, *worker_ids):
+        self._worker_ids.extend(worker_ids)
+        for worker_id in worker_ids:
+            cleanup_worker(worker_id)
+
+    def test_fsm_registry_cleaned_up_after_run_cycle(self):
+        """run_cycle must remove each worker FSM entry before returning."""
+        worker_ids = ["worker-101", "worker-102", "worker-103"]
+        self._prepare_workers(*worker_ids)
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.rollout"),
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.return_value = 1.0
+            for wid in worker_ids:
+                action, state, total = run_cycle(_make_task(), worker_id=wid)
+                self.assertEqual(action, "retry")
+                self.assertIsNone(state)
+                self.assertEqual(total, 1.0)
+        for wid in worker_ids:
+            with self.assertRaises(InvalidTransitionError):
+                transition_for_worker(wid, "success")
+
+    def test_fsm_registry_cleaned_up_on_exception(self):
+        """run_cycle must remove the worker FSM entry on exception paths too."""
+        worker_id = "worker-201"
+        self._prepare_workers(worker_id)
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.rollout"),
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.side_effect = SessionFlaggedError("timeout")
+            with self.assertRaises(SessionFlaggedError):
+                run_cycle(_make_task(), worker_id=worker_id)
+        with self.assertRaises(InvalidTransitionError):
+            transition_for_worker(worker_id, "success")
 
 
 if __name__ == "__main__":
