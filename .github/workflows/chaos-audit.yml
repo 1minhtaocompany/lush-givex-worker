@@ -49,10 +49,13 @@ jobs:
           echo "CPU cores: $(nproc)"
           echo "RAM: $(free -h | awk '/^Mem:/ {print $2}')"
           echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "CHAOS_DURATION: ${{ github.event.inputs.duration_seconds || '30' }}"
+          echo "CHAOS_PROBABILITY_ENV: ${{ github.event.inputs.chaos_probability || '0.4' }}"
 
       - name: Run chaos test
         id: chaos_run
         timeout-minutes: 2
+        shell: bash
         env:
           CHAOS_DURATION: ${{ github.event.inputs.duration_seconds || '30' }}
           CHAOS_PROBABILITY_ENV: ${{ github.event.inputs.chaos_probability || '0.4' }}
@@ -60,25 +63,31 @@ jobs:
           python -u tests/run_chaos_test.py 2>&1 | tee chaos_output.log
           EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
-          if   [ "${EXIT_CODE}" -eq 0 ]; then echo "result=PASSED"            >> "$GITHUB_OUTPUT"
-          elif [ "${EXIT_CODE}" -eq 1 ]; then echo "result=THREAD_LEAK"       >> "$GITHUB_OUTPUT"
-          elif [ "${EXIT_CODE}" -eq 2 ]; then echo "result=FSM_STATE_LEAK"    >> "$GITHUB_OUTPUT"
-          elif [ "${EXIT_CODE}" -eq 3 ]; then echo "result=DEADLOCK"          >> "$GITHUB_OUTPUT"
-          else                                echo "result=TIMEOUT_DEADLOCK"  >> "$GITHUB_OUTPUT"
+          if   [ "${EXIT_CODE}" -eq 0 ]; then echo "result=PASSED"                  >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" -eq 1 ]; then echo "result=THREAD_LEAK"             >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" -eq 2 ]; then echo "result=FSM_STATE_LEAK"          >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" -eq 3 ]; then echo "result=NON_TERMINATION"         >> "$GITHUB_OUTPUT"
+          else                                echo "result=TIMEOUT_NON_TERMINATION" >> "$GITHUB_OUTPUT"
           fi
           exit "${EXIT_CODE}"
 
+      - name: Flush and sync chaos log
+        if: always()
+        shell: bash
+        run: sync
+
       - name: Test summary
         if: always()
+        shell: bash
         run: |
           echo "Chaos test result: ${{ steps.chaos_run.outputs.result }} (exit code ${{ steps.chaos_run.outputs.exit_code }})"
           case "${{ steps.chaos_run.outputs.result }}" in
-            PASSED)           echo "✅ All checks passed — engine is chaos-resistant." ;;
-            THREAD_LEAK)      echo "❌ Thread leak detected — workers left dangling threads." ;;
-            FSM_STATE_LEAK)   echo "❌ FSM state leak — InvalidStateError/InvalidTransitionError raised under load." ;;
-            DEADLOCK)         echo "❌ Deadlock detected — worker thread(s) failed to terminate." ;;
-            TIMEOUT_DEADLOCK) echo "❌ Job timed out — likely a deadlock (GitHub force-killed the step)." ;;
-            *)                echo "⚠️  Unknown result." ;;
+            PASSED)                  echo "All checks passed — engine is chaos-resistant." ;;
+            THREAD_LEAK)             echo "Thread leak — surplus threads still alive after join." ;;
+            FSM_STATE_LEAK)          echo "FSM state leak — invalid FSM transition detected under load." ;;
+            NON_TERMINATION)         echo "Non-termination — thread(s) failed to exit within join budget." ;;
+            TIMEOUT_NON_TERMINATION) echo "Step timeout — test step killed by GitHub (strong indicator of non-termination)." ;;
+            *)                       echo "Unknown result — check raw logs." ;;
           esac
 
       - name: Upload chaos log
@@ -87,28 +96,34 @@ jobs:
         with:
           name: chaos-log-${{ github.run_number }}
           path: chaos_output.log
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Write GitHub Step Summary
         if: always()
+        shell: bash
         run: |
-          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
-          ## 🔥 Chaos Audit Result
+          cat >> "$GITHUB_STEP_SUMMARY" << 'SUMMARY_EOF'
+          ## Chaos Audit Result
 
-          | Field      | Value |
-          |------------|-------|
-          | **Result** | ${{ steps.chaos_run.outputs.result }} |
-          | **Exit Code** | ${{ steps.chaos_run.outputs.exit_code }} |
-          | **Run Number** | ${{ github.run_number }} |
-          | **Commit SHA** | ${{ github.sha }} |
-          | **Actor** | ${{ github.actor }} |
+          | Field | Value |
+          |-------|-------|
+          | Result | ${{ steps.chaos_run.outputs.result }} |
+          | Exit Code | ${{ steps.chaos_run.outputs.exit_code }} |
+          | Run Number | ${{ github.run_number }} |
+          | Commit SHA | ${{ github.sha }} |
+          | Actor | ${{ github.actor }} |
 
-          ### Exit Code Reference
-          | Code | Meaning |
-          |------|---------|
-          | `0` | PASSED — all workers finished cleanly |
-          | `1` | THREAD_LEAK — surplus threads still alive after join |
-          | `2` | FSM_STATE_LEAK — InvalidStateError/InvalidTransitionError detected |
-          | `3` | DEADLOCK — worker thread(s) did not terminate within timeout |
-          | timeout | TIMEOUT_DEADLOCK — step exceeded 2-minute limit (GitHub force-kill) |
-          EOF
+          ### Exit Code Reference (highest priority wins)
+          | Code | Label | Meaning |
+          |------|-------|---------|
+          | 0 | PASSED | All workers finished cleanly |
+          | 1 | THREAD_LEAK | Surplus threads still alive after join |
+          | 2 | FSM_STATE_LEAK | Invalid FSM transition detected under load |
+          | 3 | NON_TERMINATION | Thread(s) failed to exit within 10s join budget |
+          | step timeout | TIMEOUT_NON_TERMINATION | Step exceeded 2-minute limit (GitHub force-kill) |
+
+          ### Scope
+          Tests synchronous stub layer only (FakeDriver, no real browser).
+          Does not cover real async CDP callback races after teardown.
+          SUMMARY_EOF
