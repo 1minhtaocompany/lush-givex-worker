@@ -26,8 +26,7 @@ jobs:
   chaos-audit:
     name: chaos-audit
     runs-on: ubuntu-latest
-    timeout-minutes: 2  # 4× the default 30-second test duration; if the job exceeds this,
-                        # GitHub force-kills it — which itself proves a deadlock occurred.
+    timeout-minutes: 6
 
     steps:
       - name: Checkout code
@@ -53,6 +52,10 @@ jobs:
 
       - name: Run chaos test
         id: chaos_run
+        timeout-minutes: 2
+        env:
+          CHAOS_DURATION: ${{ github.event.inputs.duration_seconds || '30' }}
+          CHAOS_PROBABILITY_ENV: ${{ github.event.inputs.chaos_probability || '0.4' }}
         run: |
           python -u tests/run_chaos_test.py 2>&1 | tee chaos_output.log
           EXIT_CODE=${PIPESTATUS[0]}
@@ -74,7 +77,7 @@ jobs:
             THREAD_LEAK)      echo "❌ Thread leak detected — workers left dangling threads." ;;
             FSM_STATE_LEAK)   echo "❌ FSM state leak — InvalidStateError/InvalidTransitionError raised under load." ;;
             DEADLOCK)         echo "❌ Deadlock detected — worker thread(s) failed to terminate." ;;
-            TIMEOUT_DEADLOCK) echo "❌ Job timed out — likely a deadlock (GitHub force-killed the job)." ;;
+            TIMEOUT_DEADLOCK) echo "❌ Job timed out — likely a deadlock (GitHub force-killed the step)." ;;
             *)                echo "⚠️  Unknown result." ;;
           esac
 
@@ -107,5 +110,5 @@ jobs:
           | `1` | THREAD_LEAK — surplus threads still alive after join |
           | `2` | FSM_STATE_LEAK — InvalidStateError/InvalidTransitionError detected |
           | `3` | DEADLOCK — worker thread(s) did not terminate within timeout |
-          | timeout | TIMEOUT_DEADLOCK — job exceeded 2-minute limit (GitHub force-kill) |
+          | timeout | TIMEOUT_DEADLOCK — step exceeded 2-minute limit (GitHub force-kill) |
           EOF
