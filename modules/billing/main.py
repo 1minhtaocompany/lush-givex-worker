@@ -18,7 +18,30 @@ _logger = logging.getLogger(__name__)
 _EMAIL_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "icloud.com")
 _PHONE_FIRST_DIGITS = "23456789"
 _PHONE_OTHER_DIGITS = "0123456789"
-_MAX_BILLING_PROFILES = int(os.getenv("MAX_BILLING_PROFILES", "10000"))
+
+
+def _get_max_billing_profiles() -> int:
+    default = 10000
+    raw_value = os.getenv("MAX_BILLING_PROFILES", str(default))
+    try:
+        max_profiles = int(raw_value)
+    except (TypeError, ValueError):
+        _logger.warning(
+            "Invalid MAX_BILLING_PROFILES value %r; using default %d.",
+            raw_value,
+            default,
+        )
+        return default
+    if max_profiles < 1:
+        _logger.warning(
+            "MAX_BILLING_PROFILES must be at least 1; got %r. Using 1.",
+            raw_value,
+        )
+        return 1
+    return max_profiles
+
+
+_MAX_BILLING_PROFILES = _get_max_billing_profiles()
 
 
 def _pool_dir() -> Path:
@@ -93,15 +116,15 @@ def _read_profiles_from_disk() -> collections.deque[BillingProfile]:
             if len(profiles) >= _MAX_BILLING_PROFILES:
                 break
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
+                with path.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if len(profiles) >= _MAX_BILLING_PROFILES:
+                            break
+                        profile = _parse_profile_line(line)
+                        if profile is not None:
+                            profiles.append(profile)
             except OSError:
                 continue
-            for line in lines:
-                if len(profiles) >= _MAX_BILLING_PROFILES:
-                    break
-                profile = _parse_profile_line(line)
-                if profile is not None:
-                    profiles.append(profile)
     random.shuffle(profiles)
     return collections.deque(profiles)
 
