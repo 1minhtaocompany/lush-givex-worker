@@ -142,51 +142,68 @@ class FSMTransitionGraphTests(unittest.TestCase):
 class FSMConcurrentInitializationTests(unittest.TestCase):
     """Verify that concurrent initialize_for_worker calls are race-free."""
 
+    _JOIN_TIMEOUT_SECONDS = 2.0
+    _BARRIER_TIMEOUT_SECONDS = 1.0
+
     def setUp(self):
         reset_registry()
 
     def tearDown(self):
         reset_registry()
 
+    def _run_concurrent_initialize(self, worker_id: str) -> None:
+        """Run two concurrent initialize_for_worker calls and fail on any
+        thread error, barrier timeout, or hung thread."""
+        errors: list[Exception] = []
+        completed: list[str] = []
+        results_lock = threading.Lock()
+        barrier = threading.Barrier(2)
+
+        def _init():
+            try:
+                barrier.wait(timeout=self._BARRIER_TIMEOUT_SECONDS)
+                initialize_for_worker(worker_id)
+            except Exception as exc:  # noqa: BLE001
+                with results_lock:
+                    errors.append(exc)
+            else:
+                with results_lock:
+                    completed.append(threading.current_thread().name)
+
+        t1 = threading.Thread(target=_init, name="init-thread-1")
+        t2 = threading.Thread(target=_init, name="init-thread-2")
+        t1.start()
+        t2.start()
+        t1.join(timeout=self._JOIN_TIMEOUT_SECONDS)
+        t2.join(timeout=self._JOIN_TIMEOUT_SECONDS)
+
+        self.assertFalse(t1.is_alive(), "init-thread-1 did not finish before timeout")
+        self.assertFalse(t2.is_alive(), "init-thread-2 did not finish before timeout")
+        with results_lock:
+            captured_errors = list(errors)
+            captured_completed = list(completed)
+        self.assertEqual(
+            captured_errors,
+            [],
+            f"Unexpected errors during concurrent init: {captured_errors}",
+        )
+        self.assertCountEqual(
+            captured_completed,
+            ["init-thread-1", "init-thread-2"],
+            f"Expected both initialization threads to complete successfully; got {captured_completed}",
+        )
+
     def test_concurrent_initialize_same_worker_no_error(self):
         """Two threads calling initialize_for_worker for the same worker_id
         must not raise any exception (no TOCTOU state corruption)."""
         worker_id = "concurrent-init-worker"
-        errors: list[Exception] = []
-        barrier = threading.Barrier(2)
-
-        def _init():
-            barrier.wait()  # start both threads as simultaneously as possible
-            try:
-                initialize_for_worker(worker_id)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(exc)
-
-        t1 = threading.Thread(target=_init)
-        t2 = threading.Thread(target=_init)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        self.assertEqual(errors, [], f"Unexpected errors during concurrent init: {errors}")
+        self._run_concurrent_initialize(worker_id)
 
     def test_concurrent_initialize_all_states_present(self):
         """After concurrent initialization the final registry entry must
         contain every state in ALLOWED_STATES and current must be None."""
         worker_id = "concurrent-states-worker"
-        barrier = threading.Barrier(2)
-
-        def _init():
-            barrier.wait()
-            initialize_for_worker(worker_id)
-
-        t1 = threading.Thread(target=_init)
-        t2 = threading.Thread(target=_init)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+        self._run_concurrent_initialize(worker_id)
 
         # After both threads finish, the entry must be complete.
         for state_name in ALLOWED_STATES:
