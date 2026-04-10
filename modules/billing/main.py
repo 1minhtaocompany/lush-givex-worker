@@ -20,6 +20,30 @@ _PHONE_FIRST_DIGITS = "23456789"
 _PHONE_OTHER_DIGITS = "0123456789"
 
 
+def _get_max_billing_profiles() -> int:
+    default = 10000
+    raw_value = os.getenv("MAX_BILLING_PROFILES", str(default))
+    try:
+        max_profiles = int(raw_value)
+    except (TypeError, ValueError):
+        _logger.warning(
+            "Invalid MAX_BILLING_PROFILES value %r; using default %d.",
+            raw_value,
+            default,
+        )
+        return default
+    if max_profiles < 1:
+        _logger.warning(
+            "MAX_BILLING_PROFILES must be at least 1; got %r. Using 1.",
+            raw_value,
+        )
+        return 1
+    return max_profiles
+
+
+_MAX_BILLING_PROFILES = _get_max_billing_profiles()
+
+
 def _pool_dir() -> Path:
     override = os.getenv("BILLING_POOL_DIR", "").strip()
     if override:
@@ -86,17 +110,21 @@ def _parse_profile_line(line: str) -> BillingProfile | None:
 def _read_profiles_from_disk() -> collections.deque[BillingProfile]:
     """Read and parse profiles from disk. Must be called without holding _lock."""
     pool_dir = _pool_dir()
-    profiles = []
+    profiles: list[BillingProfile] = []
     if pool_dir.is_dir():
         for path in sorted(pool_dir.glob("*.txt")):
+            if len(profiles) >= _MAX_BILLING_PROFILES:
+                break
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
+                with path.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if len(profiles) >= _MAX_BILLING_PROFILES:
+                            break
+                        profile = _parse_profile_line(line)
+                        if profile is not None:
+                            profiles.append(profile)
             except OSError:
                 continue
-            for line in lines:
-                profile = _parse_profile_line(line)
-                if profile is not None:
-                    profiles.append(profile)
     random.shuffle(profiles)
     return collections.deque(profiles)
 

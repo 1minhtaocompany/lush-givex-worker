@@ -103,6 +103,26 @@ class BillingTests(unittest.TestCase):
         self.assertIsNotNone(back.phone)
         self.assertIsNotNone(back.email)
 
+    def test_max_billing_profiles_cap(self):
+        """_read_profiles_from_disk respects _MAX_BILLING_PROFILES limit."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Write 2 files, each with 5 valid lines → 10 total
+            for name in ("a.txt", "b.txt"):
+                path = os.path.join(tmpdir, name)
+                with open(path, "w") as f:
+                    for i in range(5):
+                        f.write(f"F{i}|L{i}|{i} St|City|ST|{i:05d}|555000000{i}|u{i}@e.com\n")
+
+            with patch.dict(os.environ, {"BILLING_POOL_DIR": tmpdir}):
+                # Cap at 3 → only 3 profiles should be loaded
+                original = billing._MAX_BILLING_PROFILES
+                try:
+                    billing._MAX_BILLING_PROFILES = 3
+                    result = billing._read_profiles_from_disk()
+                    self.assertEqual(len(result), 3)
+                finally:
+                    billing._MAX_BILLING_PROFILES = original
+
 
 if __name__ == "__main__":
     unittest.main()
