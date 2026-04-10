@@ -17,7 +17,7 @@ It validates:
   - SelectorTimeoutError and PageStateError injection and correct SessionFlaggedError routing
 
 It does NOT validate:
-  - Real async CDP callbacks arriving after worker teardown (no late callbacks in stubs)
+  - Real async CDP/browser callbacks arriving after worker teardown (the test uses synthetic late-callback injection, not real browser callbacks)
   - Network-level races or browser process lifecycle
 
 Exit code priority (highest wins):
@@ -209,7 +209,8 @@ def _run_worker(worker_id: str, stop_event: threading.Event, stats: WorkerStats)
                         continue
 
                     stats.vbv_3ds_count += 1
-                    stats.success_count += 1
+                    if final_state == "success":
+                        stats.success_count += 1
                     continue
 
                 cdp.fill_card(FakeCardInfo(), worker_id)
@@ -264,11 +265,15 @@ class LateCallbackInjector:
     """
     Simulates async CDP callbacks arriving from an external thread.
     Randomly calls notify_total() for random worker IDs at random short delays.
-    Covers three scenarios every watchdog identity-check cares about:
-      1. Callback arrives while session is alive → no-op (event already set) or sets value.
+
+    Covers late-notify scenarios this stub can actually model:
+      1. Callback arrives while a session is alive → no-op (event already set) or sets value.
       2. Callback arrives after reset_session() → no-op (registry has no entry).
-      3. Callback arrives for a worker that has already started a new session →
-         must NOT corrupt the new session (watchdog identity-check prevents this).
+
+    This injector targets late notifications by worker ID only. It does not model
+    per-session callback identity, so it does not verify the race where a stale
+    callback from an old session arrives after the same worker has started a new
+    session.
     """
 
     def __init__(self, worker_ids: list[str], stop_event: threading.Event) -> None:
