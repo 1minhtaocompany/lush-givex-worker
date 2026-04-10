@@ -105,7 +105,6 @@ class BillingTests(unittest.TestCase):
 
     def test_max_billing_profiles_cap(self):
         """_read_profiles_from_disk respects _MAX_BILLING_PROFILES limit."""
-        line = "First|Last|123 St|City|ST|00001|5551234567|a@b.com"
         with tempfile.TemporaryDirectory() as tmpdir:
             # Write 2 files, each with 5 valid lines → 10 total
             for name in ("a.txt", "b.txt"):
