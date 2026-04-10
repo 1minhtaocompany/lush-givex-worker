@@ -354,7 +354,7 @@ def _run_worker(worker_id: str, stop_event: threading.Event, stats: WorkerStats,
 class LateCallbackInjector:
     """
     Simulates async CDP callbacks arriving from an external thread.
-    Randomly calls notify_total() for random worker IDs at random short delays.
+    Randomly calls notify_total() for random sync worker IDs at random short delays.
 
     Covers late-notify scenarios this stub can actually model:
       1. Callback arrives while a session is alive → no-op (event already set) or sets value.
@@ -364,10 +364,14 @@ class LateCallbackInjector:
     per-session callback identity, so it does not verify the race where a stale
     callback from an old session arrives after the same worker has started a new
     session.
+
+    Async workers (FakeAsyncDriver) are intentionally excluded so that Timer A
+    from fill_card() remains the sole unblocker for async sessions, ensuring the
+    async callback path is genuinely exercised.
     """
 
-    def __init__(self, worker_ids: list[str], stop_event: threading.Event) -> None:
-        self._worker_ids = worker_ids
+    def __init__(self, sync_worker_ids: list[str], stop_event: threading.Event) -> None:
+        self._worker_ids = sync_worker_ids
         self._stop_event = stop_event
 
     def run(self) -> None:
@@ -425,6 +429,7 @@ def main() -> int:
     all_stats: list[WorkerStats] = []
     worker_threads: list[threading.Thread] = []
     worker_ids: list[str] = []
+    sync_worker_ids: list[str] = []
     worker_is_async: list[bool] = []
 
     for i in range(NUM_WORKERS):
@@ -440,6 +445,7 @@ def main() -> int:
         else:
             driver = FakeDriver()
             is_async = False
+            sync_worker_ids.append(worker_id)
         worker_is_async.append(is_async)
         cdp.register_driver(worker_id, driver)
         fsm.initialize_for_worker(worker_id)
@@ -453,7 +459,8 @@ def main() -> int:
         worker_threads.append(t)
 
     # Start late-callback injector (daemon so it never blocks process exit).
-    injector = LateCallbackInjector(worker_ids, stop_event)
+    # Only targets sync workers so async workers rely solely on Timer A.
+    injector = LateCallbackInjector(sync_worker_ids, stop_event)
     injector_thread = threading.Thread(
         target=injector.run,
         name="late-cb-injector",
