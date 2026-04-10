@@ -5,6 +5,7 @@ No cross-module imports exist within the individual modules themselves;
 this file is the single integration point that wires them together.
 """
 
+import atexit
 import concurrent.futures
 import json
 import logging
@@ -325,9 +326,12 @@ def _flush_idempotency_store() -> None:
 
 
 def _shutdown_cdp_executor() -> None:
-    """Shutdown the shared CDP executor. Called by runtime on graceful shutdown."""
+    """Shutdown the shared CDP executor. Called on graceful shutdown or process exit."""
     with _cdp_executor_lock:
         _cdp_executor.shutdown(wait=False, cancel_futures=True)
+
+
+atexit.register(_shutdown_cdp_executor)
 
 
 def _evict_expired_task_ids() -> None:
@@ -345,10 +349,13 @@ def _evict_expired_task_ids() -> None:
 
 
 def _cdp_call_with_timeout(fn: Callable, *args: Any, timeout: float = _CDP_CALL_TIMEOUT, **kwargs: Any) -> Any:
-    """Execute a CDP call with a hard timeout using the shared CDP executor.
+    """Execute a CDP call with a caller-side timeout using the shared CDP executor.
 
     Submits *fn* to the shared ``_cdp_executor`` and waits at most *timeout*
-    seconds. Raises ``SessionFlaggedError`` if the call does not complete in
+    seconds for the result. **Note:** timing out only unblocks the caller; the
+    underlying CDP callable may continue running in the background because
+    ``future.cancel()`` is best-effort and cannot interrupt an already-running
+    thread.  Raises ``SessionFlaggedError`` if the call does not complete in
     time so the runtime treats the session as flagged.
 
     Args:
@@ -358,10 +365,17 @@ def _cdp_call_with_timeout(fn: Callable, *args: Any, timeout: float = _CDP_CALL_
         **kwargs: Keyword arguments forwarded to *fn*.
 
     Raises:
-        SessionFlaggedError: If the call does not complete within *timeout* seconds.
+        SessionFlaggedError: If the call does not complete within *timeout*
+            seconds, or if the executor is unavailable (e.g. after shutdown).
     """
     from modules.common.exceptions import SessionFlaggedError
-    future = _cdp_executor.submit(fn, *args, **kwargs)
+    try:
+        future = _cdp_executor.submit(fn, *args, **kwargs)
+    except RuntimeError as exc:
+        raise SessionFlaggedError(
+            f"CDP call '{getattr(fn, '__name__', repr(fn))}' "
+            "could not be scheduled because the CDP executor is unavailable"
+        ) from exc
     try:
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
