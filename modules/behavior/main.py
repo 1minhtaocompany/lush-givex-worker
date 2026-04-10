@@ -47,7 +47,7 @@ def evaluate(
             Values are expected to be finite floats as produced by
             ``monitor.get_metrics()``.  Non-finite values (NaN, inf) from
             custom callers are not guarded against and may produce
-            non-deterministic decisions.
+            unreliable decisions.
         current_step_index: zero-based index of the current scaling step.
         max_step_index: maximum step index (len(SCALE_STEPS) - 1).
 
