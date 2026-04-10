@@ -110,6 +110,9 @@ _DETECT_PROB_SELECTOR_TIMEOUT = 0.10
 _DETECT_PROB_PAGE_STATE_ERR   = 0.10
 # remaining 10% → "vbv_3ds"
 
+# Maximum random delay (seconds) for late-callback injection.
+_LATE_CALLBACK_MAX_DELAY_SEC = 0.200
+
 # ── Fake driver & card info ────────────────────────────────────────────────────
 
 
@@ -122,19 +125,17 @@ class FakeDriver:
             raise exc_class(f"[chaos] {exc_class.__name__} injected by FakeDriver")
 
     def detect_page_state(self) -> str:
-        # Probability distribution:
-        #   70%  → "ui_lock"
-        #   10%  → raise SelectorTimeoutError
-        #   10%  → raise PageStateError
-        #   10%  → "vbv_3ds"
+        # Cumulative probability thresholds:
+        #   [0.00, 0.70) → "ui_lock"
+        #   [0.70, 0.80) → raise SelectorTimeoutError
+        #   [0.80, 0.90) → raise PageStateError
+        #   [0.90, 1.00) → "vbv_3ds"
         roll = random.random()
         if roll < _DETECT_PROB_UI_LOCK:
             return "ui_lock"
-        roll -= _DETECT_PROB_UI_LOCK
-        if roll < _DETECT_PROB_SELECTOR_TIMEOUT:
+        if roll < _DETECT_PROB_UI_LOCK + _DETECT_PROB_SELECTOR_TIMEOUT:
             raise SelectorTimeoutError("#checkout-total", 5.0)
-        roll -= _DETECT_PROB_SELECTOR_TIMEOUT
-        if roll < _DETECT_PROB_PAGE_STATE_ERR:
+        if roll < _DETECT_PROB_UI_LOCK + _DETECT_PROB_SELECTOR_TIMEOUT + _DETECT_PROB_PAGE_STATE_ERR:
             raise PageStateError("unknown")
         return "vbv_3ds"
 
@@ -277,7 +278,7 @@ class LateCallbackInjector:
     def run(self) -> None:
         while not self._stop_event.is_set():
             worker_id = random.choice(self._worker_ids)
-            delay = random.uniform(0.0, 0.200)
+            delay = random.uniform(0.0, _LATE_CALLBACK_MAX_DELAY_SEC)
             self._stop_event.wait(timeout=delay)
             if self._stop_event.is_set():
                 break
