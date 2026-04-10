@@ -50,7 +50,7 @@ def _sanitize_redis_url(redis_url: str) -> str:
         if isinstance(ipaddress.ip_address(host), ipaddress.IPv6Address):
             host = f"[{host}]"
     except ValueError:
-        pass
+        pass  # Not a valid IP address — regular hostname, no brackets needed.
     port = f":{parsed.port}" if parsed.port is not None else ""
     username = f"{parsed.username}:" if parsed.username else ":"
     safe_netloc = f"{username}[REDACTED]@{host}{port}"
