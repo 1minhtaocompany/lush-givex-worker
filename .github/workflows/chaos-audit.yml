@@ -1,0 +1,129 @@
+name: "🔥 Chaos Audit — Core Engine"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/run_chaos_test.py"
+      - ".github/workflows/chaos-audit.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: "How long (seconds) each worker runs"
+        required: false
+        default: "30"
+      chaos_probability:
+        description: "Probability (0.0–1.0) of injecting a chaos exception"
+        required: false
+        default: "0.4"
+
+permissions:
+  contents: read
+
+jobs:
+  chaos-audit:
+    name: chaos-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Validate script syntax
+        run: python -m py_compile tests/run_chaos_test.py
+
+      - name: Print environment info
+        run: |
+          echo "Python version: $(python --version)"
+          echo "CPU cores: $(nproc)"
+          echo "RAM: $(free -h | awk '/^Mem:/ {print $2}')"
+          echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "CHAOS_DURATION: ${{ github.event.inputs.duration_seconds || '30' }}"
+          echo "CHAOS_PROBABILITY_ENV: ${{ github.event.inputs.chaos_probability || '0.4' }}"
+
+      - name: Run chaos test
+        id: chaos_run
+        timeout-minutes: 2
+        shell: bash
+        env:
+          CHAOS_DURATION: ${{ github.event.inputs.duration_seconds || '30' }}
+          CHAOS_PROBABILITY_ENV: ${{ github.event.inputs.chaos_probability || '0.4' }}
+        run: |
+          python -u tests/run_chaos_test.py 2>&1 | tee chaos_output.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          if   [ "${EXIT_CODE}" -eq 0 ]; then echo "result=PASSED"                  >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" -eq 1 ]; then echo "result=THREAD_LEAK"             >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" -eq 2 ]; then echo "result=FSM_STATE_LEAK"          >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" -eq 3 ]; then echo "result=NON_TERMINATION"         >> "$GITHUB_OUTPUT"
+          else                                echo "result=TIMEOUT_NON_TERMINATION" >> "$GITHUB_OUTPUT"
+          fi
+          exit "${EXIT_CODE}"
+
+      - name: Flush and sync chaos log
+        if: always()
+        shell: bash
+        run: sync
+
+      - name: Test summary
+        if: always()
+        shell: bash
+        run: |
+          echo "Chaos test result: ${{ steps.chaos_run.outputs.result }} (exit code ${{ steps.chaos_run.outputs.exit_code }})"
+          case "${{ steps.chaos_run.outputs.result }}" in
+            PASSED)                  echo "All checks passed — engine is chaos-resistant." ;;
+            THREAD_LEAK)             echo "Thread leak — surplus threads still alive after join." ;;
+            FSM_STATE_LEAK)          echo "FSM state leak — invalid FSM transition detected under load." ;;
+            NON_TERMINATION)         echo "Non-termination — thread(s) failed to exit within join budget." ;;
+            TIMEOUT_NON_TERMINATION) echo "Step timeout — test step killed by GitHub (strong indicator of non-termination)." ;;
+            *)                       echo "Unknown result — check raw logs." ;;
+          esac
+
+      - name: Upload chaos log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-log-${{ github.run_number }}
+          path: chaos_output.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Write GitHub Step Summary
+        if: always()
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'SUMMARY_EOF'
+          ## Chaos Audit Result
+
+          | Field | Value |
+          |-------|-------|
+          | Result | ${{ steps.chaos_run.outputs.result }} |
+          | Exit Code | ${{ steps.chaos_run.outputs.exit_code }} |
+          | Run Number | ${{ github.run_number }} |
+          | Commit SHA | ${{ github.sha }} |
+          | Actor | ${{ github.actor }} |
+
+          ### Exit Code Reference (highest priority wins)
+          | Code | Label | Meaning |
+          |------|-------|---------|
+          | 0 | PASSED | All workers finished cleanly |
+          | 1 | THREAD_LEAK | Surplus threads still alive after join |
+          | 2 | FSM_STATE_LEAK | Invalid FSM transition detected under load |
+          | 3 | NON_TERMINATION | Thread(s) failed to exit within 10s join budget |
+          | step timeout | TIMEOUT_NON_TERMINATION | Step exceeded 2-minute limit (GitHub force-kill) |
+
+          ### Scope
+          Tests synchronous stub layer only (FakeDriver, no real browser).
+          Does not cover real async CDP callback races after teardown.
+          SUMMARY_EOF
