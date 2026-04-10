@@ -18,6 +18,7 @@ _logger = logging.getLogger(__name__)
 _EMAIL_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "icloud.com")
 _PHONE_FIRST_DIGITS = "23456789"
 _PHONE_OTHER_DIGITS = "0123456789"
+_MAX_BILLING_PROFILES = int(os.getenv("MAX_BILLING_PROFILES", "10000"))
 
 
 def _pool_dir() -> Path:
@@ -86,14 +87,18 @@ def _parse_profile_line(line: str) -> BillingProfile | None:
 def _read_profiles_from_disk() -> collections.deque[BillingProfile]:
     """Read and parse profiles from disk. Must be called without holding _lock."""
     pool_dir = _pool_dir()
-    profiles = []
+    profiles: list[BillingProfile] = []
     if pool_dir.is_dir():
         for path in sorted(pool_dir.glob("*.txt")):
+            if len(profiles) >= _MAX_BILLING_PROFILES:
+                break
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except OSError:
                 continue
             for line in lines:
+                if len(profiles) >= _MAX_BILLING_PROFILES:
+                    break
                 profile = _parse_profile_line(line)
                 if profile is not None:
                     profiles.append(profile)
