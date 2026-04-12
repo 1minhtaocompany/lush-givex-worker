@@ -7,6 +7,7 @@ from modules.monitor.main import (
     check_rollback_needed,
     get_baseline_success_rate,
     get_error_rate,
+    get_error_rates_by_persona,
     get_memory_usage_bytes,
     get_metrics,
     get_restarts_last_hour,
@@ -217,6 +218,87 @@ class TestReset(MonitorResetMixin, unittest.TestCase):
         self.assertEqual(m["error_count"], 0)
         self.assertEqual(m["restarts_last_hour"], 0)
         self.assertIsNone(m["baseline_success_rate"])
+
+
+class PersonaTaggedMetricsTests(unittest.TestCase):
+    """Tests for per-persona error/success tracking."""
+
+    def setUp(self):
+        reset()
+
+    def tearDown(self):
+        reset()
+
+    def test_record_error_with_persona_type_tracked(self):
+        record_error(persona_type="fast_typer")
+        record_error(persona_type="fast_typer")
+        record_error(persona_type="cautious")
+        rates = get_error_rates_by_persona()
+        self.assertIn("fast_typer", rates)
+        self.assertIn("cautious", rates)
+
+    def test_record_error_without_persona_backward_compat(self):
+        """record_error() with no args must still work."""
+        record_error()  # no persona_type
+        self.assertEqual(get_error_rate(), 1.0)
+
+    def test_record_success_without_persona_backward_compat(self):
+        """record_success() with no args must still work."""
+        record_success()
+        self.assertEqual(get_success_rate(), 1.0)
+
+    def test_error_rate_by_persona_correct(self):
+        for _ in range(3):
+            record_success(persona_type="slow_typer")
+        for _ in range(1):
+            record_error(persona_type="slow_typer")
+        rates = get_error_rates_by_persona()
+        self.assertAlmostEqual(rates["slow_typer"], 0.25)
+
+    def test_reset_clears_persona_counts(self):
+        record_error(persona_type="impulsive")
+        reset()
+        rates = get_error_rates_by_persona()
+        self.assertEqual(rates, {})
+
+    def test_get_metrics_includes_persona_breakdown(self):
+        record_error(persona_type="moderate_typer")
+        m = get_metrics()
+        self.assertIn("error_counts_by_persona", m)
+        self.assertIn("success_counts_by_persona", m)
+        self.assertEqual(m["error_counts_by_persona"].get("moderate_typer", 0), 1)
+
+    def test_concurrent_tagged_records_no_corruption(self):
+        """20 threads × 100 tagged records must not corrupt counts."""
+        errors = []
+
+        def worker():
+            try:
+                for _ in range(100):
+                    record_error(persona_type="fast_typer")
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+        from modules.monitor.main import _error_counts_by_persona, _lock
+        with _lock:
+            self.assertEqual(_error_counts_by_persona.get("fast_typer", 0), 2000)
+
+    def test_untagged_and_tagged_counts_independent(self):
+        """Untagged record_error() must not affect persona breakdown."""
+        record_error()  # untagged
+        record_error(persona_type="cautious")
+        rates = get_error_rates_by_persona()
+        # Only "cautious" should appear, not an empty-string key
+        self.assertIn("cautious", rates)
+        self.assertNotIn("", rates)
+        self.assertNotIn(None, rates)
 
 
 if __name__ == "__main__":

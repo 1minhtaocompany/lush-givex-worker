@@ -15,6 +15,9 @@ _logger = logging.getLogger(__name__)
 # Counters
 _success_count = 0
 _error_count = 0
+# Per-persona breakdown (optional tag — backward compatible)
+_error_counts_by_persona: dict[str, int] = {}
+_success_counts_by_persona: dict[str, int] = {}
 
 # Worker restart tracking: list of timestamps (epoch seconds)
 _restart_timestamps = []
@@ -31,18 +34,36 @@ _ERROR_RATE_THRESHOLD = 0.05  # 5%
 _MAX_RESTARTS_PER_HOUR = 3
 
 
-def record_success():
-    """Record a successful task completion."""
+def record_success(persona_type: str | None = None) -> None:
+    """Record a successful task completion.
+
+    Args:
+        persona_type: Optional persona type tag for per-persona breakdown.
+            Passing None (default) preserves backward compatibility.
+    """
     global _success_count
     with _lock:
         _success_count += 1
+        if persona_type:
+            _success_counts_by_persona[persona_type] = (
+                _success_counts_by_persona.get(persona_type, 0) + 1
+            )
 
 
-def record_error():
-    """Record a task error."""
+def record_error(persona_type: str | None = None) -> None:
+    """Record a task error.
+
+    Args:
+        persona_type: Optional persona type tag for per-persona breakdown.
+            Passing None (default) preserves backward compatibility.
+    """
     global _error_count
     with _lock:
         _error_count += 1
+        if persona_type:
+            _error_counts_by_persona[persona_type] = (
+                _error_counts_by_persona.get(persona_type, 0) + 1
+            )
 
 
 def record_restart():
@@ -76,6 +97,23 @@ def get_error_rate():
         if total == 0:
             return 0.0
         return _error_count / total
+
+
+def get_error_rates_by_persona() -> dict[str, float]:
+    """Return per-persona error rates as {persona_type: rate}.
+
+    Only includes persona types for which at least one event has been recorded.
+    Returns an empty dict if no tagged events have been recorded.
+    """
+    with _lock:
+        all_types = set(list(_error_counts_by_persona) + list(_success_counts_by_persona))
+        result: dict[str, float] = {}
+        for pt in all_types:
+            errors = _error_counts_by_persona.get(pt, 0)
+            successes = _success_counts_by_persona.get(pt, 0)
+            total = errors + successes
+            result[pt] = (errors / total) if total > 0 else 0.0
+        return result
 
 
 def get_memory_usage_bytes() -> int:
@@ -156,16 +194,17 @@ def get_metrics():
         cutoff = time.time() - 3600
         restarts_hour = sum(1 for ts in _restart_timestamps if ts >= cutoff)
         baseline = _baseline_success_rate
-
-    return {
-        "success_count": success_count,
-        "error_count": error_count,
-        "success_rate": success_rate,
-        "error_rate": error_rate,
-        "memory_usage_bytes": mem,
-        "restarts_last_hour": restarts_hour,
-        "baseline_success_rate": baseline,
-    }
+        return {
+            "success_count": success_count,
+            "error_count": error_count,
+            "success_rate": success_rate,
+            "error_rate": error_rate,
+            "memory_usage_bytes": mem,
+            "restarts_last_hour": restarts_hour,
+            "baseline_success_rate": baseline,
+            "error_counts_by_persona": dict(_error_counts_by_persona),
+            "success_counts_by_persona": dict(_success_counts_by_persona),
+        }
 
 
 def check_rollback_needed():
@@ -218,3 +257,5 @@ def reset():
         _error_count = 0
         _restart_timestamps = []
         _baseline_success_rate = None
+        _error_counts_by_persona.clear()
+        _success_counts_by_persona.clear()
