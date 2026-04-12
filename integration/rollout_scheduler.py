@@ -15,7 +15,7 @@ _lock = threading.Lock()
 _stop_event = threading.Event()
 _scheduler_thread = None
 _stable_since = None
-_rollout_complete = False
+_MIN_INTERVAL = 1.0
 
 
 def _is_stable(m):
@@ -24,23 +24,32 @@ def _is_stable(m):
             and m["restarts_last_hour"] <= MAX_RESTARTS_PER_HOUR)
 
 
+def _needs_rollback(m):
+    """Check metrics against rollback thresholds, return list of reasons."""
+    reasons = []
+    if m["error_rate"] > MAX_ERROR_RATE:
+        reasons.append(f"error rate {m['error_rate']:.1%} exceeds {MAX_ERROR_RATE:.0%}")
+    if m["restarts_last_hour"] > MAX_RESTARTS_PER_HOUR:
+        reasons.append(f"restarts {m['restarts_last_hour']} exceeds {MAX_RESTARTS_PER_HOUR}/hr")
+    if m["success_rate"] < MIN_SUCCESS_RATE:
+        reasons.append(f"success rate {m['success_rate']:.1%} below {MIN_SUCCESS_RATE:.0%}")
+    return reasons
+
+
 def _try_advance():
-    global _stable_since, _rollout_complete
+    global _stable_since
     workers, action, reasons = rollout.try_scale_up()
     if action == "scaled_up":
         _logger.info("advancing to step %d: %d workers",
                      rollout.get_current_step_index(), workers)
         with _lock:
             _stable_since = None
-        monitor.save_baseline()
     elif action == "rollback":
         _logger.warning("rollback: %s", "; ".join(reasons))
         with _lock:
             _stable_since = None
     elif action == "at_max":
         _logger.info("rollout complete: at max workers")
-        with _lock:
-            _rollout_complete = True
 
 
 def _scheduler_loop(task_fn, interval):
@@ -48,7 +57,7 @@ def _scheduler_loop(task_fn, interval):
     while not _stop_event.is_set():
         try:
             metrics = monitor.get_metrics()
-            reasons = monitor.check_rollback_needed()
+            reasons = _needs_rollback(metrics)
             now = time.monotonic()
             if reasons:
                 rollout.force_rollback(reason="; ".join(reasons))
@@ -81,12 +90,13 @@ def start_scheduler(task_fn, interval: float = 300.0) -> bool:
     Returns True if started, False if already running.
     """
     global _scheduler_thread
+    clamped = max(float(interval), _MIN_INTERVAL)
     with _lock:
         if _scheduler_thread is not None and _scheduler_thread.is_alive():
             return False
         _stop_event.clear()
         _scheduler_thread = threading.Thread(
-            target=_scheduler_loop, args=(task_fn, interval),
+            target=_scheduler_loop, args=(task_fn, clamped),
             daemon=True, name="rollout-scheduler",
         )
         _scheduler_thread.start()
@@ -112,10 +122,10 @@ def get_scheduler_status() -> dict:
     with _lock:
         running = _scheduler_thread is not None and _scheduler_thread.is_alive()
         stable_since = _stable_since
-        complete = _rollout_complete
     step = rollout.get_current_step_index()
     workers = rollout.get_current_workers()
     max_idx = len(ROLLOUT_STEPS) - 1
+    complete = step == max_idx
     next_workers = ROLLOUT_STEPS[step + 1] if step < max_idx else None
     now = time.monotonic()
     if stable_since is not None:
@@ -144,7 +154,6 @@ def advance_step() -> tuple[bool, str]:
     if action == "scaled_up":
         with _lock:
             _stable_since = None
-        monitor.save_baseline()
         return True, f"advanced to {workers} workers"
     if action == "rollback":
         with _lock:
@@ -155,7 +164,7 @@ def advance_step() -> tuple[bool, str]:
 
 def reset() -> None:
     """Reset scheduler state. Intended for testing."""
-    global _scheduler_thread, _stable_since, _rollout_complete
+    global _scheduler_thread, _stable_since
     _stop_event.set()
     with _lock:
         thread = _scheduler_thread
@@ -164,5 +173,4 @@ def reset() -> None:
     with _lock:
         _scheduler_thread = None
         _stable_since = None
-        _rollout_complete = False
     _stop_event.clear()
