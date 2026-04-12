@@ -63,8 +63,8 @@ def emit(event: dict) -> None:
                 fn(event)
             except Exception as exc:
                 _logger.warning("log_sink: sink %r raised: %s", fn, exc)
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("log_sink: unexpected emit failure: %s", exc)
 
 
 def get_status() -> dict:

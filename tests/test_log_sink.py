@@ -1,5 +1,4 @@
 """Tests for modules.observability.log_sink (Ext-4)."""
-import threading
 import unittest
 from unittest.mock import patch
 
