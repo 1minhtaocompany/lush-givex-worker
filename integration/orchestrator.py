@@ -21,6 +21,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from modules.billing import main as billing
 from modules.cdp import main as cdp
+from modules.delay.config import CDP_CALL_TIMEOUT as _CDP_CALL_TIMEOUT_CONFIG
 from modules.fsm import main as fsm
 from modules.fsm.main import ALLOWED_STATES as _FSM_STATES  # noqa: F401 — Imported from fsm canonical source; intentionally unused but enforces INV-FSM-01 at import time
 from modules.monitor import main as monitor
@@ -53,7 +54,7 @@ def _sanitize_redis_url(redis_url: str) -> str:
     except ValueError:
         pass  # Not a valid IP address — regular hostname, no brackets needed.
     port = f":{parsed.port}" if parsed.port is not None else ""
-    username = f"{parsed.username}:" if parsed.username else ":"
+    username = f"{parsed.username}:":" if parsed.username else ":"
     safe_netloc = f"{username}[REDACTED]@{host}{port}"
     return urlunsplit((parsed.scheme, safe_netloc, parsed.path, parsed.query, parsed.fragment))
 
@@ -92,7 +93,6 @@ _IDEMPOTENCY_STORE_PATH = Path(
 )
 
 # CDP call timeout — prevents worker threads from blocking indefinitely.
-from modules.delay.config import CDP_CALL_TIMEOUT as _CDP_CALL_TIMEOUT_CONFIG
 _CDP_CALL_TIMEOUT = float(os.getenv("CDP_CALL_TIMEOUT_SECONDS", str(_CDP_CALL_TIMEOUT_CONFIG)))
 _cdp_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=int(os.getenv("CDP_EXECUTOR_MAX_WORKERS", "8")),
@@ -196,7 +196,6 @@ def _save_idempotency_store() -> None:
             _IDEMPOTENCY_STORE_PATH,
             exc_info=True,
         )
-
 
 # ── Idempotency store abstraction (CRIT-01) ────────────────────────────────
 
@@ -368,7 +367,6 @@ def _shutdown_cdp_executor() -> None:
     with _cdp_executor_lock:
         _cdp_executor.shutdown(wait=False, cancel_futures=True)
 
-
 atexit.register(_shutdown_cdp_executor)
 
 
@@ -384,7 +382,6 @@ def _evict_expired_task_ids() -> None:
 
 
 # ── CDP timeout helper (HIGH-02) ──────────────────────────────────
-
 
 def _cdp_call_with_timeout(fn: Callable, *args: Any, timeout: float = _CDP_CALL_TIMEOUT, **kwargs: Any) -> Any:
     """Execute a CDP call with a caller-side timeout using the shared CDP executor.
@@ -613,5 +610,4 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
             _get_idempotency_store().release_inflight(task_id)
         # Clean up CDP driver to prevent registry memory leak (GAP-CDP-01).
         cdp.unregister_driver(worker_id)
-        # Clean up FSM state to prevent registry memory leak (HIGH-02 / FSM-002).
-        fsm.cleanup_worker(worker_id)
+        # Clean up FSM state to prevent registry memory leak (HIGH-02 / FSM-002).\n        fsm.cleanup_worker(worker_id)
