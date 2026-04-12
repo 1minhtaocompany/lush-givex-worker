@@ -1,5 +1,8 @@
 """BiometricProfile — Behavioral Anti-Detection Layer (Task 10.6).
 
+PRODUCTION STATUS: NOT WIRED. Not called from any production path.
+Planned integration: wrapper.py → fill_card() path (Phase 11).
+
 Generates biometric keystroke timing (log-normal distribution, burst
 patterns, 4×4 card-entry rhythm, Gaussian noise) on top of the delay
 engine.  Layer 2 — supplements, never replaces Layer 1.
@@ -11,7 +14,8 @@ Imports limited to ``modules.delay`` submodules (stdlib only).
 import random
 import threading
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
+from modules.delay.persona import PersonaProfile
+from modules.delay.config import MIN_TYPING_DELAY, MAX_TYPING_DELAY
 
 _KEYSTROKE_MAX: float = 0.3
 
@@ -21,6 +25,7 @@ class BiometricProfile:
 
     def __init__(self, persona: PersonaProfile) -> None:
         self._persona = persona
+        # seed+2: independent from persona (seed) and temporal (seed+1).
         self._rnd = random.Random(persona._seed + 2)
         self._rnd_lock = threading.Lock()
 

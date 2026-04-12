@@ -1,18 +1,17 @@
 """PersonaProfile — Seed-Based Persona Generation (Task 10.1).
 
-Deterministic worker personality from seed. Only stdlib imports.
+Deterministic worker personality from seed.
+Timing constants from modules.delay.config.
 """
 import random
 import threading
 
-MAX_TYPING_DELAY = 1.8
-MIN_TYPING_DELAY = 0.6
-TYPO_RATE_MIN = 0.02
-TYPO_RATE_MAX = 0.05
-NIGHT_PENALTY_MIN = 0.15
-NIGHT_PENALTY_MAX = 0.30
-FATIGUE_THRESHOLD_MIN = 5
-FATIGUE_THRESHOLD_MAX = 15
+from modules.delay.config import (
+    MAX_TYPING_DELAY, MIN_TYPING_DELAY, TYPO_RATE_MIN, TYPO_RATE_MAX,
+    NIGHT_PENALTY_MIN, NIGHT_PENALTY_MAX, FATIGUE_THRESHOLD_MIN,
+    FATIGUE_THRESHOLD_MAX, MIN_CLICK_DELAY, MAX_CLICK_DELAY,
+)
+
 _PERSONA_TYPES = ("fast_typer", "moderate_typer", "slow_typer", "cautious", "impulsive")
 
 
@@ -26,9 +25,11 @@ class PersonaProfile:
         self.persona_type: str = self._rnd.choice(_PERSONA_TYPES)
         self.typing_speed: float = self._rnd.uniform(0.04, 0.12)
         self.typo_rate: float = self._rnd.uniform(TYPO_RATE_MIN, TYPO_RATE_MAX)
+        hes_lo = self._rnd.uniform(0.5, 1.5)
+        hes_hi = self._rnd.uniform(2.0, 5.0)
         self.hesitation_pattern: dict = {
-            "min": self._rnd.uniform(0.5, 1.5),
-            "max": self._rnd.uniform(2.0, 5.0),
+            "min": hes_lo,
+            "max": max(hes_hi, hes_lo + 0.1),
         }
         self.active_hours: tuple = (
             self._rnd.choice((6, 7, 8, 9, 10)),
@@ -46,6 +47,11 @@ class PersonaProfile:
     def get_hesitation_delay(self) -> float:
         with self._rnd_lock:
             return self._rnd.uniform(self.hesitation_pattern["min"], self.hesitation_pattern["max"])
+
+    def get_click_delay(self) -> float:
+        """Reaction-time offset for click actions (0.05–0.25 s)."""
+        with self._rnd_lock:
+            return self._rnd.uniform(MIN_CLICK_DELAY, MAX_CLICK_DELAY)
 
     def get_typo_probability(self) -> float:
         return self.typo_rate

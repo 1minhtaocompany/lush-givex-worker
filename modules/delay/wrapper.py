@@ -8,15 +8,20 @@ Deterministic via seed-based random from PersonaProfile.
 """
 
 import functools
+import logging
 import threading
 import time
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
+from modules.delay.config import (
+    MAX_TYPING_DELAY, MIN_TYPING_DELAY, MIN_THINKING_DELAY, MAX_HESITATION_DELAY,
+)
+from modules.delay.persona import PersonaProfile
 from modules.delay.state import BehaviorStateMachine
-from modules.delay.engine import DelayEngine, MAX_HESITATION_DELAY
+from modules.delay.engine import DelayEngine
 from modules.delay.temporal import TemporalModel
 
-_MIN_THINKING_DELAY = 3.0
+_log = logging.getLogger(__name__)
+_INJECTABLE_ACTIONS = frozenset(("typing", "thinking"))
 
 
 def inject_step_delay(
@@ -57,6 +62,20 @@ def inject_step_delay(
     - Temporal modifier and micro-variation are applied
     - Thread-safe (reuses existing locks in engine and temporal)
     """
+    # Click: real sleep, bypass accumulator
+    if action_type == "click":
+        delay = engine.calculate_click_delay()
+        if delay > 0:
+            _log.debug("inject_step_delay: action=click delay=%.4fs", delay)
+            if stop_event is not None:
+                stop_event.wait(timeout=delay)
+            else:
+                time.sleep(delay)
+        return delay
+
+    if action_type not in _INJECTABLE_ACTIONS:
+        return 0.0
+
     if not engine.is_delay_permitted():
         return 0.0
 
@@ -69,7 +88,7 @@ def inject_step_delay(
     if action_type == "typing":
         delay = max(MIN_TYPING_DELAY, min(delay, MAX_TYPING_DELAY))
     elif action_type == "thinking":
-        delay = max(_MIN_THINKING_DELAY, min(delay, MAX_HESITATION_DELAY))
+        delay = max(MIN_THINKING_DELAY, min(delay, MAX_HESITATION_DELAY))
     else:
         return 0.0
 
@@ -80,6 +99,7 @@ def inject_step_delay(
         stop_event.wait(timeout=delay)
     else:
         time.sleep(delay)
+    _log.debug("inject_step_delay: action=%s delay=%.4fs", action_type, delay)
     return delay
 
 
@@ -106,6 +126,7 @@ def wrap(task_fn, persona: PersonaProfile, stop_event: threading.Event | None = 
     sm = BehaviorStateMachine()
     engine = DelayEngine(persona, sm)
     temporal = TemporalModel(persona)
+    _log.debug("wrap: persona_type=%s seed=%d", persona.persona_type, persona._seed)
 
     @functools.wraps(task_fn)
     def _wrapped(*args, **kwargs):

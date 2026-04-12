@@ -11,14 +11,14 @@ Deterministic via random.Random instance from PersonaProfile.
 
 import threading
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
+from modules.delay.config import (
+    MAX_TYPING_DELAY, MIN_TYPING_DELAY, MIN_THINKING_DELAY,
+    MAX_HESITATION_DELAY, MAX_STEP_DELAY, WATCHDOG_HEADROOM,
+)
+from modules.delay.persona import PersonaProfile
 from modules.delay.state import BehaviorStateMachine
 
-# ── Hard constraints (Blueprint §8.6, SPEC §10.6) ────────────────
-MAX_HESITATION_DELAY: float = 5.0
-MAX_STEP_DELAY: float = 7.0
-WATCHDOG_HEADROOM: float = 3.0
-_MIN_THINKING_DELAY: float = 3.0
+_MIN_THINKING_DELAY: float = MIN_THINKING_DELAY
 
 
 class DelayEngine:
@@ -55,8 +55,8 @@ class DelayEngine:
         return self._accumulate(clamped)
 
     def calculate_click_delay(self) -> float:
-        """Return click delay (≈0, spatial offset only)."""
-        return 0.0
+        """Return click reaction delay (0.05–0.25 s). NOT accumulated."""
+        return self._persona.get_click_delay()
 
     def calculate_thinking_delay(self) -> float:
         """Return thinking/hesitation delay (3.0–5.0 s, clamped).
