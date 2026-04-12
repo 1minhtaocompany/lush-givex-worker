@@ -108,7 +108,17 @@ def _parse_profile_line(line: str) -> BillingProfile | None:
 
 
 def _read_profiles_from_disk() -> collections.deque[BillingProfile]:
-    """Read and parse profiles from disk. Must be called without holding _lock."""
+    """Read and parse profiles from disk. Must be called without holding _lock.
+
+    Cold-start concurrency note:
+    Multiple threads may call this function simultaneously during cold-start.
+    This is intentional — redundant disk reads are cheaper than holding _lock
+    during I/O. The double-check publish-under-lock pattern in select_profile()
+    ensures only the first loaded result is used.
+
+    Each call creates a local Random instance for shuffle to avoid contending
+    on the global random module's internal state lock under concurrent cold-start.
+    """
     pool_dir = _pool_dir()
     profiles: list[BillingProfile] = []
     if pool_dir.is_dir():
@@ -125,7 +135,11 @@ def _read_profiles_from_disk() -> collections.deque[BillingProfile]:
                             profiles.append(profile)
             except OSError:
                 continue
-    random.shuffle(profiles)
+    # Use a local RNG instance instead of the global random module.
+    # This avoids shared global RNG state contention when multiple threads
+    # call _read_profiles_from_disk() concurrently during cold-start.
+    _local_rng = random.Random()
+    _local_rng.shuffle(profiles)
     return collections.deque(profiles)
 
 
