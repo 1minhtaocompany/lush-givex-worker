@@ -179,6 +179,30 @@ class TestStopServerTimeout(unittest.TestCase):
         self.assertTrue(result)
         self.assertFalse(is_running())
 
+    def test_start_after_timeout_cleans_stale_instance(self):
+        start_server(port=0)
+        time.sleep(0.05)
+        with healthcheck._lock:
+            old_inst = healthcheck._server_instance
+        # Force a timed-out stop — refs are preserved
+        stop_server(timeout=0.0)
+        # Wait for the old server thread to actually exit (shutdown was
+        # initiated in a daemon thread, so the serve_forever loop will
+        # stop shortly).
+        time.sleep(0.5)
+        self.assertFalse(is_running())
+        # _server_instance is still set (stale) even though thread is dead
+        with healthcheck._lock:
+            self.assertIsNotNone(healthcheck._server_instance)
+        # start_server() should clean up the stale instance, not leak it
+        result = start_server(port=0)
+        self.assertTrue(result)
+        self.assertTrue(is_running())
+        with healthcheck._lock:
+            new_inst = healthcheck._server_instance
+        # The new instance should be a different object (old one was closed)
+        self.assertIsNot(new_inst, old_inst)
+
     def test_reset_after_timeout_no_orphan(self):
         start_server(port=0)
         time.sleep(0.05)

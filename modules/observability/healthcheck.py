@@ -46,6 +46,25 @@ def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, status_fn=None) -> bool:
             return False
         if _server_thread is not None and _server_thread.is_alive():
             return False
+        # Cleanup stale state: thread exited after a timed-out stop attempt
+        # but _server_instance was never closed.
+        if (_server_thread is not None and not _server_thread.is_alive()
+                and _server_instance is not None):
+            stale_inst = _server_instance
+            _server_thread = None
+            _server_instance = None
+        else:
+            stale_inst = None
+    if stale_inst is not None:
+        try:
+            stale_inst.server_close()
+        except Exception:
+            pass
+    with _lock:
+        if _stopping:
+            return False
+        if _server_thread is not None and _server_thread.is_alive():
+            return False
         class _Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 ok = self.path == "/health"
