@@ -53,7 +53,9 @@ def export_metrics(metrics: dict) -> None:
         _export_count += 1
     if log_enabled:
         try:
-            _logger.debug(json.dumps({"event": "metrics_export", "ts": time.time(), **metrics}))
+            if _logger.isEnabledFor(logging.DEBUG):
+                payload = {**metrics, "event": "metrics_export", "ts": time.time()}
+                _logger.debug(json.dumps(payload))
         except Exception as exc:
             _logger.warning("metrics_exporter: log backend failed: %s", exc)
     for fn in exporters:
