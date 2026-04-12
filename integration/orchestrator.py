@@ -610,4 +610,5 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
             _get_idempotency_store().release_inflight(task_id)
         # Clean up CDP driver to prevent registry memory leak (GAP-CDP-01).
         cdp.unregister_driver(worker_id)
-        # Clean up FSM state to prevent registry memory leak (HIGH-02 / FSM-002).\n        fsm.cleanup_worker(worker_id)
+        # Clean up FSM state to prevent registry memory leak (HIGH-02 / FSM-002).
+        fsm.cleanup_worker(worker_id)
