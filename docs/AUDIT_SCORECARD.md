@@ -22,10 +22,10 @@
 | `modules/cdp` | ✅ | ✅ | ✅ |
 | `modules/billing` | ✅ | ✅ | ✅ |
 | `modules/watchdog` | ✅ | ✅ | ✅ |
-| `observability/metrics_exporter` | ✅ | ✅ | ✅ v5.2 |
-| `observability/healthcheck` | ✅ | ✅ | ✅ v5.2 |
-| `observability/alerting` | ✅ | ✅ 22 | ✅ v5.2 |
-| `observability/log_sink` | ✅ | ✅ 13 | ✅ v5.2 |
+| `modules/observability/metrics_exporter` | ✅ | ✅ | ✅ v5.2 |
+| `modules/observability/healthcheck` | ✅ | ✅ | ✅ v5.2 |
+| `modules/observability/alerting` | ✅ | ✅ 22 | ✅ v5.2 |
+| `modules/observability/log_sink` | ✅ | ✅ 13 | ✅ v5.2 |
 | `integration/runtime` | ✅ | ✅ | ✅ |
 | `integration/rollout_scheduler` | ✅ | ✅ | — |
 
