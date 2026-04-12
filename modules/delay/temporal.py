@@ -30,12 +30,7 @@ class TemporalModel:
 
     def __init__(self, persona: PersonaProfile) -> None:
         self._persona = persona
-        # Sub-seed derivation: seed+1 is intentional.
-        # Worker seeds are generated via zlib.crc32(worker_id.encode()) in runtime.py,
-        # producing non-adjacent 32-bit values. The +1 offset therefore does not cause
-        # practical cross-stream correlation between persona and temporal RNG streams.
-        # Do NOT change this offset without updating all determinism tests in
-        # test_phase10_safety.py — the test suite locks the exact output sequence.
+        # seed+1: intentional offset; worker seeds are CRC32-derived (non-adjacent). See FULL_AUDIT.txt.
         self._rnd = random.Random(persona._seed + 1)
         self._rnd_lock = threading.Lock()
 

@@ -30,8 +30,7 @@ class BiometricProfile:
 
     def __init__(self, persona: PersonaProfile) -> None:
         self._persona = persona
-        # Sub-seed: seed+2 ensures independence from persona (seed) and temporal (seed+1).
-        # See temporal.py for full rationale on offset-based sub-seed strategy.
+        # seed+2: independent from persona (seed) and temporal (seed+1).
         self._rnd = random.Random(persona._seed + 2)
         self._rnd_lock = threading.Lock()
 

@@ -21,8 +21,6 @@ import os
 _STEP_BUDGET_TOTAL: float = 10.0
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _env_float(name: str, default: float) -> float:
     raw = os.getenv(f"DELAY_{name}")
     if raw is None:
@@ -48,37 +46,21 @@ def _env_int(name: str, default: int) -> int:
             f"e.g. export DELAY_{name}=10"
         )
 
-
-# ── Typing ────────────────────────────────────────────────────────────────────
 MIN_TYPING_DELAY: float = _env_float("MIN_TYPING_DELAY", 0.6)
 MAX_TYPING_DELAY: float = _env_float("MAX_TYPING_DELAY", 1.8)
-
-# ── Hesitation / thinking ─────────────────────────────────────────────────────
 MIN_THINKING_DELAY: float = _env_float("MIN_THINKING_DELAY", 3.0)
 MAX_HESITATION_DELAY: float = _env_float("MAX_HESITATION_DELAY", 5.0)
-
-# ── Step-level accumulator ceiling ────────────────────────────────────────────
 MAX_STEP_DELAY: float = _env_float("MAX_STEP_DELAY", 7.0)
-
-# ── Watchdog headroom ─────────────────────────────────────────────────────────
 WATCHDOG_HEADROOM: float = _env_float("WATCHDOG_HEADROOM", 3.0)
-
-# ── Click delay (spatial / reaction offset, NOT accumulated) ──────────────────
 MIN_CLICK_DELAY: float = _env_float("MIN_CLICK_DELAY", 0.05)
 MAX_CLICK_DELAY: float = _env_float("MAX_CLICK_DELAY", 0.25)
-
-# ── CDP call timeout ──────────────────────────────────────────────────────────
 CDP_CALL_TIMEOUT: float = _env_float("CDP_CALL_TIMEOUT_SECONDS", 15.0)
-
-# ── Persona attribute ranges ──────────────────────────────────────────────────
 TYPO_RATE_MIN: float = _env_float("TYPO_RATE_MIN", 0.02)
 TYPO_RATE_MAX: float = _env_float("TYPO_RATE_MAX", 0.05)
 NIGHT_PENALTY_MIN: float = _env_float("NIGHT_PENALTY_MIN", 0.15)
 NIGHT_PENALTY_MAX: float = _env_float("NIGHT_PENALTY_MAX", 0.30)
 FATIGUE_THRESHOLD_MIN: int = _env_int("FATIGUE_THRESHOLD_MIN", 5)
 FATIGUE_THRESHOLD_MAX: int = _env_int("FATIGUE_THRESHOLD_MAX", 15)
-
-# ── Temporal ──────────────────────────────────────────────────────────────────
 DAY_START: int = _env_int("DAY_START", 6)
 DAY_END: int = _env_int("DAY_END", 21)
 NIGHT_SPEED_PENALTY_RANGE: tuple = (
@@ -94,8 +76,6 @@ NIGHT_TYPO_INCREASE_RANGE: tuple = (
     _env_float("NIGHT_TYPO_INCREASE_RANGE_MAX", 0.02),
 )
 
-
-# ── Validation ────────────────────────────────────────────────────────────────
 
 def validate_config() -> None:
     """Validate all timing invariants.
