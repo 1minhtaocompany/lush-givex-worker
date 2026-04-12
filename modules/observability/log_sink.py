@@ -1,16 +1,11 @@
-"""Structured log sink — forward structured JSON log events to registered sinks (Ext-4).
-
-Thread-safe via threading.Lock. Stdlib only. No cross-module imports.
-Default backend: structured JSON log via Python logging at DEBUG level.
-Custom sinks can be registered via register_sink() / unregister_sink().
-"""
+"""Structured log sink — thread-safe structured JSON log emission (Ext-4)."""
 import json
 import logging
 import threading
 
 _logger = logging.getLogger(__name__)
 _lock = threading.Lock()
-_sinks: list = []  # list of callable(event: dict) -> None
+_sinks: list = []
 _emit_count: int = 0
 _log_sink_enabled = True
 
@@ -39,13 +34,7 @@ def set_log_sink_enabled(enabled: bool) -> None:
 
 
 def emit(event: dict) -> None:
-    """Emit a structured log event to all registered sinks.
-
-    Exceptions from individual sinks are caught and logged as warnings.
-    The default backend emits JSON at DEBUG level via Python logging.
-    Args:
-        event: dict with keys ts, source, level, event, data.
-    """
+    """Emit a structured log event to default backend and registered sinks."""
     global _emit_count
     try:
         with _lock:
