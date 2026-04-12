@@ -87,7 +87,16 @@ class TestStopWorker(RuntimeResetMixin, unittest.TestCase):
 
     def test_stop_running_worker_timeout_removes_zombie(self):
         barrier = threading.Event()
-        wid = start_worker(lambda _: barrier.wait(timeout=WORKER_BLOCK_TIMEOUT))
+        entered = threading.Event()
+
+        def _blocking_task(_wid):
+            entered.set()
+            barrier.wait(timeout=WORKER_BLOCK_TIMEOUT)
+
+        wid = start_worker(_blocking_task)
+        # Wait until the worker is actually inside the blocking call so that
+        # stop_worker's insufficient timeout genuinely expires.
+        entered.wait(timeout=2)
         try:
             self.assertFalse(stop_worker(wid, timeout=INSUFFICIENT_TIMEOUT))
             # Worker stays registered until thread naturally exits
