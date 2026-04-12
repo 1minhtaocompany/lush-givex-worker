@@ -76,5 +76,3 @@ def reset() -> None:
         _exporters = []
         _export_count = 0
         _log_export_enabled = True
-
-
