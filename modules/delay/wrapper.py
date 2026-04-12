@@ -78,7 +78,21 @@ def inject_step_delay(
     - Temporal modifier and micro-variation are applied
     - Thread-safe (reuses existing locks in engine and temporal)
     """
-    # Click and unknown types bypass the wrapper's behavioral injection model.
+    # ── Click: real sleep, bypass accumulator ────────────────────────────
+    if action_type == "click":
+        delay = engine.calculate_click_delay()
+        if delay > 0:
+            _log.debug(
+                "inject_step_delay: action=click injected=%.4fs (not accumulated)",
+                delay,
+            )
+            if stop_event is not None:
+                stop_event.wait(timeout=delay)
+            else:
+                time.sleep(delay)
+        return delay
+
+    # ── Accumulator-based actions (typing / thinking / focus / navigation) ──
     if action_type not in _INJECTABLE_ACTIONS:
         return 0.0
 

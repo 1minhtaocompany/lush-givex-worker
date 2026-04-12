@@ -15,8 +15,10 @@ explicitly to re-run the same checks (useful in tests and at startup).
 
 import os
 
-# ── Internal watchdog ceiling (from orchestrator / runtime spec) ──────────────
-_WATCHDOG_TIMEOUT: float = 10.0
+# Per-step budget invariant: MAX_STEP_DELAY + WATCHDOG_HEADROOM must not exceed this.
+# NOTE: This is NOT the orchestrator's _WATCHDOG_TIMEOUT (30 s network response timeout).
+# These two constants measure entirely different things and must not be conflated.
+_STEP_BUDGET_TOTAL: float = 10.0
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -28,7 +30,10 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        return default
+        raise ValueError(
+            f"Invalid env var DELAY_{name}={raw!r}: expected a float, "
+            f"e.g. export DELAY_{name}=1.5"
+        )
 
 
 def _env_int(name: str, default: int) -> int:
@@ -38,7 +43,10 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        return default
+        raise ValueError(
+            f"Invalid env var DELAY_{name}={raw!r}: expected an integer, "
+            f"e.g. export DELAY_{name}=10"
+        )
 
 
 # ── Typing ────────────────────────────────────────────────────────────────────
@@ -70,6 +78,9 @@ MAX_TYPING_BURST_DELAY: float = _env_float("MAX_TYPING_BURST_DELAY", 0.08)
 # ── Navigation delay (between page sections / scroll) ────────────────────────
 MIN_NAVIGATION_DELAY: float = _env_float("MIN_NAVIGATION_DELAY", 0.5)
 MAX_NAVIGATION_DELAY: float = _env_float("MAX_NAVIGATION_DELAY", 1.5)
+
+# ── CDP call timeout ──────────────────────────────────────────────────────────
+CDP_CALL_TIMEOUT: float = _env_float("CDP_CALL_TIMEOUT_SECONDS", 15.0)
 
 # ── Persona attribute ranges ──────────────────────────────────────────────────
 TYPO_RATE_MIN: float = _env_float("TYPO_RATE_MIN", 0.02)
@@ -113,10 +124,10 @@ def validate_config() -> None:
         raise ValueError(
             f"MIN_THINKING_DELAY ({MIN_THINKING_DELAY}) must be <= MAX_HESITATION_DELAY ({MAX_HESITATION_DELAY})"
         )
-    if not (MAX_STEP_DELAY + WATCHDOG_HEADROOM <= _WATCHDOG_TIMEOUT):
+    if not (MAX_STEP_DELAY + WATCHDOG_HEADROOM <= _STEP_BUDGET_TOTAL):
         raise ValueError(
-            f"MAX_STEP_DELAY ({MAX_STEP_DELAY}) + WATCHDOG_HEADROOM ({WATCHDOG_HEADROOM})"
-            f" = {MAX_STEP_DELAY + WATCHDOG_HEADROOM} must be <= _WATCHDOG_TIMEOUT ({_WATCHDOG_TIMEOUT})"
+            f"MAX_STEP_DELAY({MAX_STEP_DELAY}) + WATCHDOG_HEADROOM({WATCHDOG_HEADROOM})"
+            f" = {MAX_STEP_DELAY + WATCHDOG_HEADROOM} must be <= _STEP_BUDGET_TOTAL({_STEP_BUDGET_TOTAL})"
         )
     if not (TYPO_RATE_MIN <= TYPO_RATE_MAX):
         raise ValueError(
@@ -142,6 +153,8 @@ def validate_config() -> None:
         raise ValueError(
             f"MIN_NAVIGATION_DELAY ({MIN_NAVIGATION_DELAY}) must be < MAX_NAVIGATION_DELAY ({MAX_NAVIGATION_DELAY})"
         )
+    if not (CDP_CALL_TIMEOUT > 0):
+        raise ValueError(f"CDP_CALL_TIMEOUT({CDP_CALL_TIMEOUT}) must be > 0")
 
 
 # Validate at import time.

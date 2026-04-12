@@ -103,14 +103,37 @@ class TestConfigImportedByEngine(unittest.TestCase):
 
 class TestWatchdogInvariant(unittest.TestCase):
     def test_watchdog_invariant_max_step_plus_headroom(self):
-        from modules.delay.config import MAX_STEP_DELAY, WATCHDOG_HEADROOM
-        _WATCHDOG_TIMEOUT = 10.0
+        from modules.delay.config import MAX_STEP_DELAY, WATCHDOG_HEADROOM, _STEP_BUDGET_TOTAL
         self.assertLessEqual(
             MAX_STEP_DELAY + WATCHDOG_HEADROOM,
-            _WATCHDOG_TIMEOUT,
+            _STEP_BUDGET_TOTAL,
             f"MAX_STEP_DELAY({MAX_STEP_DELAY}) + WATCHDOG_HEADROOM({WATCHDOG_HEADROOM})"
-            f" must be <= _WATCHDOG_TIMEOUT({_WATCHDOG_TIMEOUT})",
+            f" must be <= _STEP_BUDGET_TOTAL({_STEP_BUDGET_TOTAL})",
         )
+
+
+class TestCanonicalDefaultValues(unittest.TestCase):
+    def test_step_budget_total_exists_and_correct(self):
+        from modules.delay.config import _STEP_BUDGET_TOTAL, MAX_STEP_DELAY, WATCHDOG_HEADROOM
+        self.assertEqual(_STEP_BUDGET_TOTAL, 10.0)
+        self.assertLessEqual(MAX_STEP_DELAY + WATCHDOG_HEADROOM, _STEP_BUDGET_TOTAL)
+
+    def test_cdp_call_timeout_positive(self):
+        from modules.delay.config import CDP_CALL_TIMEOUT
+        self.assertGreater(CDP_CALL_TIMEOUT, 0.0)
+        self.assertEqual(CDP_CALL_TIMEOUT, 15.0)
+
+    def test_invalid_float_env_raises_on_reload(self):
+        import importlib
+        import os
+        from unittest.mock import patch
+        import modules.delay.config as cfg
+        with patch.dict(os.environ, {"DELAY_MAX_STEP_DELAY": "not_a_float"}):
+            with self.assertRaises(ValueError) as cm:
+                importlib.reload(cfg)
+            self.assertIn("DELAY_MAX_STEP_DELAY", str(cm.exception))
+        # Restore defaults
+        importlib.reload(cfg)
 
 
 if __name__ == "__main__":

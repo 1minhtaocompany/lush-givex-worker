@@ -154,12 +154,13 @@ class TestInjectStepDelay(unittest.TestCase):
         self.assertGreaterEqual(result, 3.0)
         self.assertLessEqual(result, 5.0)
 
-    def test_click_returns_zero(self):
+    def test_click_injects_micro_delay(self):
         engine, temporal, _ = self._make_engine_and_temporal()
         with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
             result = inject_step_delay(engine, temporal, "click")
-        mock_sleep.assert_not_called()
-        self.assertEqual(result, 0.0)
+        mock_sleep.assert_called_once()
+        self.assertGreater(result, 0.0)
+        self.assertLessEqual(result, 0.25)
 
     def test_no_delay_in_critical_context(self):
         engine, temporal, sm = self._make_engine_and_temporal()

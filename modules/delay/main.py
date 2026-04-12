@@ -28,8 +28,8 @@ from modules.delay.config import (  # noqa: F401
     MIN_NAVIGATION_DELAY,
     MAX_NAVIGATION_DELAY,
     MIN_THINKING_DELAY,
+    CDP_CALL_TIMEOUT,
 )
-from modules.delay.calibration import CalibrationReport, run_calibration_loop  # noqa: F401
 
 __all__ = [
     "PersonaProfile",
@@ -63,6 +63,5 @@ __all__ = [
     "MIN_NAVIGATION_DELAY",
     "MAX_NAVIGATION_DELAY",
     "MIN_THINKING_DELAY",
-    "CalibrationReport",
-    "run_calibration_loop",
+    "CDP_CALL_TIMEOUT",
 ]

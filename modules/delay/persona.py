@@ -32,9 +32,11 @@ class PersonaProfile:
         self.persona_type: str = self._rnd.choice(_PERSONA_TYPES)
         self.typing_speed: float = self._rnd.uniform(0.04, 0.12)
         self.typo_rate: float = self._rnd.uniform(TYPO_RATE_MIN, TYPO_RATE_MAX)
+        hes_lo = self._rnd.uniform(0.5, 1.5)
+        hes_hi = self._rnd.uniform(2.0, 5.0)
         self.hesitation_pattern: dict = {
-            "min": self._rnd.uniform(0.5, 1.5),
-            "max": self._rnd.uniform(2.0, 5.0),
+            "min": hes_lo,
+            "max": max(hes_hi, hes_lo + 0.1),  # invariant: min < max always
         }
         self.active_hours: tuple = (
             self._rnd.choice((6, 7, 8, 9, 10)),

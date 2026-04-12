@@ -1,5 +1,13 @@
 """BiometricProfile — Behavioral Anti-Detection Layer (Task 10.6).
 
+PRODUCTION STATUS: NOT WIRED.
+This module is complete and tested but is NOT called from any production
+execution path (wrapper.py, engine.py, runtime.py, orchestrator.py).
+Planned integration point: wrapper.py → fill_card() path (Phase 11).
+
+Until Phase 11 is scoped, BiometricProfile is an experimental layer.
+Do not assume it is active in production based on its presence in this repo.
+
 Generates biometric keystroke timing (log-normal distribution, burst
 patterns, 4×4 card-entry rhythm, Gaussian noise) on top of the delay
 engine.  Layer 2 — supplements, never replaces Layer 1.
@@ -8,11 +16,11 @@ Thread-safe via threading.Lock.  Deterministic via random.Random(seed).
 Imports limited to ``modules.delay`` submodules (stdlib only).
 """
 
-import hashlib
 import random
 import threading
 
-from modules.delay.persona import PersonaProfile, MAX_TYPING_DELAY, MIN_TYPING_DELAY
+from modules.delay.persona import PersonaProfile
+from modules.delay.config import MIN_TYPING_DELAY, MAX_TYPING_DELAY
 
 _KEYSTROKE_MAX: float = 0.3
 
@@ -22,11 +30,9 @@ class BiometricProfile:
 
     def __init__(self, persona: PersonaProfile) -> None:
         self._persona = persona
-        # Hash-derived sub-seed reduces inter-stream correlation with TemporalModel.
-        _sub_seed = int(
-            hashlib.sha256(f"{persona._seed}:biometrics".encode()).hexdigest(), 16
-        ) % (2 ** 32)
-        self._rnd = random.Random(_sub_seed)
+        # Sub-seed: seed+2 ensures independence from persona (seed) and temporal (seed+1).
+        # See temporal.py for full rationale on offset-based sub-seed strategy.
+        self._rnd = random.Random(persona._seed + 2)
         self._rnd_lock = threading.Lock()
 
     def generate_keystroke_delay(self, char_index: int) -> float:
