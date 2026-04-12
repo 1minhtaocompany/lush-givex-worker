@@ -114,11 +114,11 @@ Output: None
 
 - **Entry points:**
   - `get_health(status_fn=None) -> dict`
-  - `start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, status_fn=None) -> bool`
+  - `start_server(host="127.0.0.1", port=8080, status_fn=None) -> bool`
   - `stop_server(timeout=5.0) -> bool`
   - `is_running() -> bool`
   - `reset() -> None`
-- **Dependency injection:** `status_fn` is a `Callable() -> dict` injected by the caller (typically `integration.runtime.get_deployment_status`) to avoid `modules → integration` import direction inversion
+- **Dependency injection:** `status_fn` is a `Callable() -> dict` injected by the caller (typically `integration.runtime.get_deployment_status`) to avoid `modules → integration` import direction inversion. When `status_fn` is omitted (`None`), `get_health()` returns `{"status": "unknown", "errors": ["status_fn not configured"]}`
 - **Health response schema:**
   ```json
   {
@@ -138,7 +138,7 @@ Output: None
 
 ---
 
-## Module: observability.log_sink
+## Module: modules.observability.log_sink
 
 - **Entry point:** `emit(event: dict) -> None`
 - **Called from:** `integration.runtime._log_event` alongside existing pipe-delimited format
