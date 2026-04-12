@@ -167,3 +167,43 @@ Any PR that modifies the following files MUST include an update to this document
 - `integration/runtime.py` (worker state transitions)
 - `modules/rollout/main.py` (SCALE_STEPS)
 - `modules/cdp/main.py` (PID registry, _sanitize_error, driver registry)
+
+---
+
+## PHASE 11 — BiometricProfile Wiring (2026-04-12)
+
+**Status:** IMPLEMENTED  
+**PR:** Phase 11 — Wire BiometricProfile  
+**Files modified:** `modules/delay/wrapper.py`, `modules/delay/biometrics.py`, `modules/delay/main.py`
+
+### New Function: `inject_card_entry_delays(bio, stop_event=None)`
+
+```
+modules/delay/wrapper.py — inject_card_entry_delays(bio: BiometricProfile, stop_event=None) -> list[float]
+```
+
+**Behavior:**
+- Calls `bio.generate_4x4_pattern()` → 19 delays (4 groups × 4 fast keystrokes + 3 inter-group pauses)
+- Sleeps each delay individually via `time.sleep()` or `stop_event.wait()`
+- Exits early if `stop_event.is_set()` between keystrokes
+- Returns list of slept delays
+
+### INV-BIO-01 — Layer 2 Non-Accumulation
+```
+inject_card_entry_delays() delays are NOT recorded in DelayEngine._step_accumulated.
+Individual keystroke delays (0.03–0.08s) and inter-group pauses (0.6–1.8s) are
+too small to matter for the watchdog budget and bypass the accumulator entirely.
+```
+**Rule:** `inject_card_entry_delays()` MUST NOT call `engine.accumulate_delay()` or `engine._accumulate()`. The watchdog step budget (`_STEP_BUDGET_TOTAL=10.0s`) applies only to Layer 1 delays.
+
+### INV-BIO-02 — Layer 2 RNG Independence
+```
+BiometricProfile._rnd = random.Random(persona._seed + 2)
+```
+**Rule:** BiometricProfile uses `seed+2` — independent from PersonaProfile (`seed`) and TemporalModel (`seed+1`). Draining PersonaProfile._rnd must NOT change BiometricProfile output.
+
+### INV-BIO-03 — stop_event Early Exit
+```
+inject_card_entry_delays() checks stop_event.is_set() BEFORE each keystroke.
+```
+**Rule:** When `stop_event` is provided and set, no sleep is performed and an empty list is returned. This ensures workers can be stopped cleanly mid-card-entry without blocking.

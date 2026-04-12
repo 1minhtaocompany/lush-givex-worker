@@ -19,6 +19,7 @@ from modules.delay.persona import PersonaProfile
 from modules.delay.state import BehaviorStateMachine
 from modules.delay.engine import DelayEngine
 from modules.delay.temporal import TemporalModel
+from modules.delay.biometrics import BiometricProfile
 
 _log = logging.getLogger(__name__)
 _INJECTABLE_ACTIONS = frozenset(("typing", "thinking"))
@@ -103,6 +104,53 @@ def inject_step_delay(
     return delay
 
 
+def inject_card_entry_delays(
+    bio: BiometricProfile,
+    stop_event: threading.Event | None = None,
+) -> list[float]:
+    """Inject per-keystroke biometric delays for a 16-digit card number entry.
+
+    Uses ``BiometricProfile.generate_4x4_pattern()`` to produce 19 delay
+    values (4 groups × 4 fast keystrokes + 3 inter-group pauses).  Each
+    delay is slept individually, simulating realistic per-character timing.
+
+    This is Layer 2 of the behavioral simulation — it supplements the
+    Layer 1 group-level typing delay already injected by ``inject_step_delay()``.
+    Both layers must be used together for full realism.
+
+    Parameters
+    ----------
+    bio : BiometricProfile
+        Initialised biometric profile instance bound to a worker persona.
+    stop_event : threading.Event | None
+        When provided, ``stop_event.wait(timeout=delay)`` is used instead
+        of ``time.sleep(delay)`` for each keystroke.  Returns early if the
+        event is set between keystrokes.
+
+    Returns
+    -------
+    list[float]
+        The list of 19 delay values that were requested (each individually
+        slept).  Values are NOT accumulated against the step accumulator —
+        they are too small to affect the watchdog budget.
+    """
+    delays = bio.generate_4x4_pattern()
+    slept: list[float] = []
+    for delay in delays:
+        if stop_event is not None and stop_event.is_set():
+            break
+        if delay <= 0:
+            slept.append(0.0)
+            continue
+        if stop_event is not None:
+            stop_event.wait(timeout=delay)
+        else:
+            time.sleep(delay)
+        slept.append(delay)
+        _log.debug("inject_card_entry_delays: keystroke delay=%.4fs", delay)
+    return slept
+
+
 def wrap(task_fn, persona: PersonaProfile, stop_event: threading.Event | None = None):
     """Return a wrapped version of task_fn with behavioral delay at SAFE ZONE only.
 
@@ -111,7 +159,10 @@ def wrap(task_fn, persona: PersonaProfile, stop_event: threading.Event | None = 
     card groups), callers should use :func:`inject_step_delay` directly before
     each field action.
 
-    Two delay injection points are applied around each call to ``task_fn``:
+    Two behavioral delay injection points are applied around each call to
+    ``task_fn``.  For card-entry realism (Layer 2), callers may additionally
+    call :func:`inject_card_entry_delays` with a ``BiometricProfile`` instance
+    before each card field fill:
 
     1. **Pre-form typing delay** (FILLING_FORM context) — simulates the
        hesitation before starting to interact with the form (Blueprint §4).

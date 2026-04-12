@@ -1,7 +1,7 @@
 """BiometricProfile — Behavioral Anti-Detection Layer (Task 10.6).
 
-PRODUCTION STATUS: NOT WIRED. Not called from any production path.
-Planned integration: wrapper.py → fill_card() path (Phase 11).
+PRODUCTION STATUS: WIRED (Phase 11). Called via inject_card_entry_delays()
+in modules/delay/wrapper.py for per-keystroke card-entry timing.
 
 Generates biometric keystroke timing (log-normal distribution, burst
 patterns, 4×4 card-entry rhythm, Gaussian noise) on top of the delay
