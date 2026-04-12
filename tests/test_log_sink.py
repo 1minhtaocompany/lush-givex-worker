@@ -65,8 +65,8 @@ class TestEmit(unittest.TestCase):
     def test_emit_exception_in_entire_function_does_not_propagate(self):
         """Even if the lock raises, emit must not propagate exceptions."""
         with patch.object(log_sink, "_lock") as mock_lock:
-            mock_lock.__enter__ = lambda s: (_ for _ in ()).throw(RuntimeError("lock error"))
-            mock_lock.__exit__ = lambda s, *a: False
+            mock_lock.__enter__.side_effect = RuntimeError("lock error")
+            mock_lock.__exit__.return_value = False
             # Must not raise
             log_sink.emit(_SAMPLE_EVENT)
 
