@@ -32,8 +32,6 @@ class ColdStartConcurrentTests(unittest.TestCase):
 
     def test_cold_start_concurrent_load(self):
         """16 threads hit cold-start simultaneously; no exceptions, all get BillingProfile."""
-        profile_line = "FirstA|LastA|1 St|City|NY|10001|2125550001|a@example.com"
-
         with tempfile.TemporaryDirectory() as tmpdir:
             for name in ("pool_a.txt", "pool_b.txt", "pool_c.txt"):
                 path = os.path.join(tmpdir, name)
@@ -129,8 +127,6 @@ class ColdStartConcurrentTests(unittest.TestCase):
 
     def test_cold_start_only_loads_once_per_pool(self):
         """After cold-start, pool is populated; subsequent concurrent calls don't overwrite it."""
-        profile_line = "F|L|1 St|City|NY|10001|2125550001|a@example.com"
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "pool.txt")
             with open(path, "w") as fh:

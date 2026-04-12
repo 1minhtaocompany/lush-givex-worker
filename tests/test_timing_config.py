@@ -18,20 +18,16 @@ class TestEnvOverrides(unittest.TestCase):
         import modules.delay.config as config
         with patch.dict(os.environ, {"DELAY_MIN_TYPING_DELAY": "0.1"}):
             importlib.reload(config)
-            try:
-                self.assertAlmostEqual(config.MIN_TYPING_DELAY, 0.1)
-            finally:
-                importlib.reload(config)  # restore defaults
+            self.assertAlmostEqual(config.MIN_TYPING_DELAY, 0.1)
+        importlib.reload(config)  # restore defaults after env patch is removed
 
     def test_env_override_max_step_delay(self):
         """DELAY_MAX_STEP_DELAY env var propagates to config.MAX_STEP_DELAY."""
         import modules.delay.config as config
         with patch.dict(os.environ, {"DELAY_MAX_STEP_DELAY": "6.0"}):
             importlib.reload(config)
-            try:
-                self.assertAlmostEqual(config.MAX_STEP_DELAY, 6.0)
-            finally:
-                importlib.reload(config)  # restore defaults
+            self.assertAlmostEqual(config.MAX_STEP_DELAY, 6.0)
+        importlib.reload(config)  # restore defaults after env patch is removed
 
 
 class TestInvalidConfigRaises(unittest.TestCase):
@@ -124,9 +120,6 @@ class TestCanonicalDefaultValues(unittest.TestCase):
         self.assertEqual(CDP_CALL_TIMEOUT, 15.0)
 
     def test_invalid_float_env_raises_on_reload(self):
-        import importlib
-        import os
-        from unittest.mock import patch
         import modules.delay.config as cfg
         with patch.dict(os.environ, {"DELAY_MAX_STEP_DELAY": "not_a_float"}):
             with self.assertRaises(ValueError) as cm:

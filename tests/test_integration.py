@@ -749,7 +749,8 @@ class CDPPoolSaturationTests(unittest.TestCase):
                 try:
                     f.result(timeout=1.0)
                 except _cf.CancelledError:
-                    pass
+                    # Task was cancelled before starting — acceptable, proceed to next iteration.
+                    continue
 
             # Verify the pool is still healthy and accepts new work
             final = executor.submit(lambda: "healthy")

@@ -1,6 +1,7 @@
 """Tests for PersonaProfile — Task 10.1."""
 import threading
 import unittest
+import zlib
 
 from modules.delay.persona import (
     PersonaProfile,
@@ -144,7 +145,7 @@ class WorkerSeedUniquenessTests(unittest.TestCase):
     def test_worker_seeds_produce_unique_personas(self):
         """Different worker IDs → different seeds → different persona attributes."""
         worker_ids = [f"worker-{i}" for i in range(1, 9)]
-        seeds = [hash(wid) & 0xFFFFFFFF for wid in worker_ids]
+        seeds = [zlib.crc32(wid.encode()) & 0xFFFFFFFF for wid in worker_ids]
         self.assertEqual(
             len(set(seeds)),
             len(seeds),
@@ -160,7 +161,7 @@ class WorkerSeedUniquenessTests(unittest.TestCase):
         )
 
     def test_same_worker_id_always_produces_same_persona(self):
-        seed = hash("worker-1") & 0xFFFFFFFF
+        seed = zlib.crc32(b"worker-1") & 0xFFFFFFFF
         p1 = PersonaProfile(seed)
         p2 = PersonaProfile(seed)
         self.assertEqual(p1.to_dict(), p2.to_dict())

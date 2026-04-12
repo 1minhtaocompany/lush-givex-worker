@@ -34,7 +34,9 @@ MAX_STEP_DELAY: float = _env_float("MAX_STEP_DELAY", 7.0)
 WATCHDOG_HEADROOM: float = _env_float("WATCHDOG_HEADROOM", 3.0)
 MIN_CLICK_DELAY: float = _env_float("MIN_CLICK_DELAY", 0.05)
 MAX_CLICK_DELAY: float = _env_float("MAX_CLICK_DELAY", 0.25)
-CDP_CALL_TIMEOUT: float = _env_float("CDP_CALL_TIMEOUT_SECONDS", 15.0)
+# CDP_CALL_TIMEOUT reads CDP_CALL_TIMEOUT_SECONDS (no DELAY_ prefix) to stay
+# compatible with integration/orchestrator.py which uses the same env var name.
+CDP_CALL_TIMEOUT: float = float(os.getenv("CDP_CALL_TIMEOUT_SECONDS", "15.0"))
 TYPO_RATE_MIN: float = _env_float("TYPO_RATE_MIN", 0.02)
 TYPO_RATE_MAX: float = _env_float("TYPO_RATE_MAX", 0.05)
 NIGHT_PENALTY_MIN: float = _env_float("NIGHT_PENALTY_MIN", 0.15)
