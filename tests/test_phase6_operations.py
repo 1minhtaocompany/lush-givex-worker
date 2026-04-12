@@ -1,8 +1,6 @@
 """Phase 6 Operations smoke tests — RUNBOOK, cleanup, and backup scripts."""
 import importlib.util
 import os
-import shutil
-import sys
 import tempfile
 import time
 import unittest
@@ -16,8 +14,12 @@ RUNBOOK_PATH = REPO_ROOT / "docs" / "operations" / "RUNBOOK.md"
 
 def _load_module(name: str, rel_path: str):
     """Load a script module from scripts/ by file path."""
-    path = REPO_ROOT / rel_path
+    path = (REPO_ROOT / rel_path).resolve()
     spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None:
+        raise ImportError(f"Could not create import spec for module {name!r} at {path}")
+    if spec.loader is None:
+        raise ImportError(f"Could not load module {name!r}: no loader available for {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -28,11 +30,28 @@ class TestCleanupBrowserProfiles(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.cleanup = _load_module("cleanup", "scripts/cleanup_browser_profiles.py")
+        cls.cleanup = None
+        cls.cleanup_path = SCRIPTS_DIR / "cleanup_browser_profiles.py"
+        cls._load_error = None
+
+    def _get_module(self):
+        if self.cleanup is not None:
+            return self.cleanup
+        if not self.cleanup_path.exists():
+            self.fail(f"Missing cleanup script: {self.cleanup_path}")
+        if self._load_error is not None:
+            self.fail(f"Failed to import cleanup script: {self._load_error}")
+        try:
+            type(self).cleanup = _load_module("cleanup", "scripts/cleanup_browser_profiles.py")
+        except Exception as exc:
+            type(self)._load_error = exc
+            self.fail(f"Failed to import cleanup script: {exc}")
+        return self.cleanup
 
     def _run(self, env_overrides):
+        mod = self._get_module()
         with patch.dict(os.environ, env_overrides, clear=False):
-            return self.cleanup.main()
+            return mod.main()
 
     def test_no_profiles_dir_exits_cleanly(self):
         """Non-existent browser_profiles dir → exit 0, no error."""
@@ -46,7 +65,6 @@ class TestCleanupBrowserProfiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             old_dir = os.path.join(tmp, "profile_old")
             os.makedirs(old_dir)
-            # make it appear 2 days old
             old_time = time.time() - 2 * 86400
             os.utime(old_dir, (old_time, old_time))
             code = self._run({"BROWSER_PROFILES_DIR": tmp, "MAX_PROFILE_AGE_DAYS": "1"})
@@ -63,11 +81,14 @@ class TestCleanupBrowserProfiles(unittest.TestCase):
             self.assertTrue(os.path.exists(fresh_dir))
 
     def test_custom_age_env_var(self):
-        """MAX_PROFILE_AGE_DAYS=0 removes all profile dirs immediately."""
+        """MAX_PROFILE_AGE_DAYS=1 removes dirs whose mtime is set to 2 days ago."""
         with tempfile.TemporaryDirectory() as tmp:
             for name in ("p1", "p2"):
-                os.makedirs(os.path.join(tmp, name))
-            code = self._run({"BROWSER_PROFILES_DIR": tmp, "MAX_PROFILE_AGE_DAYS": "0"})
+                d = os.path.join(tmp, name)
+                os.makedirs(d)
+                old_time = time.time() - 2 * 86400
+                os.utime(d, (old_time, old_time))
+            code = self._run({"BROWSER_PROFILES_DIR": tmp, "MAX_PROFILE_AGE_DAYS": "1"})
             self.assertEqual(code, 0)
             remaining = [e for e in os.listdir(tmp) if os.path.isdir(os.path.join(tmp, e))]
             self.assertEqual(remaining, [])
@@ -76,7 +97,6 @@ class TestCleanupBrowserProfiles(unittest.TestCase):
         """BROWSER_PROFILES_DIR env var overrides the default directory."""
         with tempfile.TemporaryDirectory() as tmp:
             custom = os.path.join(tmp, "my_profiles")
-            # does not exist → should exit cleanly without scanning default
             code = self._run({"BROWSER_PROFILES_DIR": custom})
             self.assertEqual(code, 0)
 
@@ -86,11 +106,28 @@ class TestBackupBillingPool(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.backup = _load_module("backup", "scripts/backup_billing_pool.py")
+        cls.backup = None
+        cls.backup_path = SCRIPTS_DIR / "backup_billing_pool.py"
+        cls._load_error = None
+
+    def _get_module(self):
+        if self.backup is not None:
+            return self.backup
+        if not self.backup_path.exists():
+            self.fail(f"Missing backup script: {self.backup_path}")
+        if self._load_error is not None:
+            self.fail(f"Failed to import backup script: {self._load_error}")
+        try:
+            type(self).backup = _load_module("backup", "scripts/backup_billing_pool.py")
+        except Exception as exc:
+            type(self)._load_error = exc
+            self.fail(f"Failed to import backup script: {exc}")
+        return self.backup
 
     def _run(self, env_overrides):
+        mod = self._get_module()
         with patch.dict(os.environ, env_overrides, clear=False):
-            return self.backup.main()
+            return mod.main()
 
     def test_no_source_dir_exits_cleanly(self):
         """Non-existent source dir → exit 0, no backup created."""
@@ -104,8 +141,7 @@ class TestBackupBillingPool(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_creates_timestamped_backup(self):
-        """Backup creates a subdir matching YYYYMMDD_HHMMSS pattern."""
-        import re
+        """Backup creates a subdir matching YYYYMMDD_HHMMSS_ffffff pattern."""
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "pool")
             os.makedirs(src)
@@ -115,7 +151,7 @@ class TestBackupBillingPool(unittest.TestCase):
             self.assertEqual(code, 0)
             subdirs = os.listdir(backup_root)
             self.assertEqual(len(subdirs), 1)
-            self.assertRegex(subdirs[0], r"^\d{8}_\d{6}$")
+            self.assertRegex(subdirs[0], r"^\d{8}_\d{6}_\d+$")
 
     def test_copies_txt_files_only(self):
         """Only .txt files are copied; .db and .json are ignored."""
@@ -139,7 +175,6 @@ class TestBackupBillingPool(unittest.TestCase):
             Path(src, "a.txt").touch()
             backup_root = os.path.join(tmp, "backups")
             os.makedirs(backup_root)
-            # pre-create 3 old backup dirs with sortably-older names
             for i in range(1, 4):
                 os.makedirs(os.path.join(backup_root, f"20200101_00000{i}"))
             code = self._run({
