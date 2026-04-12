@@ -13,14 +13,9 @@ import threading
 import time
 
 from modules.delay.config import (
-    MAX_TYPING_DELAY,
-    MAX_HESITATION_DELAY,
-    MAX_STEP_DELAY,
-    DAY_START,
-    DAY_END,
-    NIGHT_SPEED_PENALTY_RANGE,
-    NIGHT_HESITATION_INCREASE_RANGE,
-    NIGHT_TYPO_INCREASE_RANGE,
+    MAX_TYPING_DELAY, MAX_HESITATION_DELAY, MAX_STEP_DELAY,
+    DAY_START, DAY_END, NIGHT_SPEED_PENALTY_RANGE,
+    NIGHT_HESITATION_INCREASE_RANGE, NIGHT_TYPO_INCREASE_RANGE,
 )
 from modules.delay.persona import PersonaProfile
 
@@ -30,7 +25,7 @@ class TemporalModel:
 
     def __init__(self, persona: PersonaProfile) -> None:
         self._persona = persona
-        # seed+1: intentional offset; worker seeds are CRC32-derived (non-adjacent). See FULL_AUDIT.txt.
+        # seed+1: intentional offset; worker seeds are CRC32-derived (non-adjacent).
         self._rnd = random.Random(persona._seed + 1)
         self._rnd_lock = threading.Lock()
 

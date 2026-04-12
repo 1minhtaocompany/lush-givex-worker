@@ -1,24 +1,10 @@
-"""Centralized timing configuration for the delay module.
+"""Centralized timing configuration for modules.delay.
 
-All timing constants used across persona.py, engine.py, temporal.py, and
-wrapper.py are defined here as a single source of truth.
-
-Environment-variable overrides use the convention::
-
-    DELAY_<CONSTANT_NAME>
-
-For example: ``DELAY_MIN_TYPING_DELAY=0.5`` or ``DELAY_MAX_STEP_DELAY=6.0``.
-
-Constants are validated at import time; ``validate_config()`` can be called
-explicitly to re-run the same checks (useful in tests and at startup).
+Env overrides: DELAY_<CONSTANT_NAME>. Validated at import time.
 """
-
 import os
 
-# Per-step budget invariant: MAX_STEP_DELAY + WATCHDOG_HEADROOM must not exceed this.
-# NOTE: This is NOT the orchestrator's _WATCHDOG_TIMEOUT (30 s network response timeout).
-# These two constants measure entirely different things and must not be conflated.
-_STEP_BUDGET_TOTAL: float = 10.0
+_STEP_BUDGET_TOTAL: float = 10.0  # NOT orchestrator _WATCHDOG_TIMEOUT (30 s)
 
 
 def _env_float(name: str, default: float) -> float:
@@ -28,10 +14,7 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        raise ValueError(
-            f"Invalid env var DELAY_{name}={raw!r}: expected a float, "
-            f"e.g. export DELAY_{name}=1.5"
-        )
+        raise ValueError(f"Invalid DELAY_{name}={raw!r}: expected float")
 
 
 def _env_int(name: str, default: int) -> int:
@@ -41,10 +24,7 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        raise ValueError(
-            f"Invalid env var DELAY_{name}={raw!r}: expected an integer, "
-            f"e.g. export DELAY_{name}=10"
-        )
+        raise ValueError(f"Invalid DELAY_{name}={raw!r}: expected int")
 
 MIN_TYPING_DELAY: float = _env_float("MIN_TYPING_DELAY", 0.6)
 MAX_TYPING_DELAY: float = _env_float("MAX_TYPING_DELAY", 1.8)
@@ -78,44 +58,23 @@ NIGHT_TYPO_INCREASE_RANGE: tuple = (
 
 
 def validate_config() -> None:
-    """Validate all timing invariants.
-
-    Raises ``ValueError`` with a descriptive message if any invariant is
-    violated.  Called automatically at import time and can be called again
-    after modifying module-level constants in tests.
-    """
+    """Validate timing invariants. Raises ValueError on violation."""
     if not (MIN_TYPING_DELAY < MAX_TYPING_DELAY):
-        raise ValueError(
-            f"MIN_TYPING_DELAY ({MIN_TYPING_DELAY}) must be < MAX_TYPING_DELAY ({MAX_TYPING_DELAY})"
-        )
+        raise ValueError(f"MIN_TYPING_DELAY({MIN_TYPING_DELAY}) must be < MAX_TYPING_DELAY({MAX_TYPING_DELAY})")
     if not (MIN_THINKING_DELAY <= MAX_HESITATION_DELAY):
-        raise ValueError(
-            f"MIN_THINKING_DELAY ({MIN_THINKING_DELAY}) must be <= MAX_HESITATION_DELAY ({MAX_HESITATION_DELAY})"
-        )
+        raise ValueError(f"MIN_THINKING_DELAY({MIN_THINKING_DELAY}) must be <= MAX_HESITATION_DELAY({MAX_HESITATION_DELAY})")
     if not (MAX_STEP_DELAY + WATCHDOG_HEADROOM <= _STEP_BUDGET_TOTAL):
-        raise ValueError(
-            f"MAX_STEP_DELAY({MAX_STEP_DELAY}) + WATCHDOG_HEADROOM({WATCHDOG_HEADROOM})"
-            f" = {MAX_STEP_DELAY + WATCHDOG_HEADROOM} must be <= _STEP_BUDGET_TOTAL({_STEP_BUDGET_TOTAL})"
-        )
+        raise ValueError(f"MAX_STEP_DELAY({MAX_STEP_DELAY})+WATCHDOG_HEADROOM({WATCHDOG_HEADROOM}) must be <= {_STEP_BUDGET_TOTAL}")
     if not (TYPO_RATE_MIN <= TYPO_RATE_MAX):
-        raise ValueError(
-            f"TYPO_RATE_MIN ({TYPO_RATE_MIN}) must be <= TYPO_RATE_MAX ({TYPO_RATE_MAX})"
-        )
+        raise ValueError(f"TYPO_RATE_MIN({TYPO_RATE_MIN}) must be <= TYPO_RATE_MAX({TYPO_RATE_MAX})")
     if not (FATIGUE_THRESHOLD_MIN <= FATIGUE_THRESHOLD_MAX):
-        raise ValueError(
-            f"FATIGUE_THRESHOLD_MIN ({FATIGUE_THRESHOLD_MIN}) must be <= FATIGUE_THRESHOLD_MAX ({FATIGUE_THRESHOLD_MAX})"
-        )
+        raise ValueError(f"FATIGUE_THRESHOLD_MIN({FATIGUE_THRESHOLD_MIN}) must be <= FATIGUE_THRESHOLD_MAX({FATIGUE_THRESHOLD_MAX})")
     if not (NIGHT_PENALTY_MIN <= NIGHT_PENALTY_MAX):
-        raise ValueError(
-            f"NIGHT_PENALTY_MIN ({NIGHT_PENALTY_MIN}) must be <= NIGHT_PENALTY_MAX ({NIGHT_PENALTY_MAX})"
-        )
+        raise ValueError(f"NIGHT_PENALTY_MIN({NIGHT_PENALTY_MIN}) must be <= NIGHT_PENALTY_MAX({NIGHT_PENALTY_MAX})")
     if not (MIN_CLICK_DELAY < MAX_CLICK_DELAY):
-        raise ValueError(
-            f"MIN_CLICK_DELAY ({MIN_CLICK_DELAY}) must be < MAX_CLICK_DELAY ({MAX_CLICK_DELAY})"
-        )
+        raise ValueError(f"MIN_CLICK_DELAY({MIN_CLICK_DELAY}) must be < MAX_CLICK_DELAY({MAX_CLICK_DELAY})")
     if not (CDP_CALL_TIMEOUT > 0):
         raise ValueError(f"CDP_CALL_TIMEOUT({CDP_CALL_TIMEOUT}) must be > 0")
 
 
-# Validate at import time.
 validate_config()

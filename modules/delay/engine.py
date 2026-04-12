@@ -12,17 +12,12 @@ Deterministic via random.Random instance from PersonaProfile.
 import threading
 
 from modules.delay.config import (
-    MAX_TYPING_DELAY,
-    MIN_TYPING_DELAY,
-    MIN_THINKING_DELAY,
-    MAX_HESITATION_DELAY,
-    MAX_STEP_DELAY,
-    WATCHDOG_HEADROOM,
+    MAX_TYPING_DELAY, MIN_TYPING_DELAY, MIN_THINKING_DELAY,
+    MAX_HESITATION_DELAY, MAX_STEP_DELAY, WATCHDOG_HEADROOM,
 )
 from modules.delay.persona import PersonaProfile
 from modules.delay.state import BehaviorStateMachine
 
-# Re-export for backward compatibility with existing imports
 _MIN_THINKING_DELAY: float = MIN_THINKING_DELAY
 
 
@@ -60,11 +55,7 @@ class DelayEngine:
         return self._accumulate(clamped)
 
     def calculate_click_delay(self) -> float:
-        """Return click reaction delay (0.05–0.25 s, spatial offset).
-
-        Simulates the human reaction time between decision and physical click.
-        Uses persona RNG but is NOT accumulated (too small to matter for watchdog).
-        """
+        """Return click reaction delay (0.05–0.25 s). NOT accumulated."""
         return self._persona.get_click_delay()
 
     def calculate_thinking_delay(self) -> float:
@@ -77,7 +68,7 @@ class DelayEngine:
         if not self.is_delay_permitted():
             return 0.0
         raw = self._persona.get_hesitation_delay()
-        clamped = max(MIN_THINKING_DELAY, min(raw, MAX_HESITATION_DELAY))
+        clamped = max(_MIN_THINKING_DELAY, min(raw, MAX_HESITATION_DELAY))
         return self._accumulate(clamped)
 
     # ── dispatcher ───────────────────────────────────────────────
@@ -103,7 +94,7 @@ class DelayEngine:
             return max(MIN_TYPING_DELAY, min(raw, MAX_TYPING_DELAY))
         if action_type == "thinking":
             raw = self._persona.get_hesitation_delay()
-            return max(MIN_THINKING_DELAY, min(raw, MAX_HESITATION_DELAY))
+            return max(_MIN_THINKING_DELAY, min(raw, MAX_HESITATION_DELAY))
         if action_type == "click":
             return self.calculate_click_delay()
         return 0.0

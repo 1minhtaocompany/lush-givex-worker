@@ -1,22 +1,15 @@
 """PersonaProfile — Seed-Based Persona Generation (Task 10.1).
 
-Deterministic worker personality from seed. Only stdlib imports.
-Timing constants are imported from modules.delay.config.
+Deterministic worker personality from seed.
+Timing constants from modules.delay.config.
 """
 import random
 import threading
 
 from modules.delay.config import (
-    MAX_TYPING_DELAY,
-    MIN_TYPING_DELAY,
-    TYPO_RATE_MIN,
-    TYPO_RATE_MAX,
-    NIGHT_PENALTY_MIN,
-    NIGHT_PENALTY_MAX,
-    FATIGUE_THRESHOLD_MIN,
-    FATIGUE_THRESHOLD_MAX,
-    MIN_CLICK_DELAY,
-    MAX_CLICK_DELAY,
+    MAX_TYPING_DELAY, MIN_TYPING_DELAY, TYPO_RATE_MIN, TYPO_RATE_MAX,
+    NIGHT_PENALTY_MIN, NIGHT_PENALTY_MAX, FATIGUE_THRESHOLD_MIN,
+    FATIGUE_THRESHOLD_MAX, MIN_CLICK_DELAY, MAX_CLICK_DELAY,
 )
 
 _PERSONA_TYPES = ("fast_typer", "moderate_typer", "slow_typer", "cautious", "impulsive")
@@ -36,7 +29,7 @@ class PersonaProfile:
         hes_hi = self._rnd.uniform(2.0, 5.0)
         self.hesitation_pattern: dict = {
             "min": hes_lo,
-            "max": max(hes_hi, hes_lo + 0.1),  # invariant: min < max always
+            "max": max(hes_hi, hes_lo + 0.1),
         }
         self.active_hours: tuple = (
             self._rnd.choice((6, 7, 8, 9, 10)),

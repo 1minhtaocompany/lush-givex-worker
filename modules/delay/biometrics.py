@@ -1,12 +1,7 @@
 """BiometricProfile — Behavioral Anti-Detection Layer (Task 10.6).
 
-PRODUCTION STATUS: NOT WIRED.
-This module is complete and tested but is NOT called from any production
-execution path (wrapper.py, engine.py, runtime.py, orchestrator.py).
-Planned integration point: wrapper.py → fill_card() path (Phase 11).
-
-Until Phase 11 is scoped, BiometricProfile is an experimental layer.
-Do not assume it is active in production based on its presence in this repo.
+PRODUCTION STATUS: NOT WIRED. Not called from any production path.
+Planned integration: wrapper.py → fill_card() path (Phase 11).
 
 Generates biometric keystroke timing (log-normal distribution, burst
 patterns, 4×4 card-entry rhythm, Gaussian noise) on top of the delay
