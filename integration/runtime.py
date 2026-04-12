@@ -51,6 +51,9 @@ _restart_delay: float = 0
 _loop_error_count = 0
 _MAX_LOOP_ERRORS = 10
 def _should_stop_worker(worker_id):
+    t = _workers.get(worker_id)
+    if t is not None and t is not threading.current_thread():
+        return True
     return worker_id not in _workers or worker_id in _stop_requests or _state == "STOPPING"
 def _log_event(worker_id, state, action, metrics=None) -> None:
     with _trace_lock:
