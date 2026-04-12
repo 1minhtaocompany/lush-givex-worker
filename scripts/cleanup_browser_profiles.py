@@ -42,7 +42,7 @@ def main() -> int:
             if not entry.is_dir():
                 continue
             try:
-                if os.stat(entry).st_mtime < cutoff:
+                if entry.stat().st_mtime < cutoff:
                     shutil.rmtree(entry)
                     removed += 1
             except OSError as exc:

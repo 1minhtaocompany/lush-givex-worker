@@ -109,7 +109,7 @@ class TestBackupBillingPool(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "pool")
             os.makedirs(src)
-            open(os.path.join(src, "a.txt"), "w").close()
+            Path(src, "a.txt").touch()
             backup_root = os.path.join(tmp, "backups")
             code = self._run({"BILLING_POOL_DIR": src, "BILLING_BACKUP_DIR": backup_root})
             self.assertEqual(code, 0)
@@ -123,7 +123,7 @@ class TestBackupBillingPool(unittest.TestCase):
             src = os.path.join(tmp, "pool")
             os.makedirs(src)
             for fname in ("billing.txt", "extra.txt", "db.db", "data.json"):
-                open(os.path.join(src, fname), "w").close()
+                Path(src, fname).touch()
             backup_root = os.path.join(tmp, "backups")
             code = self._run({"BILLING_POOL_DIR": src, "BILLING_BACKUP_DIR": backup_root})
             self.assertEqual(code, 0)
@@ -136,7 +136,7 @@ class TestBackupBillingPool(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "pool")
             os.makedirs(src)
-            open(os.path.join(src, "a.txt"), "w").close()
+            Path(src, "a.txt").touch()
             backup_root = os.path.join(tmp, "backups")
             os.makedirs(backup_root)
             # pre-create 3 old backup dirs with sortably-older names
@@ -156,7 +156,7 @@ class TestBackupBillingPool(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "pool")
             os.makedirs(src)
-            open(os.path.join(src, "not_txt.db"), "w").close()
+            Path(src, "not_txt.db").touch()
             backup_root = os.path.join(tmp, "backups")
             code = self._run({"BILLING_POOL_DIR": src, "BILLING_BACKUP_DIR": backup_root})
             self.assertEqual(code, 0)
@@ -167,7 +167,7 @@ class TestBackupBillingPool(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "pool")
             os.makedirs(src)
-            open(os.path.join(src, "profiles.txt"), "w").close()
+            Path(src, "profiles.txt").touch()
             custom_backup = os.path.join(tmp, "custom_backups")
             code = self._run({
                 "BILLING_POOL_DIR": src,
