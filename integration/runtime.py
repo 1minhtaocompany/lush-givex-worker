@@ -554,3 +554,4 @@ def reset():
     monitor.reset()
     fsm.reset_states()
     fsm.reset_registry()
+    metrics_exporter.reset()
