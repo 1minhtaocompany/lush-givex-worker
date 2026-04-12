@@ -8,6 +8,7 @@ _logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _server_thread = None
 _server_instance = None
+_stopping = False
 DEFAULT_PORT = 8080
 DEFAULT_HOST = "127.0.0.1"
 _UNKNOWN = {"status": "unknown", "running": False, "state": "unknown",
@@ -41,6 +42,8 @@ def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT, status_fn=None) -> bool:
     """Start health check server in daemon thread. Returns True if started."""
     global _server_thread, _server_instance
     with _lock:
+        if _stopping:
+            return False
         if _server_thread is not None and _server_thread.is_alive():
             return False
         class _Handler(http.server.BaseHTTPRequestHandler):
@@ -64,23 +67,29 @@ def stop_server(timeout=5.0) -> bool:
 
     Thread-safety note: shutdown() is called under _lock; the subsequent
     join() and server_close() run outside _lock to avoid a deadlock with
-    the daemon thread (serve_forever acquires no public locks). is_running()
-    may return True briefly between shutdown() and the final state reset —
-    this accurately reflects that the thread is still alive until join completes.
+    the daemon thread (serve_forever acquires no public locks). A _stopping
+    flag prevents start_server() from racing during shutdown. If join()
+    times out, references are preserved so callers can retry.
     """
-    global _server_thread, _server_instance
+    global _server_thread, _server_instance, _stopping
     with _lock:
         if _server_instance is None or _server_thread is None or not _server_thread.is_alive():
             return False
         inst = _server_instance
+        thread = _server_thread
+        _stopping = True
         inst.shutdown()
-    _server_thread.join(timeout=timeout)
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        with _lock:
+            _stopping = False
+        return False
     inst.server_close()
     with _lock:
-        alive = _server_thread.is_alive()
         _server_thread = None
         _server_instance = None
-    return not alive
+        _stopping = False
+    return True
 
 
 def is_running() -> bool:
@@ -96,8 +105,9 @@ def reset() -> None:
     residual state under _lock. Not safe to call concurrently with
     start_server(); callers must ensure no concurrent server operations.
     """
-    global _server_thread, _server_instance
+    global _server_thread, _server_instance, _stopping
     stop_server()
     with _lock:
         _server_thread = None
         _server_instance = None
+        _stopping = False
