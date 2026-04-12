@@ -48,7 +48,7 @@ class TestGetHealth(unittest.TestCase):
         fn = MagicMock(return_value=_make_status(running=False, state="STOPPED"))
         result = get_health(fn)
         self.assertEqual(result["status"], "degraded")
-        self.assertTrue(len(result["errors"]) > 0)
+        self.assertGreater(len(result["errors"]), 0)
 
     def test_degraded_when_rollbacks_positive(self):
         fn = MagicMock(return_value=_make_status(running=True, consecutive_rollbacks=2))
