@@ -12,6 +12,7 @@ from modules.behavior import main as behavior
 from modules.fsm import main as fsm
 from modules.monitor import main as monitor
 from modules.observability import metrics_exporter
+from modules.observability import log_sink
 from modules.rollout import main as rollout
 from modules.delay.wrapper import wrap as _behavior_wrap
 from modules.delay.persona import PersonaProfile
@@ -62,6 +63,13 @@ def _log_event(worker_id, state, action, metrics=None) -> None:
         action,
         metrics or "",
     )
+    log_sink.emit({
+        "ts": time.time(),
+        "source": worker_id,
+        "level": state,
+        "event": action,
+        "data": metrics if isinstance(metrics, dict) else {},
+    })
 def _sanitize_error(exc: Exception) -> str:
     """Redact card-like digit sequences from exception messages before logging."""
     return _SENSITIVE_PATTERN.sub("[REDACTED]", str(exc))
@@ -555,3 +563,4 @@ def reset():
     fsm.reset_states()
     fsm.reset_registry()
     metrics_exporter.reset()
+    log_sink.reset()
