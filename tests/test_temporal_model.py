@@ -1,6 +1,7 @@
 """Tests for TemporalModel — Task 10.4."""
+import time
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from modules.delay.main import (
     PersonaProfile, MAX_TYPING_DELAY, MAX_HESITATION_DELAY, MAX_STEP_DELAY,
@@ -22,14 +23,12 @@ class TestTimeState(_TemporalSetup):
             self.assertIn(state, ("DAY", "NIGHT"))
 
     def test_known_day(self):
-        gmt = MagicMock()
-        gmt.tm_hour = 12
+        gmt = time.struct_time((2026, 1, 1, 12, 0, 0, 3, 1, 0))
         with patch("modules.delay.temporal.time.gmtime", return_value=gmt):
             self.assertEqual(self.tm.get_time_state(0), "DAY")
 
     def test_known_night(self):
-        gmt = MagicMock()
-        gmt.tm_hour = 3
+        gmt = time.struct_time((2026, 1, 1, 3, 0, 0, 3, 1, 0))
         with patch("modules.delay.temporal.time.gmtime", return_value=gmt):
             self.assertEqual(self.tm.get_time_state(0), "NIGHT")
 
@@ -157,8 +156,7 @@ class TestTimeStateBoundary(unittest.TestCase):
         self.tm = TemporalModel(self.persona)
 
     def _state_at_hour(self, hour: int) -> str:
-        gmt = MagicMock()
-        gmt.tm_hour = hour
+        gmt = time.struct_time((2026, 1, 1, hour, 0, 0, 3, 1, 0))
         with patch("modules.delay.temporal.time.gmtime", return_value=gmt):
             return self.tm.get_time_state(0)
 
@@ -283,26 +281,27 @@ class TestFatigueMultiPersona(unittest.TestCase):
                 f"seed={seed}: fatigue not triggered at threshold+1")
 
     def test_fatigue_clamped_to_max_step_delay_for_all_seeds(self):
-        """Extreme fatigue must never exceed MAX_STEP_DELAY for any seed."""
+        """Extreme fatigue must clamp at MAX_STEP_DELAY for any seed."""
         for seed in range(20):
             persona = PersonaProfile(seed)
             tm = TemporalModel(persona)
-            result = tm.apply_fatigue(MAX_HESITATION_DELAY, persona.fatigue_threshold + 1000)
-            self.assertLessEqual(result, MAX_STEP_DELAY,
-                f"seed={seed}: fatigue exceeded MAX_STEP_DELAY")
+            result = tm.apply_fatigue(MAX_STEP_DELAY, persona.fatigue_threshold + 1000)
+            self.assertEqual(result, MAX_STEP_DELAY,
+                f"seed={seed}: fatigue did not clamp to MAX_STEP_DELAY")
 
 
 class TestMicroVariationMultiSeed(unittest.TestCase):
     """Micro-variation must be reproducible and within ±10% for multiple seeds."""
 
     def test_reproducible_across_5_seeds(self):
-        """Same seed → same micro-variation value (verified for seeds 0–4)."""
+        """Same seed → same micro-variation sequence (verified for seeds 0–4)."""
+        sequence_length = 5
         for seed in range(5):
             tm1 = TemporalModel(PersonaProfile(seed))
             tm2 = TemporalModel(PersonaProfile(seed))
-            v1 = tm1.apply_micro_variation(1.0)
-            v2 = tm2.apply_micro_variation(1.0)
-            self.assertEqual(v1, v2, f"seed={seed}: micro-variation not reproducible")
+            seq1 = [tm1.apply_micro_variation(1.0) for _ in range(sequence_length)]
+            seq2 = [tm2.apply_micro_variation(1.0) for _ in range(sequence_length)]
+            self.assertEqual(seq1, seq2, f"seed={seed}: micro-variation sequence not reproducible")
 
     def test_different_seeds_produce_different_values(self):
         """Different seeds must produce at least some different micro-variation values."""
