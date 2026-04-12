@@ -194,20 +194,17 @@ def get_metrics():
         cutoff = time.time() - 3600
         restarts_hour = sum(1 for ts in _restart_timestamps if ts >= cutoff)
         baseline = _baseline_success_rate
-        error_counts_by_persona_snap = dict(_error_counts_by_persona)
-        success_counts_by_persona_snap = dict(_success_counts_by_persona)
-
-    return {
-        "success_count": success_count,
-        "error_count": error_count,
-        "success_rate": success_rate,
-        "error_rate": error_rate,
-        "memory_usage_bytes": mem,
-        "restarts_last_hour": restarts_hour,
-        "baseline_success_rate": baseline,
-        "error_counts_by_persona": error_counts_by_persona_snap,
-        "success_counts_by_persona": success_counts_by_persona_snap,
-    }
+        return {
+            "success_count": success_count,
+            "error_count": error_count,
+            "success_rate": success_rate,
+            "error_rate": error_rate,
+            "memory_usage_bytes": mem,
+            "restarts_last_hour": restarts_hour,
+            "baseline_success_rate": baseline,
+            "error_counts_by_persona": dict(_error_counts_by_persona),
+            "success_counts_by_persona": dict(_success_counts_by_persona),
+        }
 
 
 def check_rollback_needed():
