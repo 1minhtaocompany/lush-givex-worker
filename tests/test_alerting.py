@@ -1,5 +1,6 @@
 """Tests for modules.observability.alerting (Ext-2)."""
 import unittest
+from unittest import mock
 from modules.observability import alerting
 
 _NORMAL_METRICS = {
@@ -64,6 +65,13 @@ class TestEvaluateAlerts(unittest.TestCase):
         result = alerting.evaluate_alerts(metrics)
         self.assertEqual(result, [])
 
+    def test_success_rate_drop_at_exact_boundary_no_alert(self):
+        """success_rate exactly at baseline - 0.10 → no alert (threshold is strictly <)."""
+        metrics = {**_NORMAL_METRICS, "success_rate": 0.80, "baseline_success_rate": 0.90}
+        result = alerting.evaluate_alerts(metrics)
+        alerts_about_success = [a for a in result if "success_rate" in a]
+        self.assertEqual(alerts_about_success, [])
+
     def test_baseline_none_no_success_drop_alert(self):
         """baseline_success_rate=None → success drop alert not triggered."""
         metrics = {**_NORMAL_METRICS, "success_rate": 0.50, "baseline_success_rate": None}
@@ -79,7 +87,7 @@ class TestEvaluateAlerts(unittest.TestCase):
             self.fail(f"evaluate_alerts raised an exception with empty dict: {exc}")
 
     def test_multiple_alerts_returned(self):
-        """Multiple thresholds exceeded → multiple alerts returned."""
+        """Multiple thresholds exceeded → all 3 alerts returned."""
         metrics = {
             "error_rate": 0.10,
             "restarts_last_hour": 5,
@@ -87,7 +95,12 @@ class TestEvaluateAlerts(unittest.TestCase):
             "baseline_success_rate": 0.90,
         }
         result = alerting.evaluate_alerts(metrics)
-        self.assertGreaterEqual(len(result), 2)
+        error_rate_alerts = [a for a in result if "error_rate" in a]
+        restart_alerts = [a for a in result if "restarts_last_hour" in a]
+        success_alerts = [a for a in result if "success_rate" in a]
+        self.assertEqual(len(error_rate_alerts), 1)
+        self.assertEqual(len(restart_alerts), 1)
+        self.assertEqual(len(success_alerts), 1)
 
 
 class TestSendAlert(unittest.TestCase):
@@ -101,20 +114,15 @@ class TestSendAlert(unittest.TestCase):
         self.assertTrue(any("ALERT: test alert message" in line for line in cm.output))
 
     def test_send_alert_log_backend_disabled(self):
-        """send_alert does NOT log when log backend is disabled."""
+        """send_alert does NOT emit WARNING log when log backend is disabled."""
+        from modules.observability import alerting as _alerting_mod
         alerting.set_log_alert_enabled(False)
-        import logging
-        logger = logging.getLogger("modules.observability.alerting")
-        original_level = logger.level
-        logger.setLevel(logging.WARNING)
-        # No assertLogs means no WARNING emitted
-        calls = []
-        handler_fn = lambda msg: calls.append(msg)
-        alerting.register_alert_handler(handler_fn)
-        alerting.send_alert("silent alert")
-        # Custom handler still called; log not emitted
-        self.assertEqual(calls, ["silent alert"])
-        logger.setLevel(original_level)
+        with mock.patch.object(_alerting_mod._logger, "warning") as mock_warn:
+            alerting.send_alert("silent alert")
+            # Verify no WARNING call was made for "ALERT: ..." pattern
+            alert_calls = [c for c in mock_warn.call_args_list
+                           if c.args and "ALERT" in str(c.args[0])]
+            self.assertEqual(alert_calls, [])
 
     def test_send_alert_calls_custom_handler(self):
         """Custom handler receives the alert message."""
