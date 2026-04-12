@@ -1,11 +1,13 @@
 """Tests for BehaviorWrapper — Task 10.5."""
-import time
+import threading
 import unittest
 from unittest.mock import patch
 
 from modules.delay.main import PersonaProfile, wrap
 from modules.delay.state import BehaviorStateMachine
 from modules.delay.engine import DelayEngine
+from modules.delay.temporal import TemporalModel
+from modules.delay.wrapper import inject_step_delay
 
 
 def _dummy_task(worker_id):
@@ -36,8 +38,8 @@ class TestWrapAddsDelay(unittest.TestCase):
         wrapped = wrap(_dummy_task, persona)
         with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
             wrapped("w-1")
-            mock_sleep.assert_called_once()
-            delay_arg = mock_sleep.call_args[0][0]
+            mock_sleep.assert_called()
+            delay_arg = mock_sleep.call_args_list[0][0][0]
             self.assertGreater(delay_arg, 0.0, "sleep should be called with positive delay")
 
 
@@ -109,15 +111,154 @@ class TestDeterminism(unittest.TestCase):
         """Same seed must produce identical delay values across two independent wraps."""
         delays_a = []
         delays_b = []
-        for delays, seed in [(delays_a, 77), (delays_b, 77)]:
-            persona = PersonaProfile(seed)
-            wrapped = wrap(_dummy_task, persona)
-            with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
-                wrapped("w-1")
-                if mock_sleep.called:
-                    delays.append(mock_sleep.call_args[0][0])
+        with patch.object(TemporalModel, "get_time_state", return_value="DAY"):
+            for delays, seed in [(delays_a, 77), (delays_b, 77)]:
+                persona = PersonaProfile(seed)
+                wrapped = wrap(_dummy_task, persona)
+                with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+                    wrapped("w-1")
+                    for c in mock_sleep.call_args_list:
+                        delays.append(c[0][0])
         self.assertTrue(len(delays_a) > 0, "At least one delay should be generated")
         self.assertEqual(delays_a, delays_b, "Same seed must yield identical delay sequence")
+
+
+class TestInjectStepDelay(unittest.TestCase):
+    """Tests for the inject_step_delay() public helper (GAP-T1)."""
+
+    def _make_engine_and_temporal(self, seed=42):
+        persona = PersonaProfile(seed)
+        sm = BehaviorStateMachine()
+        engine = DelayEngine(persona, sm)
+        temporal = TemporalModel(persona)
+        sm.transition("FILLING_FORM")
+        return engine, temporal, sm
+
+    def test_typing_injects_positive_delay(self):
+        engine, temporal, _ = self._make_engine_and_temporal()
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            result = inject_step_delay(engine, temporal, "typing")
+        mock_sleep.assert_called_once()
+        self.assertGreater(result, 0.0)
+        self.assertAlmostEqual(result, engine.get_step_accumulated_delay(), places=10)
+
+    def test_thinking_injects_positive_delay(self):
+        engine, temporal, _ = self._make_engine_and_temporal()
+        with (
+            patch.object(TemporalModel, "get_time_state", return_value="DAY"),
+            patch("modules.delay.wrapper.time.sleep") as mock_sleep,
+        ):
+            result = inject_step_delay(engine, temporal, "thinking")
+        mock_sleep.assert_called_once()
+        self.assertGreater(result, 0.0)
+        self.assertGreaterEqual(result, 3.0)
+        self.assertLessEqual(result, 5.0)
+
+    def test_click_returns_zero(self):
+        engine, temporal, _ = self._make_engine_and_temporal()
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            result = inject_step_delay(engine, temporal, "click")
+        mock_sleep.assert_not_called()
+        self.assertEqual(result, 0.0)
+
+    def test_no_delay_in_critical_context(self):
+        engine, temporal, sm = self._make_engine_and_temporal()
+        sm.set_critical_section(True)
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            result = inject_step_delay(engine, temporal, "typing")
+        mock_sleep.assert_not_called()
+        self.assertEqual(result, 0.0)
+
+    def test_returns_actual_delay_value(self):
+        engine, temporal, _ = self._make_engine_and_temporal()
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            result = inject_step_delay(engine, temporal, "typing")
+        if mock_sleep.called:
+            self.assertAlmostEqual(result, mock_sleep.call_args[0][0], places=10)
+            self.assertAlmostEqual(result, engine.get_step_accumulated_delay(), places=10)
+
+    def test_stop_event_path_returns_requested_delay(self):
+        engine, temporal, _ = self._make_engine_and_temporal()
+        stop_event = threading.Event()
+        stop_event.set()
+        with patch.object(stop_event, "wait", wraps=stop_event.wait) as mock_wait:
+            result = inject_step_delay(engine, temporal, "typing", stop_event=stop_event)
+        mock_wait.assert_called_once()
+        self.assertAlmostEqual(result, mock_wait.call_args[1]["timeout"], places=10)
+
+    def test_accumulator_headroom_caps_requested_delay(self):
+        engine, temporal, _ = self._make_engine_and_temporal()
+        engine.accumulate_delay(6.8)
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            result = inject_step_delay(engine, temporal, "typing")
+        mock_sleep.assert_called_once()
+        self.assertAlmostEqual(result, 0.2, places=10)
+        self.assertAlmostEqual(engine.get_step_accumulated_delay(), 7.0, places=10)
+
+
+class TestWrapInjectsBothDelayTypes(unittest.TestCase):
+    """wrap() must inject typing AND thinking delays (GAP-T2)."""
+
+    def test_wrap_calls_sleep_twice(self):
+        """One sleep for typing (pre-form) and one for thinking (post-fill)."""
+        persona = PersonaProfile(42)
+        wrapped = wrap(_dummy_task, persona)
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            wrapped("w-1")
+        self.assertEqual(mock_sleep.call_count, 2, "Expected exactly 2 sleep calls")
+        for c in mock_sleep.call_args_list:
+            self.assertGreater(c[0][0], 0.0, "Each sleep call must use a positive delay")
+
+    def test_no_thinking_delay_on_exception(self):
+        """thinking delay must NOT be injected when task_fn raises."""
+        persona = PersonaProfile(42)
+        wrapped = wrap(_failing_task, persona)
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            with self.assertRaises(RuntimeError):
+                wrapped("w-1")
+        # Only the pre-form typing sleep should have fired.
+        self.assertEqual(mock_sleep.call_count, 1, "Only typing sleep expected on failure")
+
+
+class TestMultiStepFormSimulation(unittest.TestCase):
+    """Simulate per-field delay injection using inject_step_delay directly."""
+
+    def _make_components(self, seed=42):
+        persona = PersonaProfile(seed)
+        sm = BehaviorStateMachine()
+        engine = DelayEngine(persona, sm)
+        temporal = TemporalModel(persona)
+        return engine, temporal, sm
+
+    def test_5_fields_inject_5_delays(self):
+        """Simulate 5 form fields: 3 typing, 1 card typing, 1 thinking hesitation."""
+        engine, temporal, sm = self._make_components()
+        fields = ["typing", "typing", "typing", "typing", "thinking"]
+        with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
+            for action in fields:
+                sm.reset()
+                sm.transition("FILLING_FORM")
+                inject_step_delay(engine, temporal, action)
+                engine.reset_step_accumulator()
+        self.assertEqual(mock_sleep.call_count, 5, "Expected 5 sleep calls for 5 fields")
+
+    def test_accumulator_reset_between_steps(self):
+        """Resetting the accumulator between steps allows each step to inject a full delay."""
+        engine, temporal, sm = self._make_components()
+        sm.transition("FILLING_FORM")
+
+        with patch("modules.delay.wrapper.time.sleep"):
+            delay1 = inject_step_delay(engine, temporal, "typing")
+
+        # Without reset, the second call may be blocked if accumulator is near limit.
+        # After reset, a fresh positive delay should be possible.
+        engine.reset_step_accumulator()
+
+        with patch("modules.delay.wrapper.time.sleep"):
+            delay2 = inject_step_delay(engine, temporal, "typing")
+
+        self.assertGreater(delay1, 0.0, "First step should inject a positive delay")
+        self.assertGreater(delay2, 0.0, "Second step should inject a positive delay after reset")
 
 
 if __name__ == "__main__":
