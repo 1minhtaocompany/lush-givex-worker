@@ -80,7 +80,8 @@ class TestInterfaceCompatibility(unittest.TestCase):
 class TestEndToEndPipeline(unittest.TestCase):
     """End-to-end pipeline: persona → delay engine → wrap → execute. (CP-2, CP-3)"""
 
-    def test_full_pipeline_single_worker(self):
+    @patch("modules.delay.wrapper.time.sleep", return_value=None)
+    def test_full_pipeline_single_worker(self, _mock_sleep):
         """Single worker full pipeline: PersonaProfile → wrap() → execute dummy task."""
         import threading
         from modules.delay.main import PersonaProfile, wrap
@@ -219,7 +220,7 @@ class TestScalingIntegration(unittest.TestCase):
         }
         decision, reasons = evaluate(metrics, 1, 3)
         self.assertEqual(decision, SCALE_DOWN)
-        self.assertTrue(len(reasons) > 0)
+        self.assertGreater(len(reasons), 0)
 
 
 if __name__ == "__main__":
