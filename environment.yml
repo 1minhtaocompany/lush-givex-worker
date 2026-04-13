@@ -1,14 +1,31 @@
-name: base  # Tên của môi trường Conda
+name: selector-env  # Tên của môi trường Conda được cải tiến
 channels:
   - conda-forge
   - defaults
 dependencies:
   - python=3.10
+  # Thư viện cơ bản:
   - numpy
   - pandas
   - flake8
   - pytest
   - pytest-cov
-  - pip
+
+  # Thư viện xử lý HTTP và parsing:
   - pip:
-      - requests  # Cài đặt thư viện từ PyPI
+      - requests  # Gửi HTTP request
+      - httpx  # Gửi HTTP request with async support
+      - beautifulsoup4  # Trích xuất dữ liệu từ HTML
+      - lxml  # Parser nhanh xử lý DOM phức tạp
+      - selenium  # Tương tác với DOM động trong trình duyệt
+      - responses  # Mock HTTP trong unit test
+      - pytest-mock  # Mocking trong pytest
+
+  # Công cụ bổ sung:
+  - black  # Format code tự động
+  - isort  # Sắp xếp import Python
+  - mypy  # Kiểm tra kiểu dữ liệu tĩnh (static type checking)
+
+  # Framework triển khai:
+      - fastapi  # Phát triển API
+      - uvicorn  # Web server cho FastAPI
