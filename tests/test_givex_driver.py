@@ -23,7 +23,6 @@ from modules.cdp import driver as drv
 from modules.cdp.driver import (
     GivexDriver,
     SEL_ADD_TO_CART,
-    SEL_AMOUNT_INPUT,
     SEL_BEGIN_CHECKOUT,
     SEL_BILLING_ADDRESS,
     SEL_BILLING_CITY,
@@ -189,7 +188,7 @@ class TestAddToCartAndCheckout(unittest.TestCase):
 
         call_count = [0]
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             call_count[0] += 1
             clean = selector.strip()
             if clean == SEL_ADD_TO_CART:
@@ -213,7 +212,7 @@ class TestAddToCartAndCheckout(unittest.TestCase):
         selenium = _make_driver()
         cart_el = MagicMock()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             clean = selector.strip()
             if clean == SEL_ADD_TO_CART:
                 return [cart_el]
@@ -236,7 +235,7 @@ class TestSelectGuestCheckout(unittest.TestCase):
         email_el = MagicMock()
         continue_el = MagicMock()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             clean = selector.strip()
             if clean == SEL_BEGIN_CHECKOUT:
                 return [begin_el]
@@ -268,7 +267,7 @@ class TestSelectGuestCheckout(unittest.TestCase):
         selenium = _make_driver()
         begin_el = MagicMock()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             clean = selector.strip()
             if clean == SEL_BEGIN_CHECKOUT:
                 return [begin_el]
@@ -431,7 +430,7 @@ class TestRunFullCycle(unittest.TestCase):
         call_log = []
 
         def _step(name):
-            def fn(*args, **kwargs):
+            def fn(*_args, **_kwargs):
                 call_log.append(name)
             return fn
 
@@ -499,7 +498,7 @@ class TestDetectPageState(unittest.TestCase):
         confirm_el = MagicMock()
         first_confirm = SEL_CONFIRMATION_EL.split(",")[0].strip()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             if selector.strip() == first_confirm:
                 return [confirm_el]
             return []
@@ -513,7 +512,7 @@ class TestDetectPageState(unittest.TestCase):
         iframe_el = MagicMock()
         first_vbv = SEL_VBV_IFRAME.split(",")[0].strip()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             if selector.strip() == first_vbv:
                 return [iframe_el]
             return []
@@ -527,7 +526,7 @@ class TestDetectPageState(unittest.TestCase):
         err_el = MagicMock()
         first_declined = SEL_DECLINED_MSG.split(",")[0].strip()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             if selector.strip() == first_declined:
                 return [err_el]
             return []
@@ -550,7 +549,7 @@ class TestDetectPageState(unittest.TestCase):
         spinner_el = MagicMock()
         first_spinner = SEL_UI_LOCK_SPINNER.split(",")[0].strip()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             if selector.strip() == first_spinner:
                 return [spinner_el]
             return []
@@ -589,7 +588,7 @@ class TestNavigateToEgift(unittest.TestCase):
         selenium = _make_driver()
         btn_el = MagicMock()
 
-        def side_effect(method, selector):
+        def side_effect(_method, selector):
             clean = selector.strip()
             if clean == "#button--accept-cookies":
                 return []

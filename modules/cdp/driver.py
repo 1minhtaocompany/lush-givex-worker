@@ -8,10 +8,19 @@ touching the class.
 
 from __future__ import annotations
 
-import random
+import json as _json
+import logging
+import secrets
 import time
 
+try:
+    from selenium.webdriver.support.ui import Select  # type: ignore[import]
+except ImportError:  # pragma: no cover — tests mock _cdp_select_option
+    Select = None  # type: ignore[assignment,misc]
+
 from modules.common.exceptions import PageStateError, SelectorTimeoutError
+
+_log = logging.getLogger(__name__)
 
 # ── URL constants ─────────────────────────────────────────────────────────
 URL_GEO_CHECK = "https://lumtest.com/myip.json"
@@ -78,7 +87,7 @@ _GREETINGS = [
 
 def _random_greeting() -> str:
     """Return a random greeting message for the eGift form."""
-    return random.choice(_GREETINGS)
+    return secrets.choice(_GREETINGS)
 
 class GivexDriver:
     """Automates the Givex e-gift card purchase flow using CDP/Selenium.
@@ -153,8 +162,8 @@ class GivexDriver:
         el = elements[0]
         try:
             el.clear()
-        except Exception:
-            pass
+        except Exception as exc:  # clear() is best-effort; send_keys still runs
+            _log.debug("clear() skipped for selector %r: %s", selector, exc)
         el.send_keys(value)
 
     def _cdp_select_option(self, selector: str, value: str) -> None:
@@ -167,8 +176,6 @@ class GivexDriver:
         Raises:
             SelectorTimeoutError: if no matching element is found.
         """
-        from selenium.webdriver.support.ui import Select  # type: ignore[import]
-
         elements = self.find_elements(selector)
         if not elements:
             raise SelectorTimeoutError(selector, 0)
@@ -196,8 +203,6 @@ class GivexDriver:
         Raises:
             RuntimeError: if the detected country is not ``"US"``.
         """
-        import json as _json
-
         self._driver.get(URL_GEO_CHECK)
         try:
             body = self._driver.find_element("tag name", "body").text
@@ -221,8 +226,8 @@ class GivexDriver:
         if self.find_elements(SEL_COOKIE_ACCEPT):
             try:
                 self.bounding_box_click(SEL_COOKIE_ACCEPT)
-            except Exception:
-                pass
+            except Exception as exc:  # cookie banner is best-effort; continue navigation
+                _log.debug("Cookie banner click skipped: %s", exc)
         self._wait_for_element(SEL_BUY_EGIFT_BTN, timeout=10)
         self.bounding_box_click(SEL_BUY_EGIFT_BTN)
         self._driver.get(URL_EGIFT)
@@ -350,8 +355,8 @@ class GivexDriver:
             if elements:
                 try:
                     elements[0].clear()
-                except Exception:
-                    pass
+                except Exception as exc:  # field clear is best-effort
+                    _log.debug("clear() skipped for selector %r: %s", selector, exc)
 
     # ── Post-submit state detection (Step 5) ─────────────────────────────────
 
@@ -377,8 +382,8 @@ class GivexDriver:
         current_url = ""
         try:
             current_url = self._driver.current_url
-        except Exception:
-            pass
+        except Exception as exc:  # URL unavailable; fall through to element checks
+            _log.debug("current_url unavailable: %s", exc)
 
         # 1 — success
         if any(frag in current_url for frag in URL_CONFIRM_FRAGMENTS):
@@ -397,8 +402,8 @@ class GivexDriver:
             page_text = self._driver.find_element("tag name", "body").text.lower()
             if "declined" in page_text or "transaction failed" in page_text:
                 return "declined"
-        except Exception:
-            pass
+        except Exception as exc:  # body text unavailable; fall through
+            _log.debug("Page body text unavailable: %s", exc)
 
         # 4 — ui_lock
         if self.find_elements(SEL_UI_LOCK_SPINNER):
