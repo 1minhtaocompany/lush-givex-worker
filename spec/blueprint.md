@@ -4,11 +4,11 @@ Kiến trúc lõi & Cấu hình hệ thống:
 
 · Quy mô vận hành: WorkerPool quản lý 10+ luồng (Workers) chạy song song độc lập.(Có thể nâng cấp mạnh về sau)
 
-· Stagger Start (Khởi động so le): Sử dụng random.uniform(12, 25) giây giữa các lần gọi Worker để ch��ng màng lọc nhận diện chu kỳ mạng của Givex.
+· Stagger Start (Khởi động so le): Sử dụng random.uniform(12, 25) giây giữa các lần gọi Worker để chống màng lọc nhận diện chu kỳ mạng của Givex.
 
-· Công nghệ lõi: Python + Selenium bọc qua CDP (Chrome DevTools Protocol) và ghost-cursor. Toàn bộ thao tác chuột và phím được đẩy thẳng xuống cấp độ hệ điều hành, đảm bảo isTrusted=True 100%.
+· Công nghệ lõi: Python + Selenium bọc qua CDP (Chrome DevTools Protocol) và ghost-cursor. Toàn bộ thao tác chuột và phím được đẩy thẳng xuống cấp độ hệ điều hành (OS-level events), đảm bảo cờ isTrusted=True 100%.
 
-· Quản lý Proxy: Sử dụng Proxy tĩnh (SOCKS5/HTTP) map 1-1 với Profile trình duyệt Antidetect BitBrowser. Tuyệt đối KHÔNG tự động gọi API 9Proxy để lấy IP mới (người dùng tự cấu hình proxy thủ công).
+· Quản lý Proxy: Sử dụng Proxy tĩnh (SOCKS5/HTTP) map 1-1 với Profile trình duyệt Antidetect BitBrowser. Tuyệt đối KHÔNG tự động gọi API 9Proxy để lấy IP mới (ngăn chặn triệt để vòng lặp lỗi 402 đốt tiền).
 
 🎬 KỊCH BẢN VẬN HÀNH THỰC TẾ (1 CYCLE)
 
@@ -34,13 +34,13 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 2. Khởi động & Tiêm Nhân Cách (00:00 - 00:20)
 
-· Gắn Seed Hành Vi: Worker #1 được cấp một seed nhân cách ngẫu nhiên. Seed này quyết định tốc độ gõ phím, tỷ lệ cố tình gõ sai (mỗi worker có một tỷ lệ riêng), kiểu di chuột và thời gian ngập ngừng.
+· Gắn Seed Hành Vi: Worker #1 được cấp một seed nhân cách ngẫu nhiên. Seed này quyết định tốc độ gõ phím, tỷ lệ cố tình gõ sai (mỗi worker có một tỷ lệ riêng, ví dụ 2–5%), và thời gian ngập ngừng (hesitation) giữa các thao tác mục đích mô tả nhiều đối tượng con người như người già, người trẻ, phụ nữ, đàn ông ...
 
-· Kích hoạt BitBrowser & CDP: API BitBrowser được gọi để lấy vân tay (Fingerprint) mới. Trình duyệt mở ra. Trình điều khiển CDP và ghost-cursor lập tức được gắn vào.
+· Kích hoạt BitBrowser & CDP: API BitBrowser được gọi để lấy vân tay (Fingerprint) mới. Trình duyệt mở ra. Trình điều khiển CDP và ghost-cursor lập tức được gắn (attach) vào luồng.
 
-· Tab Janitor (Người Dọn Dẹp): Trình duyệt vừa bật lên kèm 4 tab rác (quảng cáo, trang chủ). Thuật toán quét mảng window_handles, đóng sập toàn bộ tab thừa, chỉ giữ lại 1 tab duy nhất.
+· Tab Janitor (Người Dọn Dẹp): Trình duyệt vừa bật lên kèm 4 tab rác (quảng cáo, trang chủ). Thuật toán quét mảng window_handles, đóng sập toàn bộ tab thừa, chỉ giữ lại đúng 1 tab hiện hành. Tab này được ép tải about:blank và dừng 2 giây để ổn định UI.
 
-· Pre-flight Geo Check: Điều hướng tab duy nhất vào lumtest.com/myip.json. Đọc JSON trả về để xác nhận country: "US". Nếu mạng lag báo lỗi no such window, hệ thống retry tối đa 3 lần trước khi đánh dấu worker lỗi.
+· Pre-flight Geo Check: Điều hướng tab duy nhất vào lumtest.com/myip.json. Đọc JSON trả về để xác nhận country: "US". Nếu mạng lag báo lỗi no such window, hệ thống thử lại tối đa 2 lần với khoảng cách 2 giây, kết hợp lệnh switch_to.window để bám sát tab.
 
 3. Xâm nhập & Cách ly Phiên (00:20 - 00:30)
 
@@ -48,7 +48,7 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 · URL mục tiêu: https://wwws-usa2.givex.com/cws4.0/lushusa/
 
-· Cookie banner: nếu xuất hiện popup, trục chuột ghost-cursor vẽ đường cong Bézier đến nút "Accept cookies" và click.
+· Cookie banner: nếu xuất hiện popup "This Site Uses Cookies", trục chuột ghost-cursor vẽ đường cong Bézier đến nút "Accept cookies" và click.
   Selector: #button--accept-cookies
 
 · Vào trang eGift: Click nút Buy E-Gift Cards.
@@ -56,7 +56,7 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 · Sau đó điều hướng tới URL tạo thẻ: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/
 
-· Hard-Reset State: Selenium thực thi script dọn sạch Cookies, Local Storage và Session Storage ngay lập tức. Giỏ hàng bị ép về trạng thái "trắng", loại trừ 100% rủi ro dữ liệu phiên cũ.
+· Hard-Reset State: Selenium thực thi script dọn sạch Cookies, Local Storage và Session Storage ngay lập tức. Giỏ hàng bị ép về trạng thái "trắng", loại trừ 100% rủi ro cộng dồn đơn hàng cũ.
 
 4. Mô Phỏng Sinh Học Trên Form (00:30 - 00:50)
 
@@ -66,7 +66,7 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 · Điền thông tin nhận thẻ (recipient):
 
-· Greeting Message: tự sinh ngẫu nhiên từ danh sách các câu chúc ngắn như "Happy Birthday!", "Best wishes", "Enjoy your gift!", "Thank you for being you", v.v. (có thể mở rộng danh sách).
+· Greeting Message: tự sinh ngẫu nhiên từ danh sách các câu chúc ngắn như "Happy Birthday!", "Best wishes", "Enjoy your gift!", "Thank you for being you", v.v. (có thể mở rộng).
   Selector: #cws_txt_gcMsg
 
 · Amount (Mệnh giá thẻ): sử dụng so_tien từ input.
@@ -90,9 +90,9 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 · Điền vào ô Billing Email (thường nằm ở khu vực thanh toán, sau khi vào checkout).
 
-· Gõ Phím CDP: Sử dụng lệnh Input.dispatchKeyEvent. Chữ được gõ lên form theo tốc độ của Seed. Quá trình gõ thỉnh thoảng cố tình gõ sai ký tự (theo tỷ lệ typo_rate của seed), sau đó xóa và gõ lại.
+· Gõ Phím CDP: Sử dụng lệnh Input.dispatchKeyEvent. Chữ được gõ lên form theo tốc độ của Seed. Quá trình gõ thỉnh thoảng cố tình gõ sai ký tự (theo tỷ lệ riêng của worker), dừng 0.5s, gõ phím Backspace (qua CDP) để xóa và sửa lại đúng.
 
-· Bounding Box Click (Lệch Tâm): Trỏ chuột đến nút "Add to Cart". Tọa độ click được tính bằng thuật toán: tâm của nút cộng trừ ngẫu nhiên (x ± 15, y ± 5). Click thực thi qua CDP Input.dispatchMouseEvent.
+· Bounding Box Click (Lệch Tâm): Trỏ chuột đến nút "Add to Cart". Tọa độ click được tính bằng thuật toán: tâm của nút cộng trừ ngẫu nhiên (x ± 15, y ± 5). Đảm bảo 10 luồng click vào 10 vị trí khác nhau trên cùng một nút.
   Selector: #cws_btn_gcBuyAdd > span
 
 · Chờ 3 giây, nút "Review & Checkout" hiện ra. Bot tiếp tục dùng Bounding Box Click để sang trang Giỏ hàng.
@@ -146,7 +146,7 @@ first_name|last_name|address|city|state|zip|phone|email
 
 · Khi cần chọn billing cho cycle hiện tại, đầu tiên tìm trong billing_list (theo thứ tự ưu tiên từ vị trí con trỏ trở đi) profile có zip khớp với zip từ MaxMind.
 
-· Nếu tìm thấy profile khớp zip, lấy profile đó và không thay đổi con trỏ (vì con trỏ chỉ dùng cho cơ chế tuần tự mặc định). Có thể dùng thêm một bộ đánh dấu đã dùng.
+· Nếu tìm thấy profile khớp zip, lấy profile đó và không thay đổi con trỏ (vì con trỏ chỉ dùng cho cơ chế tuần tự mặc định). Có thể dùng thêm một bộ đếm riêng để tránh lặp lại các profile đã dùng gần đây nếu cần.
 
 · Nếu không có profile nào khớp zip, lấy profile tại vị trí con trỏ hiện tại (theo cơ chế tuần tự) và sử dụng zip của profile đó (bỏ qua zip proxy).
 
@@ -158,7 +158,7 @@ first_name|last_name|address|city|state|zip|phone|email
 
 · Billing profile được chọn sẽ được cố định cho toàn bộ cycle (không thay đổi khi swap thẻ).
 
-· Chính sách billing xuyên suốt cycle: Trong toàn bộ vòng đời của một cycle, thông tin billing bao gồm tên, địa chỉ, số điện thoại, email được giữ nguyên không đổi.
+· Chính sách billing xuyên suốt cycle: Trong toàn bộ vòng đời của một cycle, thông tin billing bao gồm tên, địa chỉ, số điện thoại, email được giữ nguyên không thay đổi. Chỉ có thẻ thanh toán (số thẻ, CVV, ngày hết hạn) được thay đổi mỗi khi swap thẻ ở các ngã rẽ 3 và 4.
 
 · Total Watchdog (Giám sát Tổng Tiền – dùng CDP Network):
 
@@ -211,9 +211,9 @@ first_name|last_name|address|city|state|zip|phone|email
 
 · Thẻ đầu tiên được lấy từ input (của worker). Khi swap thẻ (ngã rẽ 3 hoặc 4), lấy thẻ tiếp theo từ OrderQueue (nếu có).
 
-· Đến trường Credit Card (16 số) (selector: #cws_txt_ccNum), bot gọi CDP gõ 4 số đầu -> Khựng lại 0.6s - 1.8s (mô phỏng người dùng đảo mắt nhìn xuống thẻ cứng) -> Gõ tiếp 4 số -> Khựng -> lặp lại cho đến hết 16 số.
+· Đến trường Credit Card (16 số) (selector: #cws_txt_ccNum), bot gọi CDP gõ 4 số đầu -> Khựng lại 0.6s - 1.8s (mô phỏng người dùng đảo mắt nhìn xuống thẻ cứng) -> Gõ tiếp 4 số -> Khựng lại. Cứ thế lặp lại đến hết.
 
-· Hesitation (Ngập ngừng): Điền xong CVV (selector: #cws_txt_ccCvv), con trỏ chuột lảng vảng quanh khu vực nút "COMPLETE PURCHASE" (selector: #cws_btn_checkoutPay) khoảng 3 - 5 giây. Cuộn chuột lên xuống nhẹ nhàng để "kiểm tra lại thông tin" trước khi click.
+· Hesitation (Ngập ngừng): Điền xong CVV (selector: #cws_txt_ccCvv), con trỏ chuột lảng vảng quanh khu vực nút "COMPLETE PURCHASE" (selector: #cws_btn_checkoutPay) khoảng 3 - 5 giây. Cuộn chuột lên xuống nhẹ nhàng để "kiểm tra lại" thông tin, sau đó mới tiến hành click lệch tâm.
 
 · Hoàn tất: Kiểm tra Order Total, click COMPLETE PURCHASE.
   Selector: #cws_btn_checkoutPay
@@ -226,13 +226,13 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Hiện tượng: Click "Complete Purchase" (selector: #cws_btn_checkoutPay) nhưng vòng xoay loading không chạy, form đơ.
 
-· Xử lý: Đợi 3 giây không phản hồi, chuột lập tức di chuyển ra ngoài form, click vào vùng khoảng trắng (Neutral Div) để kích hoạt sự kiện onBlur giải phóng focus. Sau đó click lại nút "COMPLETE PURCHASE" (selector: #cws_btn_checkoutPay).
+· Xử lý: Đợi 3 giây không phản hồi, chuột lập tức di chuyển ra ngoài form, click vào vùng khoảng trắng (Neutral Div) để kích hoạt sự kiện onBlur giải phóng JS. Sau đó vòng chuột lại tính toán Bounding Box mới và click dứt khoát lần 2 (selector: #cws_btn_checkoutPay).
 
 · Ngã rẽ 2: Success (Thành Công)
 
 · Hiện tượng: URL nhảy sang /confirmation, báo "Thank you for your order".
 
-· Xử lý: Chụp ảnh màn hình. Thuật toán làm mờ ảnh kích hoạt, che kín số thẻ và chỉ để lộ 6 số BIN đầu cùng 4 số cuối (Vd: 411111******1234). Bắn thông báo thành công.
+· Xử lý: Chụp ảnh màn hình. Thuật toán làm mờ ảnh kích hoạt, che kín số thẻ và chỉ để lộ 6 số BIN đầu cùng 4 số cuối (Vd: 411111******1234). Bắn thông báo về Telegram.
 
 · Ngã rẽ 3: VBV/3DS (Iframe Challenge)
 
@@ -240,7 +240,7 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Ràng buộc chờ: Tuyệt đối không refresh, không thao tác với trang chính trong thời gian chờ.
 
-· Xử lý (Dynamic Timeout): Đứng im từ 8 - 12 giây (random) chờ vòng xoay loading của ngân hàng tải xong hoàn toàn bộ khung HTML bên trong Iframe (tránh AI Fraud bắt lỗi hành vi nhanh bất thường).
+· Xử lý (Dynamic Timeout): Đứng im từ 8 - 12 giây (random) chờ vòng xoay loading của ngân hàng tải xong hoàn toàn bộ khung HTML bên trong Iframe (tránh AI Fraud bắt lỗi hành vi phi nhân loại).
 
 · Click trong Iframe với CDP:
 
@@ -262,9 +262,9 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Không dùng JavaScript removeNode để tránh desync Virtual DOM.
 
-· Sau khi popup biến mất (state reset), tiến hành xóa form bằng CDP (Ctrl+A + Backspace) và bơm lại thẻ mới theo đúng quy trình, bắt đầu từ bước điền thông tin thẻ thanh toán (§5 Payment Fields).
+· Sau khi popup biến mất (state reset), tiến hành xóa form bằng CDP (Ctrl+A + Backspace) và bơm lại thẻ mới theo đúng quy trình, bắt đầu từ bước điền thông tin thanh toán.
 
-· Lưu ý: Khi tắt VBV, site sẽ load lại hoàn toàn trang thanh toán (URL: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html), do đó cần điền lại toàn bộ thông tin (bao gồm thẻ mới và billing address) chứ không chỉ xóa ô thẻ.
+· Lưu ý: Khi tắt VBV, site sẽ load lại hoàn toàn trang thanh toán (URL: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html), do đó cần điền lại toàn bộ thông tin (bao gồm thẻ mới và billing address) chứ không chỉ xóa form. Quy trình fill lại tuân thủ đúng kịch bản từ bước "Bơm Dữ Liệu Thanh Toán" trở đi.
 
 · Form trả về trạng thái từ chối (error=vv). Nhảy sang Ngã rẽ 4 nếu vẫn thất bại.
 
@@ -274,19 +274,19 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Zero-Backtrack Soft Reset: TUYỆT ĐỐI KHÔNG TẢI LẠI TRANG (RELOAD).
 
-· Xóa Form bằng CDP: Chuột click vào ô Số Thẻ (selector: #cws_txt_ccNum). Bắn sự kiện CDP nhấn giữ Ctrl + A, sau đó bắn sự kiện Backspace. Form bị xóa trắng tự nhiên, kích hoạt đúng event handler của framework.
+· Xóa Form bằng CDP: Chuột click vào ô Số Thẻ (selector: #cws_txt_ccNum). Bắn sự kiện CDP nhấn giữ Ctrl + A, sau đó bắn sự kiện Backspace. Form bị xóa trắng tự nhiên, kích hoạt đúng các event validate của React/Angular. Làm tương tự với ô CVV.
 
-· Bơm Thẻ Mới (Next-Card Swap): Bốc thẻ tiếp theo từ OrderQueue. Lặp lại quy tắc gõ 4x4 (Nhìn - Nghĩ - Gõ) và thao tác ngập ngừng trước khi click "COMPLETE PURCHASE" (selector: #cws_btn_checkoutPay).
+· Bơm Thẻ Mới (Next-Card Swap): Bốc thẻ tiếp theo từ OrderQueue. Lặp lại quy tắc gõ 4x4 (Nhìn - Ngh�� - Gõ) và thao tác ngập ngừng trước khi click "COMPLETE PURCHASE" (selector: #cws_btn_checkoutPay) lại từ đầu.
 
 Ràng buộc bộ đếm swap chung:
 
-· Mỗi phiên trình duyệt (mỗi cycle) được phép swap tối đa số thẻ bằng đúng số lượng thẻ có sẵn trong OrderQueue đã cấp cho Worker (không có con số cố định).
+· Mỗi phiên trình duyệt (mỗi cycle) được phép swap tối đa số thẻ bằng đúng số lượng thẻ có sẵn trong OrderQueue đã cấp cho Worker (không có con số cố định, tùy chỉnh theo file order).
 
 · Bộ đếm swap được reset khi bắt đầu cycle mới (sau khi đóng trình duyệt hoặc khi lấy Profile BitBrowser mới).
 
 · Nếu hết thẻ trong OrderQueue mà chưa có Success, lập tức kết thúc cycle, đóng tab, trả Profile về trạng thái sạch, không thực hiện thêm hành động nào.
 
-· Bộ đếm swap áp dụng thống nhất cho cả hai ngã rẽ 3 và 4: mỗi lần bơm thẻ mới (bất kể từ ngã rẽ nào) đều tăng bộ đếm; khi đạt giới hạn thì dừng.
+· Bộ đếm swap áp dụng thống nhất cho cả hai ngã rẽ 3 và 4: mỗi lần bơm thẻ mới (bất kể từ ngã rẽ nào) đều tăng bộ đếm; khi đạt giới hạn thì dừng cycle.
 
 7. Rút Lui & Xoay Vòng (Cuối Cycle)
 
@@ -474,7 +474,7 @@ TẦNG 2 — BEHAVIORAL BIOMETRICS (BỔ SUNG — Phase 10):
 
   · Temporal noise (nhiễu thời gian):
     - Phân bố log-normal hoặc gaussian cho inter-keystroke delay
-    - Mỗi worker có distribution riêng d��a trên PersonaProfile seed
+    - Mỗi worker có distribution riêng dựa trên PersonaProfile seed
 
   · Burst typing (nhịp gõ không đều):
     - Mô phỏng người gõ nhanh rồi dừng, gõ nhanh rồi dừng
@@ -550,7 +550,7 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
   Day/Night model tăng cường Tầng 2 (§9 Behavioral Biometrics):
   - Temporal fingerprint đa dạng: cùng persona nhưng hành vi khác nhau theo giờ
   - Phá pattern đồng nhất: workers chạy cùng lúc nhưng có penalty factor khác nhau
-  - Non-periodic: kết hợp DAY/NIGHT + burst typing + hesitation → không có pattern lặp
+  - Non-periodic: kết hợp DAY/NIGHT + burst typing + hesitation → không có pattern l��p
   - Realistic variance: mô phỏng người thật — ban ngày nhanh, ban đêm chậm và hay nhầm
 
 · Quy tắc an toàn:
