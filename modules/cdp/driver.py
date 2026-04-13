@@ -49,6 +49,7 @@ SEL_REVIEW_CHECKOUT        = "#cws_btn_gcBuyCheckout"
 
 # ── Cart & Guest Checkout (Step 2) ───────────────────────────────────────────
 SEL_BEGIN_CHECKOUT = "#cws_btn_cartCheckout"
+SEL_GUEST_HEADING  = "#guestHeading"
 SEL_GUEST_EMAIL    = "#cws_txt_guestEmail"
 SEL_GUEST_CONTINUE = "#cws_btn_guestChkout"
 
@@ -120,10 +121,7 @@ class GivexDriver:
         """
         for part in selector.split(","):
             part = part.strip()
-            try:
-                elements = self._driver.find_elements("css selector", part)
-            except Exception:
-                elements = []
+            elements = self._driver.find_elements("css selector", part)
             if elements:
                 return elements
         return []
@@ -145,6 +143,33 @@ class GivexDriver:
                 return True
             time.sleep(0.5)
         return False
+
+    def _wait_for_url(self, url_fragment: str, timeout: int = 15) -> None:
+        """Poll until the current URL contains *url_fragment* or *timeout* expires.
+
+        Used after navigation-triggering actions (button clicks) to confirm
+        the browser has reached the expected page before interacting with
+        page-specific selectors.
+
+        Args:
+            url_fragment: Substring expected in the current URL.
+            timeout: Maximum seconds to wait (default 15).
+
+        Raises:
+            PageStateError: if the URL does not contain *url_fragment*
+                within *timeout* seconds.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            current = ""
+            try:
+                current = self._driver.current_url
+            except Exception:  # URL briefly unavailable during page transition
+                _log.debug("URL check deferred: page transition in progress")
+            if url_fragment in current:
+                return
+            time.sleep(0.5)
+        raise PageStateError(f"url_wait:{url_fragment}")
 
     def _cdp_type_field(self, selector: str, value: str) -> None:
         """Clear *selector* element and type *value* into it.
@@ -235,7 +260,7 @@ class GivexDriver:
                 _log.debug("Cookie banner click skipped: %s", exc)
         self._wait_for_element(SEL_BUY_EGIFT_BTN, timeout=10)
         self.bounding_box_click(SEL_BUY_EGIFT_BTN)
-        self._driver.get(URL_EGIFT)
+        self._wait_for_url(URL_EGIFT, timeout=15)
 
     # ── eGift form (Step 1) ─────────────────────────────────────────────────
 
@@ -256,35 +281,56 @@ class GivexDriver:
         self._cdp_type_field(SEL_SENDER_NAME, full_name)
 
     def add_to_cart_and_checkout(self) -> None:
-        """Click Add-to-Cart, wait for Review & Checkout button, then click it."""
+        """Click Add-to-Cart, wait for Review & Checkout button, then click it.
+
+        After clicking Review & Checkout, waits for the browser to reach
+        the cart page (``URL_CART``) before returning.
+        """
         self.bounding_box_click(SEL_ADD_TO_CART)
         found = self._wait_for_element(SEL_REVIEW_CHECKOUT, timeout=10)
         if not found:
             raise SelectorTimeoutError(SEL_REVIEW_CHECKOUT, 10)
         self.bounding_box_click(SEL_REVIEW_CHECKOUT)
+        self._wait_for_url(URL_CART, timeout=15)
 
     # ── Cart & Guest Checkout (Step 2) ───────────────────────────────────────
 
     def select_guest_checkout(self, guest_email: str) -> None:
-        """Click Begin Checkout, then enter guest email and click Continue.
+        """Click Begin Checkout, expand guest heading, enter email, and continue.
+
+        Steps:
+        1. Wait for and click Begin Checkout on the cart page.
+        2. Wait for the checkout page (``URL_CHECKOUT``).
+        3. Click the guest heading (``#guestHeading``) to expand the
+           guest checkout section.
+        4. Enter *guest_email* and click Continue.
+        5. Wait for the payment page (``URL_PAYMENT``).
 
         Args:
             guest_email: Email address to enter in the guest checkout field.
 
         Raises:
-            SelectorTimeoutError: if the Begin Checkout button or guest email
-                field never appears.
+            SelectorTimeoutError: if a required element never appears.
+            PageStateError: if a required page URL is not reached.
         """
         found = self._wait_for_element(SEL_BEGIN_CHECKOUT, timeout=10)
         if not found:
             raise SelectorTimeoutError(SEL_BEGIN_CHECKOUT, 10)
         self.bounding_box_click(SEL_BEGIN_CHECKOUT)
+        self._wait_for_url(URL_CHECKOUT, timeout=15)
+
+        # Expand the guest checkout section
+        found = self._wait_for_element(SEL_GUEST_HEADING, timeout=10)
+        if not found:
+            raise SelectorTimeoutError(SEL_GUEST_HEADING, 10)
+        self.bounding_box_click(SEL_GUEST_HEADING)
 
         found = self._wait_for_element(SEL_GUEST_EMAIL, timeout=10)
         if not found:
             raise SelectorTimeoutError(SEL_GUEST_EMAIL, 10)
         self._cdp_type_field(SEL_GUEST_EMAIL, guest_email)
         self.bounding_box_click(SEL_GUEST_CONTINUE)
+        self._wait_for_url(URL_PAYMENT, timeout=15)
 
     # ── Payment & Billing (Step 4 — same page) ──────────────────────────────
 
@@ -384,11 +430,7 @@ class GivexDriver:
         Raises:
             PageStateError: if the page state cannot be determined.
         """
-        current_url = ""
-        try:
-            current_url = self._driver.current_url
-        except Exception as exc:  # URL unavailable; fall through to element checks
-            _log.debug("current_url unavailable: %s", exc)
+        current_url = self._driver.current_url
 
         # 1 — success
         if any(frag in current_url for frag in URL_CONFIRM_FRAGMENTS):
@@ -403,12 +445,9 @@ class GivexDriver:
         # 3 — declined
         if self.find_elements(SEL_DECLINED_MSG):
             return "declined"
-        try:
-            page_text = self._driver.find_element("tag name", "body").text.lower()
-            if "declined" in page_text or "transaction failed" in page_text:
-                return "declined"
-        except Exception as exc:  # body text unavailable; fall through
-            _log.debug("Page body text unavailable: %s", exc)
+        page_text = self._driver.find_element("tag name", "body").text.lower()
+        if "declined" in page_text or "transaction failed" in page_text:
+            return "declined"
 
         # 4 — ui_lock
         if self.find_elements(SEL_UI_LOCK_SPINNER):

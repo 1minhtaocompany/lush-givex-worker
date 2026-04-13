@@ -42,15 +42,20 @@ from modules.cdp.driver import (
     SEL_GREETING_MSG,
     SEL_GUEST_CONTINUE,
     SEL_GUEST_EMAIL,
+    SEL_GUEST_HEADING,
     SEL_RECIPIENT_EMAIL,
     SEL_RECIPIENT_NAME,
     SEL_REVIEW_CHECKOUT,
     SEL_SENDER_NAME,
     SEL_UI_LOCK_SPINNER,
     SEL_VBV_IFRAME,
+    URL_BASE,
+    URL_CART,
+    URL_CHECKOUT,
     URL_CONFIRM_FRAGMENTS,
     URL_EGIFT,
     URL_GEO_CHECK,
+    URL_PAYMENT,
 )
 from modules.common.exceptions import PageStateError, SelectorTimeoutError
 from modules.common.types import BillingProfile, CardInfo, WorkerTask
@@ -120,6 +125,48 @@ class TestWaitForElement(unittest.TestCase):
         self.assertGreaterEqual(elapsed, 0.5)
 
 
+class TestWaitForUrl(unittest.TestCase):
+    """_wait_for_url returns when URL matches, raises PageStateError on timeout."""
+
+    def test_wait_for_url_returns_when_url_matches(self):
+        selenium = _make_driver(current_url=URL_EGIFT)
+        gd = GivexDriver(selenium)
+        # Should not raise
+        gd._wait_for_url("/e-gifts/", timeout=5)
+
+    def test_wait_for_url_raises_on_timeout(self):
+        selenium = _make_driver(current_url="https://example.com/other")
+        gd = GivexDriver(selenium)
+        with self.assertRaises(PageStateError):
+            gd._wait_for_url("/e-gifts/", timeout=1)
+
+
+class TestFindElements(unittest.TestCase):
+    """find_elements propagates driver exceptions instead of swallowing them."""
+
+    def test_find_elements_returns_matching_elements(self):
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        gd = GivexDriver(selenium)
+        result = gd.find_elements("#some-selector")
+        self.assertEqual(result, [element])
+
+    def test_find_elements_returns_empty_for_no_match(self):
+        selenium = _make_driver()
+        selenium.find_elements.return_value = []
+        gd = GivexDriver(selenium)
+        result = gd.find_elements("#missing")
+        self.assertEqual(result, [])
+
+    def test_find_elements_propagates_driver_exceptions(self):
+        selenium = _make_driver()
+        selenium.find_elements.side_effect = RuntimeError("session expired")
+        gd = GivexDriver(selenium)
+        with self.assertRaises(RuntimeError):
+            gd.find_elements("#any-selector")
+
+
 class TestFillEgiftForm(unittest.TestCase):
     """fill_egift_form types the correct value into each eGift field."""
 
@@ -182,7 +229,7 @@ class TestAddToCartAndCheckout(unittest.TestCase):
     """add_to_cart_and_checkout waits for the review button then clicks it."""
 
     def test_add_to_cart_waits_for_review_button(self):
-        selenium = _make_driver()
+        selenium = _make_driver(current_url=URL_CART)
         cart_el = MagicMock()
         review_el = MagicMock()
 
@@ -227,11 +274,12 @@ class TestAddToCartAndCheckout(unittest.TestCase):
 
 
 class TestSelectGuestCheckout(unittest.TestCase):
-    """select_guest_checkout: begin checkout → email → continue."""
+    """select_guest_checkout: begin checkout → heading → email → continue."""
 
     def test_select_guest_checkout_sequence(self):
         selenium = _make_driver()
         begin_el = MagicMock()
+        heading_el = MagicMock()
         email_el = MagicMock()
         continue_el = MagicMock()
 
@@ -239,6 +287,8 @@ class TestSelectGuestCheckout(unittest.TestCase):
             clean = selector.strip()
             if clean == SEL_BEGIN_CHECKOUT:
                 return [begin_el]
+            if clean == SEL_GUEST_HEADING:
+                return [heading_el]
             if clean == SEL_GUEST_EMAIL:
                 return [email_el]
             if clean == SEL_GUEST_CONTINUE:
@@ -248,10 +298,11 @@ class TestSelectGuestCheckout(unittest.TestCase):
         selenium.find_elements.side_effect = side_effect
         gd = GivexDriver(selenium)
 
-        with patch("time.sleep"):
+        with patch("time.sleep"), patch.object(gd, "_wait_for_url"):
             gd.select_guest_checkout("guest@example.com")
 
         begin_el.click.assert_called_once()
+        heading_el.click.assert_called_once()
         email_el.send_keys.assert_called_with("guest@example.com")
         continue_el.click.assert_called_once()
 
@@ -263,7 +314,7 @@ class TestSelectGuestCheckout(unittest.TestCase):
             with self.assertRaises(SelectorTimeoutError):
                 gd.select_guest_checkout("guest@example.com")
 
-    def test_select_guest_checkout_raises_if_email_field_missing(self):
+    def test_select_guest_checkout_raises_if_guest_heading_missing(self):
         selenium = _make_driver()
         begin_el = MagicMock()
 
@@ -275,7 +326,26 @@ class TestSelectGuestCheckout(unittest.TestCase):
 
         selenium.find_elements.side_effect = side_effect
         gd = GivexDriver(selenium)
-        with patch("time.sleep"):
+        with patch("time.sleep"), patch.object(gd, "_wait_for_url"):
+            with self.assertRaises(SelectorTimeoutError):
+                gd.select_guest_checkout("guest@example.com")
+
+    def test_select_guest_checkout_raises_if_email_field_missing(self):
+        selenium = _make_driver()
+        begin_el = MagicMock()
+        heading_el = MagicMock()
+
+        def side_effect(_method, selector):
+            clean = selector.strip()
+            if clean == SEL_BEGIN_CHECKOUT:
+                return [begin_el]
+            if clean == SEL_GUEST_HEADING:
+                return [heading_el]
+            return []
+
+        selenium.find_elements.side_effect = side_effect
+        gd = GivexDriver(selenium)
+        with patch("time.sleep"), patch.object(gd, "_wait_for_url"):
             with self.assertRaises(SelectorTimeoutError):
                 gd.select_guest_checkout("guest@example.com")
 
@@ -601,10 +671,10 @@ class TestDetectPageState(unittest.TestCase):
 
 
 class TestNavigateToEgift(unittest.TestCase):
-    """navigate_to_egift navigates to URL_EGIFT after clicking buy button."""
+    """navigate_to_egift waits for URL_EGIFT after clicking buy button."""
 
-    def test_navigate_to_egift_calls_url_egift(self):
-        selenium = _make_driver()
+    def test_navigate_to_egift_waits_for_url(self):
+        selenium = _make_driver(current_url=URL_EGIFT)
         btn_el = MagicMock()
 
         def side_effect(_method, selector):
@@ -619,9 +689,9 @@ class TestNavigateToEgift(unittest.TestCase):
         with patch("time.sleep"):
             gd.navigate_to_egift()
 
-        # Verify URL_EGIFT was navigated to
-        get_calls = [str(c) for c in selenium.get.call_args_list]
-        self.assertTrue(any(URL_EGIFT in c for c in get_calls))
+        # Verify only URL_BASE was navigated to (not URL_EGIFT directly)
+        selenium.get.assert_called_once_with(URL_BASE)
+        btn_el.click.assert_called_once()
 
 
 class TestPreflightGeoCheck(unittest.TestCase):
