@@ -162,8 +162,8 @@ class GivexDriver:
         el = elements[0]
         try:
             el.clear()
-        except Exception as exc:  # clear() is best-effort; send_keys still runs
-            _log.debug("clear() skipped for selector %r: %s", selector, exc)
+        except Exception:  # clear() is best-effort; send_keys still runs
+            _log.debug("clear() skipped for selector %r", selector)
         el.send_keys(value)
 
     def _cdp_select_option(self, selector: str, value: str) -> None:
@@ -175,7 +175,12 @@ class GivexDriver:
 
         Raises:
             SelectorTimeoutError: if no matching element is found.
+            RuntimeError: if the selenium ``Select`` helper is unavailable.
         """
+        if Select is None:
+            raise RuntimeError(
+                "selenium is not installed; cannot use _cdp_select_option"
+            )
         elements = self.find_elements(selector)
         if not elements:
             raise SelectorTimeoutError(selector, 0)
@@ -355,8 +360,8 @@ class GivexDriver:
             if elements:
                 try:
                     elements[0].clear()
-                except Exception as exc:  # field clear is best-effort
-                    _log.debug("clear() skipped for selector %r: %s", selector, exc)
+                except Exception:  # field clear is best-effort
+                    _log.debug("clear() skipped for selector %r", selector)
 
     # ── Post-submit state detection (Step 5) ─────────────────────────────────
 
