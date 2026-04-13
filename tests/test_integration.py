@@ -945,8 +945,14 @@ class CDPExecutorProductionSingletonTests(unittest.TestCase):
                 # Fill both executor slots
                 f1 = test_executor.submit(slow1)
                 f2 = test_executor.submit(slow2)
-                ready1.wait(timeout=2)
-                ready2.wait(timeout=2)
+                self.assertTrue(
+                    ready1.wait(timeout=2),
+                    "First executor worker did not start within timeout",
+                )
+                self.assertTrue(
+                    ready2.wait(timeout=2),
+                    "Second executor worker did not start within timeout",
+                )
 
                 # Both slots busy → calls must timeout
                 with self.assertRaises(SessionFlaggedError):
