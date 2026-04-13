@@ -3,8 +3,10 @@
 Covers:
 - fill_egift_form  — all fields are typed with correct values
 - add_to_cart_and_checkout — waits for review button then clicks it
-- select_guest_checkout — full sequence: begin → guest heading → email → continue
-- fill_billing_form — all billing fields filled, CONTINUE clicked
+- begin_checkout — waits for begin checkout button then clicks it
+- select_guest_checkout — email + continue sequence
+- fill_billing — all billing fields filled (address, country, state, city, zip, phone)
+- fill_billing_form — alias for fill_billing
 - run_full_cycle — steps called in the correct order
 - _wait_for_element — returns True when element found, False on timeout
 - detect_page_state — checks all URL_CONFIRM_FRAGMENTS, element presence,
@@ -13,7 +15,7 @@ Covers:
 
 import time
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from modules.cdp import driver as drv
 from modules.cdp.driver import (
@@ -21,12 +23,8 @@ from modules.cdp.driver import (
     SEL_ADD_TO_CART,
     SEL_AMOUNT_INPUT,
     SEL_BEGIN_CHECKOUT,
-    SEL_BILLING_CITY,
-    SEL_BILLING_CONTINUE,
-    SEL_BILLING_EMAIL,
-    SEL_BILLING_FIRST_NAME,
-    SEL_BILLING_LAST_NAME,
     SEL_BILLING_ADDRESS,
+    SEL_BILLING_CITY,
     SEL_BILLING_PHONE,
     SEL_BILLING_STATE,
     SEL_BILLING_ZIP,
@@ -40,7 +38,6 @@ from modules.cdp.driver import (
     SEL_GREETING_MSG,
     SEL_GUEST_CONTINUE,
     SEL_GUEST_EMAIL,
-    SEL_GUEST_HEADING,
     SEL_RECIPIENT_EMAIL,
     SEL_RECIPIENT_NAME,
     SEL_REVIEW_CHECKOUT,
@@ -57,9 +54,7 @@ def _make_driver(current_url: str = "https://example.com/page") -> MagicMock:
     """Build a minimal Selenium-like mock that returns no elements by default."""
     d = MagicMock()
     d.current_url = current_url
-    # Default: find_elements returns empty list (no element present)
     d.find_elements.return_value = []
-    # body element for text-based declined detection
     body_el = MagicMock()
     body_el.text = ""
     d.find_element.return_value = body_el
@@ -99,7 +94,6 @@ class TestWaitForElement(unittest.TestCase):
 
     def test_wait_for_element_returns_true_when_found(self):
         selenium = _make_driver()
-        # Simulate element appearing on the second poll
         element = MagicMock()
         selenium.find_elements.side_effect = [[], [element]]
         gd = GivexDriver(selenium)
@@ -111,21 +105,15 @@ class TestWaitForElement(unittest.TestCase):
         selenium = _make_driver()
         selenium.find_elements.return_value = []
         gd = GivexDriver(selenium)
-        # Use a very short timeout so the test runs fast
         start = time.monotonic()
         result = gd._wait_for_element("#missing", timeout=1)
         elapsed = time.monotonic() - start
         self.assertFalse(result)
-        # Sanity check: method did actually wait
         self.assertGreaterEqual(elapsed, 0.5)
 
 
 class TestFillEgiftForm(unittest.TestCase):
     """fill_egift_form types the correct value into each eGift field."""
-
-    def _make_field_el(self):
-        el = MagicMock()
-        return el
 
     def test_fill_egift_form_types_all_fields(self):
         selenium = _make_driver()
@@ -133,7 +121,6 @@ class TestFillEgiftForm(unittest.TestCase):
         billing = _make_billing()
         full_name = f"{billing.first_name} {billing.last_name}"
 
-        # Each find_elements call returns one element
         element = MagicMock()
         selenium.find_elements.return_value = [element]
 
@@ -142,17 +129,15 @@ class TestFillEgiftForm(unittest.TestCase):
         with patch.object(drv, "_random_greeting", return_value="Test greeting"):
             gd.fill_egift_form(task, billing)
 
-        # Collect all send_keys calls
-        send_keys_calls = element.send_keys.call_args_list
-
-        # Verify each expected value appears somewhere in send_keys calls
-        sent_values = [c.args[0] for c in send_keys_calls]
+        sent_values = [c.args[0] for c in element.send_keys.call_args_list]
         self.assertIn(str(task.amount), sent_values)
         self.assertIn(task.recipient_email, sent_values)
         self.assertIn(full_name, sent_values)
         self.assertIn("Test greeting", sent_values)
         # full_name appears twice: recipient name + sender name
         self.assertEqual(sent_values.count(full_name), 2)
+        # recipient_email appears twice: email + confirm email
+        self.assertEqual(sent_values.count(task.recipient_email), 2)
 
     def test_fill_egift_form_uses_billing_profile_name_as_sender(self):
         selenium = _make_driver()
@@ -175,9 +160,6 @@ class TestAddToCartAndCheckout(unittest.TestCase):
         cart_el = MagicMock()
         review_el = MagicMock()
 
-        # find_elements returns: [cart_el] for ADD_TO_CART, then [] for
-        # REVIEW_CHECKOUT (poll 1), then [review_el] (poll 2), then
-        # [review_el] again (the click call).
         call_count = [0]
 
         def side_effect(method, selector):
@@ -188,7 +170,6 @@ class TestAddToCartAndCheckout(unittest.TestCase):
             if clean == first_part_add:
                 return [cart_el]
             if clean == first_part_review:
-                # First two calls return empty (simulating wait), then return element
                 if call_count[0] <= 3:
                     return []
                 return [review_el]
@@ -200,9 +181,7 @@ class TestAddToCartAndCheckout(unittest.TestCase):
         with patch("time.sleep"):
             gd.add_to_cart_and_checkout()
 
-        # Cart button was clicked
         cart_el.click.assert_called_once()
-        # Review button was clicked after wait
         review_el.click.assert_called_once()
 
     def test_add_to_cart_raises_if_review_button_never_appears(self):
@@ -224,29 +203,49 @@ class TestAddToCartAndCheckout(unittest.TestCase):
                 gd.add_to_cart_and_checkout()
 
 
+class TestBeginCheckout(unittest.TestCase):
+    """begin_checkout waits for the begin checkout button then clicks it."""
+
+    def test_begin_checkout_clicks_button(self):
+        selenium = _make_driver()
+        begin_el = MagicMock()
+
+        def side_effect(method, selector):
+            if selector.strip() == SEL_BEGIN_CHECKOUT:
+                return [begin_el]
+            return []
+
+        selenium.find_elements.side_effect = side_effect
+        gd = GivexDriver(selenium)
+
+        with patch("time.sleep"):
+            gd.begin_checkout()
+
+        begin_el.click.assert_called_once()
+
+    def test_begin_checkout_raises_if_button_missing(self):
+        selenium = _make_driver()
+        selenium.find_elements.return_value = []
+        gd = GivexDriver(selenium)
+
+        with patch("time.sleep"):
+            with self.assertRaises(SelectorTimeoutError):
+                gd.begin_checkout()
+
+
 class TestSelectGuestCheckout(unittest.TestCase):
-    """select_guest_checkout executes the full cart → guest email sequence."""
+    """select_guest_checkout waits for guest email field, types email, clicks continue."""
 
     def test_select_guest_checkout_sequence(self):
         selenium = _make_driver()
-        begin_el = MagicMock()
-        guest_el = MagicMock()
         email_el = MagicMock()
         continue_el = MagicMock()
 
         def side_effect(method, selector):
             clean = selector.strip()
-            first_begin = SEL_BEGIN_CHECKOUT.split(",")[0].strip()
-            first_guest = SEL_GUEST_HEADING.strip()
-            first_email = SEL_GUEST_EMAIL.split(",")[0].strip()
-            first_continue = SEL_GUEST_CONTINUE.split(",")[0].strip()
-            if clean == first_begin:
-                return [begin_el]
-            if clean == first_guest:
-                return [guest_el]
-            if clean == first_email:
+            if clean == SEL_GUEST_EMAIL:
                 return [email_el]
-            if clean == first_continue:
+            if clean == SEL_GUEST_CONTINUE:
                 return [continue_el]
             return []
 
@@ -256,12 +255,10 @@ class TestSelectGuestCheckout(unittest.TestCase):
         with patch("time.sleep"):
             gd.select_guest_checkout("guest@example.com")
 
-        begin_el.click.assert_called_once()
-        guest_el.click.assert_called_once()
         email_el.send_keys.assert_called_with("guest@example.com")
         continue_el.click.assert_called_once()
 
-    def test_select_guest_checkout_raises_if_begin_checkout_missing(self):
+    def test_select_guest_checkout_raises_if_email_field_missing(self):
         selenium = _make_driver()
         selenium.find_elements.return_value = []
         gd = GivexDriver(selenium)
@@ -270,48 +267,33 @@ class TestSelectGuestCheckout(unittest.TestCase):
                 gd.select_guest_checkout("guest@example.com")
 
 
-class TestFillBillingForm(unittest.TestCase):
-    """fill_billing_form fills all fields and clicks CONTINUE."""
+class TestFillBilling(unittest.TestCase):
+    """fill_billing fills address, country, state, city, zip, phone fields."""
 
-    def test_fill_billing_form_clicks_continue(self):
+    def test_fill_billing_fills_all_fields(self):
         selenium = _make_driver()
         element = MagicMock()
-        continue_el = MagicMock()
-
-        first_continue = SEL_BILLING_CONTINUE.split(",")[0].strip()
-
-        def side_effect(method, selector):
-            clean = selector.strip()
-            if clean == first_continue:
-                return [continue_el]
-            return [element]
-
-        selenium.find_elements.side_effect = side_effect
+        selenium.find_elements.return_value = [element]
 
         billing = _make_billing()
         gd = GivexDriver(selenium)
 
-        # Patch _cdp_select_option to avoid Selenium Select dependency
         with patch.object(gd, "_cdp_select_option") as mock_select:
-            gd.fill_billing_form(billing)
-
-        # CONTINUE was clicked
-        continue_el.click.assert_called_once()
+            gd.fill_billing(billing)
 
         # State was selected by value
-        mock_select.assert_called_with(SEL_BILLING_STATE, billing.state)
+        state_calls = [c for c in mock_select.call_args_list if c.args[0] == SEL_BILLING_STATE]
+        self.assertTrue(len(state_calls) >= 1)
+        self.assertEqual(state_calls[0].args[1], billing.state)
 
         # All text fields received their values
         sent_values = [c.args[0] for c in element.send_keys.call_args_list]
-        self.assertIn(billing.first_name, sent_values)
-        self.assertIn(billing.last_name, sent_values)
         self.assertIn(billing.address, sent_values)
         self.assertIn(billing.city, sent_values)
         self.assertIn(billing.zip_code, sent_values)
         self.assertIn(billing.phone, sent_values)
-        self.assertIn(billing.email, sent_values)
 
-    def test_fill_billing_form_skips_optional_phone_when_none(self):
+    def test_fill_billing_skips_phone_when_none(self):
         selenium = _make_driver()
         element = MagicMock()
         selenium.find_elements.return_value = [element]
@@ -327,8 +309,17 @@ class TestFillBillingForm(unittest.TestCase):
         )
         gd = GivexDriver(selenium)
         with patch.object(gd, "_cdp_select_option"):
-            # Should not raise even with None phone/email
+            # Should not raise even with None phone
+            gd.fill_billing(billing)
+
+    def test_fill_billing_form_is_alias_for_fill_billing(self):
+        """fill_billing_form must delegate to fill_billing."""
+        selenium = _make_driver()
+        gd = GivexDriver(selenium)
+        billing = _make_billing()
+        with patch.object(gd, "fill_billing") as mock_fill:
             gd.fill_billing_form(billing)
+        mock_fill.assert_called_once_with(billing)
 
 
 class TestRunFullCycle(unittest.TestCase):
@@ -352,8 +343,9 @@ class TestRunFullCycle(unittest.TestCase):
             patch.object(gd, "navigate_to_egift", side_effect=_step("nav")),
             patch.object(gd, "fill_egift_form", side_effect=_step("egift")),
             patch.object(gd, "add_to_cart_and_checkout", side_effect=_step("cart")),
+            patch.object(gd, "begin_checkout", side_effect=_step("begin")),
             patch.object(gd, "select_guest_checkout", side_effect=_step("guest")),
-            patch.object(gd, "fill_billing_form", side_effect=_step("billing")),
+            patch.object(gd, "fill_billing", side_effect=_step("billing")),
             patch.object(gd, "fill_card", side_effect=_step("card")),
             patch.object(gd, "submit_purchase", side_effect=_step("submit")),
             patch.object(gd, "detect_page_state", return_value="success"),
@@ -362,7 +354,7 @@ class TestRunFullCycle(unittest.TestCase):
 
         self.assertEqual(
             call_log,
-            ["geo", "nav", "egift", "cart", "guest", "billing", "card", "submit"],
+            ["geo", "nav", "egift", "cart", "begin", "guest", "billing", "card", "submit"],
         )
         self.assertEqual(result, "success")
 
@@ -381,8 +373,9 @@ class TestRunFullCycle(unittest.TestCase):
             patch.object(gd, "navigate_to_egift"),
             patch.object(gd, "fill_egift_form"),
             patch.object(gd, "add_to_cart_and_checkout"),
+            patch.object(gd, "begin_checkout"),
             patch.object(gd, "select_guest_checkout", side_effect=capture_guest),
-            patch.object(gd, "fill_billing_form"),
+            patch.object(gd, "fill_billing"),
             patch.object(gd, "fill_card"),
             patch.object(gd, "submit_purchase"),
             patch.object(gd, "detect_page_state", return_value="success"),
