@@ -307,12 +307,11 @@ class GivexDriver:
             self._cdp_type_field(SEL_BILLING_PHONE, billing_profile.phone)
 
     def fill_billing(self, billing_profile) -> None:
-        """Backward-compatibility alias — delegates to ``fill_payment_and_billing``.
+        """Backward-compatibility method that fills only billing fields.
 
         .. deprecated::
             Use ``fill_payment_and_billing(card_info, billing_profile)`` instead.
         """
-        # Legacy callers that only pass billing_profile; card fields are skipped.
         self._cdp_type_field(SEL_BILLING_ADDRESS, billing_profile.address)
         self._cdp_select_option(SEL_BILLING_COUNTRY, billing_profile.country)
         self._cdp_select_option(SEL_BILLING_STATE, billing_profile.state)
