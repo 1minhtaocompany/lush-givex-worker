@@ -8,13 +8,10 @@ touching the class.
 
 from __future__ import annotations
 
-import logging
 import random
 import time
 
 from modules.common.exceptions import PageStateError, SelectorTimeoutError
-
-_log = logging.getLogger(__name__)
 
 # ── URL constants ─────────────────────────────────────────────────────────
 URL_GEO_CHECK = "https://lumtest.com/myip.json"
