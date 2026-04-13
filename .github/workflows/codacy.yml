@@ -53,11 +53,11 @@ jobs:
       # without changing line counts or analysis semantics.
       - name: Normalize source encoding for SARIF compatibility
         run: |
-          find . -name '*.py' -o -name '*.md' | while IFS= read -r f; do
+          find . -path './.git' -prune -o \( -name '*.py' -o -name '*.md' \) -print | while IFS= read -r f; do
             if grep -Pq '[^\x00-\x7F]' "$f" 2>/dev/null; then
               iconv -f UTF-8 -t ASCII//TRANSLIT "$f" > "${f}.ascii" 2>/dev/null \
                 && mv "${f}.ascii" "$f" \
-                || rm -f "${f}.ascii"
+                || { echo "Warning: iconv failed for $f" >&2; rm -f "${f}.ascii"; }
             fi
           done
 
