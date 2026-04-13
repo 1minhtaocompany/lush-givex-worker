@@ -72,10 +72,9 @@ def emit(event: dict) -> None:
                     _logger.debug(json.dumps(event))
             except Exception as exc:
                 _logger.warning("log_sink: default backend failed: %s", exc)
-        event_copy = event.copy()
         for fn in sinks:
             try:
-                fn(event_copy)
+                fn(event.copy())
             except Exception as exc:
                 _logger.warning("log_sink: sink %r raised: %s", fn, exc)
     except Exception as exc:
