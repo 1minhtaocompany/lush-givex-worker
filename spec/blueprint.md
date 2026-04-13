@@ -1,3 +1,90 @@
+## I) QUY TRÌNH VẬN HÀNH TIÊU CHUẨN (HAPPY PATH)
+
+### Khởi tạo & Điều hướng
+- **URL mục tiêu**: `https://wwws-usa2.givex.com/cws4.0/lushusa/`
+- **Cookie banner**: nếu xuất hiện thì click **Accept cookies**
+  - Selector: `#button--accept-cookies`
+- **Vào trang eGift**: Click nút **Buy E-Gift Cards**
+  - Selector: `#cardForeground > div > div.bannerButtons.clearfix > div.bannerBtn.btn1.displaySectionYes > a`
+
+---
+
+### Trang tạo eGift (EGIFT_PAGE)
+- **URL mục tiêu**: `https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/`
+
+**Dữ liệu nhập:**
+- Greeting Message (Message/Lời chúc: ngẫu nhiên)
+  - Selector: `#cws_txt_gcMsg`
+- Amount / Số tiền
+  - Selector: `#cws_txt_gcBuyAmt`
+- To (Recipient Name)
+  - Selector: `#cws_txt_gcBuyTo`
+- Recipient Email
+  - Selector: `#cws_txt_recipEmail`
+- Confirm Recipient Email
+  - Selector: `#cws_txt_confRecipEmail`
+- From (Sender Name)
+  - Selector: `#cws_txt_gcBuyFrom`
+- Click **ADD TO CART**
+  - Selector: `#cws_btn_gcBuyAdd > span`
+- Chờ nút **REVIEW & CHECKOUT** xuất hiện → click
+  - Selector: `#cws_btn_gcBuyCheckout`
+
+---
+
+### Cart & Guest Checkout
+
+**Tại Cart:**
+- **URL mục tiêu**: `https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/shopping-cart.html`
+- Click **BEGIN CHECKOUT**
+  - Selector: `#cws_btn_cartCheckout`
+
+**Tại CHECKOUT AS GUEST:**
+- **URL mục tiêu**: `https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html`
+- Nhập **Guest Email**
+  - Selector: `#cws_txt_guestEmail`
+- Click **CONTINUE**
+  - Selector: `#cws_btn_guestChkout`
+
+---
+
+### Thanh toán (PAYMENT)
+- **URL mục tiêu**: `https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html`
+
+**Dữ liệu nhập — Card:**
+- Name Shown on Card
+  - Selector: `#cws_txt_ccName`
+- Card Number
+  - Selector: `#cws_txt_ccNum`
+- Expiry Date Month
+  - Selector: `#cws_list_ccExpMon`
+- Expiry Date Year
+  - Selector: `#cws_list_ccExpYr`
+- CVV Number
+  - Selector: `#cws_txt_ccCvv`
+
+**Dữ liệu nhập — Billing:**
+- Address 1
+  - Selector: `#cws_txt_billingAddr1`
+- Country
+  - Selector: `#cws_list_billingCountry`
+- State / Province
+  - Selector: `#cws_list_billingProvince`
+- City
+  - Selector: `#cws_txt_billingCity`
+- Zip / Postal Code
+  - Selector: `#cws_txt_billingPostal`
+- Phone Number
+  - Selector: `#cws_txt_billingPhone`
+
+**Hoàn tất:**
+- Kiểm tra **Order Total**
+- Click **COMPLETE PURCHASE**
+  - Selector: `#cws_btn_checkoutPay`
+  - ⚠️ CRITICAL_SECTION — zero-delay zone (§8.3)
+
+---
+
 🏗️ BẢN CÁO BẠCH KỸ THUẬT VẬN HÀNH (MASTER BLUEPRINT)
 
 Kiến trúc lõi & Cấu hình hệ thống:
@@ -45,105 +132,115 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 3. Xâm nhập & Cách ly Phiên (00:20 - 00:30)
 
 · Khởi tạo & Điều hướng
-
 · URL mục tiêu: https://wwws-usa2.givex.com/cws4.0/lushusa/
-
-· Cookie banner: nếu xuất hiện popup "This Site Uses Cookies", trục chuột ghost-cursor vẽ đường cong Bézier đến nút "OKAY, THANKS" (selector: #button--accept-cookies) và click.
-
-· Vào trang eGift: Click nút Buy E-Gift Cards – Selector: #cardForeground a[href*='Buy-E-gift-Cards']
-
+· Cookie banner: nếu xuất hiện popup "This Site Uses Cookies", ghost-cursor vẽ đường cong Bézier đến nút "Accept Cookies" (selector: #button--accept-cookies) và click.
+· Vào trang eGift: Click nút "Buy E-Gift Cards"
+  - Selector: #cardForeground > div > div.bannerButtons.clearfix > div.bannerBtn.btn1.displaySectionYes > a
 · Sau đó điều hướng tới URL tạo thẻ: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/
-
-· Hard-Reset State: Selenium thực thi script dọn sạch Cookies, Local Storage và Session Storage ngay lập tức. Giỏ hàng bị ép về trạng thái "trắng", loại trừ 100% rủi ro cộng dồn đơn hàng cũ.
+· Hard-Reset State: Selenium thực thi script dọn sạch Cookies, Local Storage và Session Storage ngay lập tức. Giỏ hàng bị ép về trạng thái "trắng", loại trừ 100% rủi ro remnant session từ cycle cũ.
 
 4. Mô Phỏng Sinh Học Trên Form (00:30 - 00:50)
 
+· URL mục tiêu (EGIFT_PAGE): https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/
+
 · Cuộn chuột mượt mà (smooth scroll) xuống khu vực điền form e-Gift.
 
-· Điền thông tin nhận thẻ (recipient):
+· Điền thông tin eGift theo thứ tự:
 
-· To (Recipient Email): sử dụng email_nhan_the từ input (không thay đổi trong cycle).
+  · Greeting Message (Lời chúc — tự sinh ngẫu nhiên: "Happy Birthday!", "Best wishes", "Enjoy your gift!", v.v.)
+    Selector: #cws_txt_gcMsg
 
-· Recipient Name: lấy từ first_name và last_name của billing profile đã chọn.
+  · Amount (Số tiền mệnh giá — lấy từ so_tien của input)
+    Selector: #cws_txt_gcBuyAmt
 
-· Greeting Message: tự sinh ngẫu nhiên từ danh sách các câu chúc ngắn như “Happy Birthday!”, “Best wishes”, “Enjoy your gift!”, “Thank you for being you”, v.v. (có thể mở rộng).
+  · To — Recipient Name (Tên người nhận — lấy từ first_name + last_name của billing profile đã chọn)
+    Selector: #cws_txt_gcBuyTo
 
-· From (Sender Name): điền chính xác first_name và last_name của billing profile (giống với Recipient Name, thể hiện người gửi).
+  · Recipient Email (Email người nhận — email_nhan_the từ input, không thay đổi trong cycle)
+    Selector: #cws_txt_recipEmail
 
-· Email billing (thanh toán):
+  · Confirm Recipient Email (Xác nhận email người nhận — nhập lại giống Recipient Email)
+    Selector: #cws_txt_confRecipEmail
 
-· Lấy từ billing profile đã chọn (first_name.last_name + domain ngẫu nhiên) hoặc dùng email có sẵn trong profile.
+  · From — Sender Name (Tên người gửi — điền chính xác first_name + last_name của billing profile)
+    Selector: #cws_txt_gcBuyFrom
 
-· Điền vào ô Billing Email (thường nằm ở khu vực thanh toán, sau khi vào checkout).
+· Gõ Phím CDP: Sử dụng lệnh Input.dispatchKeyEvent. Chữ được gõ lên form theo tốc độ của Seed. Quá trình gõ thỉnh thoảng cố tình gõ sai ký tự (theo tỷ lệ typo_rate từ PersonaProfile — §8).
 
-· Gõ Phím CDP: Sử dụng lệnh Input.dispatchKeyEvent. Chữ được gõ lên form theo tốc độ của Seed. Quá trình gõ thỉnh thoảng cố tình gõ sai ký tự (theo tỷ lệ riêng của worker), dừng 0.5s, gõ phím Backspace (qua CDP) để xóa và sửa lại đúng.
+· Bounding Box Click (Lệch Tâm): Trỏ chuột đến nút "Add to Cart". Tọa độ click được tính bằng thuật toán: tâm của nút cộng trừ ngẫu nhiên (x ± 15, y ± 5).
+  - Click ADD TO CART — Selector: #cws_btn_gcBuyAdd > span
 
-· Bounding Box Click (Lệch Tâm): Trỏ chuột đến nút "Add to Cart". Tọa độ click được tính bằng thuật toán: tâm của nút cộng trừ ngẫu nhiên (x ± 15, y ± 5). Đảm bảo 10 luồng click vào 10 vị trí khác nhau trên cùng một nút.
+· Chờ nút "REVIEW & CHECKOUT" xuất hiện (tối đa 3 giây), sau đó dùng Bounding Box Click để tiến sang trang giỏ hàng.
+  - Selector: #cws_btn_gcBuyCheckout
 
-· Chờ 3 giây, nút "Review & Checkout" hiện ra. Bot tiếp tục dùng Bounding Box Click để sang trang Giỏ hàng.
+4b. Giỏ Hàng & Guest Checkout (00:50 - 01:00)
 
-5. Bơm Dữ Liệu Thanh Toán (00:50 - 01:20)
+· Tại trang Cart:
+  - URL mục tiêu: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/shopping-cart.html
+  - Click "BEGIN CHECKOUT"
+    Selector: #cws_btn_cartCheckout
+
+· Tại trang CHECKOUT AS GUEST:
+  - URL mục tiêu: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html
+  - Nhập Guest Email (billing email từ profile đã chọn)
+    Selector: #cws_txt_guestEmail
+  - Click "CONTINUE"
+    Selector: #cws_btn_guestChkout
+
+5. Bơm Dữ Liệu Thanh Toán (01:00 - 01:20)
+
+· URL mục tiêu (PAYMENT): https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html
 
 · Xác định Zipcode từ Proxy (offline, không gọi API ngoại):
-
-· Sử dụng database MaxMind GeoLite2 (file .mmdb) đã được tải sẵn và nạp vào RAM khi khởi động hệ thống.
-
-· Khi có proxy IP, bot query trực tiếp từ database offline, lấy zipcode trong < 1ms. Không phụ thuộc API bên thứ ba, không rate limit, không rò rỉ IP.
+  · Sử dụng database MaxMind GeoLite2 (file .mmdb) đã được tải sẵn và nạp vào RAM khi khởi động hệ thống.
+  · Khi có proxy IP, bot query trực tiếp từ database offline, lấy zipcode trong < 1ms. Không phụ thuộc API bên thứ ba, không rate limit, không rò rỉ IP.
 
 · Lấy Billing từ kho dữ liệu hỗn hợp (có lọc zip & tránh lặp lại):
-
-· Thư mục chứa billing: ./billing_pool/ (đã được đồng bộ local với Google Drive, bot đọc trực tiếp từ local).
-
-· Khi khởi động worker, bot quét tất cả file .txt trong thư mục đó, mỗi dòng là một profile billing với định dạng:
-
-first_name|last_name|address|city|state|zip|phone|email
-(các trường có thể thiếu; bot tự sinh bổ sung nếu thiếu).
-
-· Cơ chế chọn billing tránh lặp lại trong cùng worker:
-
-· Toàn bộ profile được load vào danh sách billing_list. Sau đó shuffle ngẫu nhiên danh sách này.
-
-· Worker duy trì một con trỏ (index) trỏ đến vị trí tiếp theo trong danh sách đã shuffle.
-
-· Mỗi khi bắt đầu một cycle mới (với cùng worker), lấy profile tại index hiện tại, sau đó tăng index lên 1 (vòng quanh khi hết danh sách).
-
-· Như vậy, cùng một worker sẽ không dùng lại profile cũ cho đến khi duyệt hết toàn bộ danh sách. Các worker khác có danh sách shuffle riêng.
-
-· Lọc theo zip:
-
-· Khi cần chọn billing cho cycle hiện tại, đầu tiên tìm trong billing_list (theo thứ tự ưu tiên từ vị trí con trỏ trở đi) profile có zip khớp với zip từ MaxMind.
-
-· Nếu tìm thấy profile khớp zip, lấy profile đó và không thay đổi con trỏ (vì con trỏ chỉ dùng cho cơ chế tuần tự mặc định). Có thể dùng thêm một bộ đếm riêng để tránh lặp lại các profile đã dùng gần đây nếu cần.
-
-· Nếu không có profile nào khớp zip, lấy profile tại vị trí con trỏ hiện tại (theo cơ chế tuần tự) và sử dụng zip của profile đó (bỏ qua zip proxy).
-
-· Trường hợp thiếu phone/email trong profile:
-
-· Email: tự sinh theo tên + domain big-tech (nếu thiếu email).
-
-· Phone: sinh số ngẫu nhiên 10 chữ số bắt đầu bằng 2,3,4,5,6,7,8,9 (nếu thiếu phone).
+  · Thư mục chứa billing: ./billing_pool/ (đã được đồng bộ local với Google Drive, bot đọc trực tiếp từ local).
+  · Khi khởi động worker, bot quét tất cả file .txt trong thư mục đó, mỗi dòng là một profile billing với định dạng:
+    first_name|last_name|address|city|state|zip|phone|email
+    (các trường có thể thiếu; bot tự sinh bổ sung nếu thiếu).
+  · Cơ chế chọn billing tránh lặp lại trong cùng worker:
+    · Toàn bộ profile được load vào danh sách billing_list. Sau đó shuffle ngẫu nhiên danh sách này.
+    · Worker duy trì một con trỏ (index) trỏ đến vị trí tiếp theo trong danh sách đã shuffle.
+    · Mỗi khi bắt đầu một cycle mới (với cùng worker), lấy profile tại index hiện tại, sau đó tăng index lên 1 (vòng quanh khi hết danh sách).
+  · Lọc theo zip: ưu tiên profile có zip khớp với zip từ MaxMind. Nếu không có, lấy profile tại vị trí con trỏ.
+  · Trường hợp thiếu phone/email trong profile:
+    · Email: tự sinh theo tên + domain big-tech (nếu thiếu email).
+    · Phone: sinh số ngẫu nhiên 10 chữ số bắt đầu bằng 2–9 (nếu thiếu phone).
 
 · Billing profile được chọn sẽ được cố định cho toàn bộ cycle (không thay đổi khi swap thẻ).
 
-· Chính sách billing xuyên suốt cycle: Trong toàn bộ vòng đời của một cycle, thông tin billing bao gồm tên, địa chỉ, số điện thoại, email được giữ nguyên không thay đổi. Chỉ có thẻ thanh toán (số thẻ, CVV, ngày hết hạn) được thay đổi mỗi khi swap thẻ ở các ngã rẽ 3 và 4.
+· Điền thông tin thẻ thanh toán (Card fields):
+  - Name Shown on Card:   Selector: #cws_txt_ccName
+  - Card Number (16 số):  Selector: #cws_txt_ccNum   ← áp dụng quy tắc gõ 4x4 bên dưới
+  - Expiry Date Month:    Selector: #cws_list_ccExpMon
+  - Expiry Date Year:     Selector: #cws_list_ccExpYr
+  - CVV Number:           Selector: #cws_txt_ccCvv
+
+· Điền billing address (Billing fields):
+  - Address 1:       Selector: #cws_txt_billingAddr1
+  - Country:         Selector: #cws_list_billingCountry
+  - State/Province:  Selector: #cws_list_billingProvince
+  - City:            Selector: #cws_txt_billingCity
+  - Zip/Postal Code: Selector: #cws_txt_billingPostal
+  - Phone Number:    Selector: #cws_txt_billingPhone
 
 · Total Watchdog (Giám sát Tổng Tiền – dùng CDP Network):
-
-· Trước khi điền thẻ, bot kích hoạt CDP Network.enable và lắng nghe sự kiện Network.responseReceived.
-
-· Xác định endpoint API tính tiền/tax (ví dụ /api/checkout/total, /api/tax).
-
-· Khi response trả về status 200 và có dữ liệu tổng tiền, bot mới tiến hành điền thông tin thanh toán.
-
-· Nếu timeout 10 giây không nhận được response, ném lỗi SessionFlaggedError, đóng tab và làm lại phiên mới.
+  · Trước khi điền thẻ, bot kích hoạt CDP Network.enable và lắng nghe sự kiện Network.responseReceived.
+  · Xác định endpoint API tính tiền/tax (ví dụ /api/checkout/total, /api/tax).
+  · Khi response trả về status 200 và có dữ liệu tổng tiền, bot mới tiến hành điền thông tin thanh toán.
+  · Nếu timeout 10 giây không nhận được response, ném lỗi SessionFlaggedError, đóng tab và làm lại phiên mới.
 
 · Quy Tắc Gõ Thẻ 4x4 (Nhìn - Nghĩ - Gõ):
+  · Thẻ đầu tiên được lấy từ input (của worker). Khi swap thẻ (ngã rẽ 3 hoặc 4), lấy thẻ tiếp theo từ OrderQueue (nếu có).
+  · Đến trường Card Number (#cws_txt_ccNum), bot gõ 4 số đầu → Khựng lại 0.6s–1.8s (mô phỏng người dùng đảo mắt nhìn xuống thẻ cứng) → Gõ tiếp 4 số → Khựng → lặp lại cho đến hết 16 số.
 
-· Thẻ đầu tiên được lấy từ input (của worker). Khi swap thẻ (ngã rẽ 3 hoặc 4), lấy thẻ tiếp theo từ OrderQueue (nếu có).
+· Hesitation (Ngập ngừng): Điền xong CVV (#cws_txt_ccCvv), con trỏ chuột lảng vảng quanh khu vực nút "COMPLETE PURCHASE" khoảng 3–5 giây. Cuộn chuột lên xuống nhẹ nhàng để "kiểm tra lại thông tin".
 
-· Đến trường Credit Card (16 số), bot gọi CDP gõ 4 số đầu -> Khựng lại 0.6s - 1.8s (mô phỏng người dùng đảo mắt nhìn xuống thẻ cứng) -> Gõ tiếp 4 số -> Khựng lại. Cứ thế lặp lại đến hết.
-
-· Hesitation (Ngập ngừng): Điền xong CVV, con trỏ chuột lảng vảng quanh khu vực nút "COMPLETE PURCHASE" khoảng 3 - 5 giây. Cuộn chuột lên xuống nhẹ nhàng để "kiểm tra lại" thông tin, sau đó mới tiến hành click lệch tâm.
+· Kiểm tra Order Total, sau đó click "COMPLETE PURCHASE"
+  - Selector: #cws_btn_checkoutPay
+  - ⚠️ CRITICAL_SECTION — zero-delay zone (§8.3): KHÔNG inject delay tại bước này.
 
 6. Gatekeeper & Xử Lý Ngoại Lệ (01:20 - 01:40+)
 
