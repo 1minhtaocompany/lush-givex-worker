@@ -1022,7 +1022,10 @@ class CDPActiveRequestCounterTests(unittest.TestCase):
 
                 # Unblock background task and let it finish
                 blocker.set()
-                task_finished.wait(timeout=5)
+                self.assertTrue(
+                    task_finished.wait(timeout=5),
+                    "background task did not complete within 5 seconds after unblock",
+                )
                 _time.sleep(0.1)  # allow thread cleanup
 
                 # Counter must still be 0 — no double-decrement from background thread
