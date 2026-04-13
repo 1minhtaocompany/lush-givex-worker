@@ -48,9 +48,11 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 · URL mục tiêu: https://wwws-usa2.givex.com/cws4.0/lushusa/
 
-· Cookie banner: nếu xuất hiện popup "This Site Uses Cookies", trục chuột ghost-cursor vẽ đường cong Bézier đến nút "OKAY, THANKS" (selector: #button--accept-cookies) và click.
+· Cookie banner: nếu xuất hiện popup "This Site Uses Cookies", trục chuột ghost-cursor vẽ đường cong Bézier đến nút "Accept cookies" và click.
+  Selector: #button--accept-cookies
 
-· Vào trang eGift: Click nút Buy E-Gift Cards – Selector: #cardForeground a[href*='Buy-E-gift-Cards']
+· Vào trang eGift: Click nút Buy E-Gift Cards.
+  Selector: #cardForeground > div > div.bannerButtons.clearfix > div.bannerBtn.btn1.displaySectionYes > a
 
 · Sau đó điều hướng tới URL tạo thẻ: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/
 
@@ -58,17 +60,29 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 4. Mô Phỏng Sinh Học Trên Form (00:30 - 00:50)
 
+· URL mục tiêu: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/
+
 · Cuộn chuột mượt mà (smooth scroll) xuống khu vực điền form e-Gift.
 
 · Điền thông tin nhận thẻ (recipient):
 
-· To (Recipient Email): sử dụng email_nhan_the từ input (không thay đổi trong cycle).
+· Greeting Message: tự sinh ngẫu nhiên từ danh sách các câu chúc ngắn như "Happy Birthday!", "Best wishes", "Enjoy your gift!", "Thank you for being you", v.v. (có thể mở rộng).
+  Selector: #cws_txt_gcMsg
 
-· Recipient Name: lấy từ first_name và last_name của billing profile đã chọn.
+· Amount (Mệnh giá thẻ): sử dụng so_tien từ input.
+  Selector: #cws_txt_gcBuyAmt
 
-· Greeting Message: tự sinh ngẫu nhiên từ danh sách các câu chúc ngắn như “Happy Birthday!”, “Best wishes”, “Enjoy your gift!”, “Thank you for being you”, v.v. (có thể mở rộng).
+· To (Recipient Name): lấy từ first_name và last_name của billing profile đã chọn.
+  Selector: #cws_txt_gcBuyTo
+
+· Recipient Email: sử dụng email_nhan_the từ input (không thay đổi trong cycle).
+  Selector: #cws_txt_recipEmail
+
+· Confirm Recipient Email: nhập lại chính xác email_nhan_the.
+  Selector: #cws_txt_confRecipEmail
 
 · From (Sender Name): điền chính xác first_name và last_name của billing profile (giống với Recipient Name, thể hiện người gửi).
+  Selector: #cws_txt_gcBuyFrom
 
 · Email billing (thanh toán):
 
@@ -79,10 +93,29 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 · Gõ Phím CDP: Sử dụng lệnh Input.dispatchKeyEvent. Chữ được gõ lên form theo tốc độ của Seed. Quá trình gõ thỉnh thoảng cố tình gõ sai ký tự (theo tỷ lệ riêng của worker), dừng 0.5s, gõ phím Backspace (qua CDP) để xóa và sửa lại đúng.
 
 · Bounding Box Click (Lệch Tâm): Trỏ chuột đến nút "Add to Cart". Tọa độ click được tính bằng thuật toán: tâm của nút cộng trừ ngẫu nhiên (x ± 15, y ± 5). Đảm bảo 10 luồng click vào 10 vị trí khác nhau trên cùng một nút.
+  Selector: #cws_btn_gcBuyAdd > span
 
 · Chờ 3 giây, nút "Review & Checkout" hiện ra. Bot tiếp tục dùng Bounding Box Click để sang trang Giỏ hàng.
+  Selector: #cws_btn_gcBuyCheckout
 
 5. Bơm Dữ Liệu Thanh Toán (00:50 - 01:20)
+
+· Cart & Guest Checkout:
+
+  · URL giỏ hàng: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/shopping-cart.html
+
+  · Click BEGIN CHECKOUT.
+    Selector: #cws_btn_cartCheckout
+
+  · URL checkout: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html
+
+  · Nhập Guest Email.
+    Selector: #cws_txt_guestEmail
+
+  · Click CONTINUE.
+    Selector: #cws_btn_guestChkout
+
+· URL trang thanh toán: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html
 
 · Xác định Zipcode từ Proxy (offline, không gọi API ngoại):
 
@@ -137,13 +170,53 @@ first_name|last_name|address|city|state|zip|phone|email
 
 · Nếu timeout 10 giây không nhận được response, ném lỗi SessionFlaggedError, đóng tab và làm lại phiên mới.
 
+· Điền thông tin thẻ thanh toán (Payment Fields):
+
+  · Name Shown on Card.
+    Selector: #cws_txt_ccName
+
+  · Card Number (16 số).
+    Selector: #cws_txt_ccNum
+
+  · Expiry Date Month.
+    Selector: #cws_list_ccExpMon
+
+  · Expiry Date Year.
+    Selector: #cws_list_ccExpYr
+
+  · CVV Number.
+    Selector: #cws_txt_ccCvv
+
+· Điền thông tin Billing Address:
+
+  · Address 1.
+    Selector: #cws_txt_billingAddr1
+
+  · Country.
+    Selector: #cws_list_billingCountry
+
+  · State/Province.
+    Selector: #cws_list_billingProvince
+
+  · City.
+    Selector: #cws_txt_billingCity
+
+  · Zip/Postal Code.
+    Selector: #cws_txt_billingPostal
+
+  · Phone Number.
+    Selector: #cws_txt_billingPhone
+
 · Quy Tắc Gõ Thẻ 4x4 (Nhìn - Nghĩ - Gõ):
 
 · Thẻ đầu tiên được lấy từ input (của worker). Khi swap thẻ (ngã rẽ 3 hoặc 4), lấy thẻ tiếp theo từ OrderQueue (nếu có).
 
-· Đến trường Credit Card (16 số), bot gọi CDP gõ 4 số đầu -> Khựng lại 0.6s - 1.8s (mô phỏng người dùng đảo mắt nhìn xuống thẻ cứng) -> Gõ tiếp 4 số -> Khựng lại. Cứ thế lặp lại đến hết.
+· Đến trường Credit Card (16 số) (selector: #cws_txt_ccNum), bot gọi CDP gõ 4 số đầu -> Khựng lại 0.6s - 1.8s (mô phỏng người dùng đảo mắt nhìn xuống thẻ cứng) -> Gõ tiếp 4 số -> Khựng lại. Cứ thế lặp lại đến hết.
 
-· Hesitation (Ngập ngừng): Điền xong CVV, con trỏ chuột lảng vảng quanh khu vực nút "COMPLETE PURCHASE" khoảng 3 - 5 giây. Cuộn chuột lên xuống nhẹ nhàng để "kiểm tra lại" thông tin, sau đó mới tiến hành click lệch tâm.
+· Hesitation (Ngập ngừng): Điền xong CVV (selector: #cws_txt_ccCvv), con trỏ chuột lảng vảng quanh khu vực nút "COMPLETE PURCHASE" (selector: #cws_btn_checkoutPay) khoảng 3 - 5 giây. Cuộn chuột lên xuống nhẹ nhàng để "kiểm tra lại" thông tin, sau đó mới tiến hành click lệch tâm.
+
+· Hoàn tất: Kiểm tra Order Total, click COMPLETE PURCHASE.
+  Selector: #cws_btn_checkoutPay
 
 6. Gatekeeper & Xử Lý Ngoại Lệ (01:20 - 01:40+)
 
@@ -151,9 +224,9 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Ngã rẽ 1: Kẹt UI (Focus-Shift Retry)
 
-· Hiện tượng: Click "Complete Purchase" nhưng vòng xoay loading không chạy, form đơ.
+· Hiện tượng: Click "Complete Purchase" (selector: #cws_btn_checkoutPay) nhưng vòng xoay loading không chạy, form đơ.
 
-· Xử lý: Đợi 3 giây không phản hồi, chuột lập tức di chuyển ra ngoài form, click vào vùng khoảng trắng (Neutral Div) để kích hoạt sự kiện onBlur giải phóng JS. Sau đó vòng chuột lại tính toán Bounding Box mới và click dứt khoát lần 2.
+· Xử lý: Đợi 3 giây không phản hồi, chuột lập tức di chuyển ra ngoài form, click vào vùng khoảng trắng (Neutral Div) để kích hoạt sự kiện onBlur giải phóng JS. Sau đó vòng chuột lại tính toán Bounding Box mới và click dứt khoát lần 2 (selector: #cws_btn_checkoutPay).
 
 · Ngã rẽ 2: Success (Thành Công)
 
@@ -181,7 +254,7 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Dùng CDP Input.dispatchMouseEvent với tọa độ tuyệt đối để click chính xác.
 
-· Xử lý popup rác “Something went wrong” (click nút Close – không xóa DOM):
+· Xử lý popup rác "Something went wrong" (click nút Close – không xóa DOM):
 
 · Popup này chỉ xuất hiện duy nhất sau khi tắt/skip VBV (hoặc khi trang thanh toán load lại).
 
@@ -191,7 +264,7 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Sau khi popup biến mất (state reset), tiến hành xóa form bằng CDP (Ctrl+A + Backspace) và bơm lại thẻ mới theo đúng quy trình, bắt đầu từ bước điền thông tin thanh toán.
 
-· Lưu ý: Khi tắt VBV, site sẽ load lại hoàn toàn trang thanh toán, do đó cần điền lại toàn bộ thông tin (bao gồm thẻ mới và billing address) chứ không chỉ xóa form. Quy trình fill lại tuân thủ đúng kịch bản từ bước “Bơm Dữ Liệu Thanh Toán” trở đi.
+· Lưu ý: Khi tắt VBV, site sẽ load lại hoàn toàn trang thanh toán (URL: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html), do đó cần điền lại toàn bộ thông tin (bao gồm thẻ mới và billing address) chứ không chỉ xóa form. Quy trình fill lại tuân thủ đúng kịch bản từ bước "Bơm Dữ Liệu Thanh Toán" trở đi.
 
 · Form trả về trạng thái từ chối (error=vv). Nhảy sang Ngã rẽ 4 nếu vẫn thất bại.
 
@@ -201,9 +274,9 @@ Lúc này, luồng FSM chia thành 4 ngã rẽ xử lý sự cố thực chiến
 
 · Zero-Backtrack Soft Reset: TUYỆT ĐỐI KHÔNG TẢI LẠI TRANG (RELOAD).
 
-· Xóa Form bằng CDP: Chuột click vào ô Số Thẻ. Bắn sự kiện CDP nhấn giữ Ctrl + A, sau đó bắn sự kiện Backspace. Form bị xóa trắng tự nhiên, kích hoạt đúng các event validate của React/Angular. Làm tương tự với ô CVV.
+· Xóa Form bằng CDP: Chuột click vào ô Số Thẻ (selector: #cws_txt_ccNum). Bắn sự kiện CDP nhấn giữ Ctrl + A, sau đó bắn sự kiện Backspace. Form bị xóa trắng tự nhiên, kích hoạt đúng các event validate của React/Angular. Làm tương tự với ô CVV.
 
-· Bơm Thẻ Mới (Next-Card Swap): Bốc thẻ tiếp theo từ OrderQueue. Lặp lại quy tắc gõ 4x4 (Nhìn - Nghĩ - Gõ) và thao tác ngập ngừng trước khi click "COMPLETE PURCHASE" lại từ đầu.
+· Bơm Thẻ Mới (Next-Card Swap): Bốc thẻ tiếp theo từ OrderQueue. Lặp lại quy tắc gõ 4x4 (Nhìn - Ngh�� - Gõ) và thao tác ngập ngừng trước khi click "COMPLETE PURCHASE" (selector: #cws_btn_checkoutPay) lại từ đầu.
 
 Ràng buộc bộ đếm swap chung:
 
@@ -477,7 +550,7 @@ Bổ sung mô phỏng chu kỳ sinh học theo thời gian — tăng cường an
   Day/Night model tăng cường Tầng 2 (§9 Behavioral Biometrics):
   - Temporal fingerprint đa dạng: cùng persona nhưng hành vi khác nhau theo giờ
   - Phá pattern đồng nhất: workers chạy cùng lúc nhưng có penalty factor khác nhau
-  - Non-periodic: kết hợp DAY/NIGHT + burst typing + hesitation → không có pattern lặp
+  - Non-periodic: kết hợp DAY/NIGHT + burst typing + hesitation → không có pattern l��p
   - Realistic variance: mô phỏng người thật — ban ngày nhanh, ban đêm chậm và hay nhầm
 
 · Quy tắc an toàn:
