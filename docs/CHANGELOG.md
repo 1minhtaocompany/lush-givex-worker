@@ -8,10 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Added
 - `inject_card_entry_delays(bio, stop_event=None)` in `modules/delay/wrapper.py` — wires `BiometricProfile` Layer 2 per-keystroke timing into the production execution path (19 delays per card entry: 4 groups × 4 fast keystrokes + 3 inter-group pauses).
 - `inject_card_entry_delays` exported from `modules/delay/main.py`.
-- `spec/audit-lock.md` updated: INV-BIO-01 (non-accumulation), INV-BIO-02 (RNG independence), INV-BIO-03 (stop_event early exit).
-
 ### Changed
 - `modules/delay/biometrics.py` docstring updated: `PRODUCTION STATUS: WIRED (Phase 11)`.
+- NOTE: spec/audit-lock.md invariants (INV-BIO-01, INV-BIO-02, INV-BIO-03) will be
+  added in a follow-up spec-sync PR after this PR is merged.
 
 ## [Unreleased]
 ## [Phase 7 — Observability Extensions] — 2026-04-12
