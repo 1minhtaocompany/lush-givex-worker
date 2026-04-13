@@ -398,7 +398,7 @@ class TestFillBilling(unittest.TestCase):
 
         # State and country selected
         state_calls = [c for c in mock_select.call_args_list if c.args[0] == SEL_BILLING_STATE]
-        self.assertTrue(len(state_calls) >= 1)
+        self.assertGreaterEqual(len(state_calls), 1)
         self.assertEqual(state_calls[0].args[1], billing.state)
 
     def test_fill_billing_form_is_alias_for_fill_billing(self):
