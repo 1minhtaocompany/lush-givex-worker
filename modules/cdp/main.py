@@ -3,7 +3,12 @@
 Provides a per-worker driver registry so that the orchestrator can
 associate a browser driver with each worker_id. Business logic
 implementation delegates to the registered driver for page interaction.
+
+Driver implementations MUST import all URL and CSS selector constants from
+``modules.cdp.selectors`` rather than hard-coding strings inline.
 """
+
+# See modules/cdp/selectors.py for all URL and selector constants.
 
 import logging
 import os

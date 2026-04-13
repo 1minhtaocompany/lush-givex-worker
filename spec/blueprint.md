@@ -50,7 +50,9 @@ Ví dụ: nguyenvana@yahoo.com|100|4111111111111111|07|27|123
 
 · Cookie banner: nếu xuất hiện popup "This Site Uses Cookies", trục chuột ghost-cursor vẽ đường cong Bézier đến nút "OKAY, THANKS" (selector: #button--accept-cookies) và click.
 
-· Vào trang eGift: Click nút Buy E-Gift Cards – Selector: #cardForeground a[href*='Buy-E-gift-Cards']
+· Vào trang eGift: Click nút Buy E-Gift Cards
+  - Primary selector: #cardForeground a[href*='Buy-E-gift-Cards']
+  - Fallback selector: #cardForeground > div > div.bannerButtons.clearfix > div.bannerBtn.btn1.displaySectionYes > a
 
 · Sau đó điều hướng tới URL tạo thẻ: https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/
 
@@ -538,3 +540,40 @@ Ma trận đối chiếu giữa Spec Phase 10 và Blueprint (1-to-1 structural a
 · Kết luận: Zero mismatch. Blueprint §8.1–§8.8 khớp chính xác 1-to-1 với Spec §10.1–§10.8. Cấu trúc đồng bộ hoàn toàn, sẵn sàng cho audit.
 
 ---
+
+§12. SELECTOR & URL REGISTRY
+
+Tất cả URL và CSS selector được quản lý tập trung tại: modules/cdp/selectors.py
+
+| Step              | Constant name           | Value                                                                  |
+|-------------------|-------------------------|------------------------------------------------------------------------|
+| Home URL          | URL_HOME                | https://wwws-usa2.givex.com/cws4.0/lushusa/                           |
+| Cookie accept     | SEL_COOKIE_ACCEPT       | #button--accept-cookies                                                |
+| Buy eGift         | SEL_BUY_EGIFT           | #cardForeground a[href*='Buy-E-gift-Cards']                            |
+| eGift page URL    | URL_EGIFT_PAGE          | https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/                   |
+| Greeting msg      | SEL_GREETING_MSG        | #cws_txt_gcMsg                                                         |
+| Amount            | SEL_AMOUNT              | #cws_txt_gcBuyAmt                                                      |
+| Recipient name    | SEL_RECIPIENT_NAME      | #cws_txt_gcBuyTo                                                       |
+| Recipient email   | SEL_RECIP_EMAIL         | #cws_txt_recipEmail                                                    |
+| Confirm email     | SEL_CONFIRM_EMAIL       | #cws_txt_confRecipEmail                                                |
+| From name         | SEL_FROM_NAME           | #cws_txt_gcBuyFrom                                                     |
+| Add to cart       | SEL_ADD_TO_CART         | #cws_btn_gcBuyAdd > span                                               |
+| Review checkout   | SEL_REVIEW_CHECKOUT     | #cws_btn_gcBuyCheckout                                                 |
+| Cart URL          | URL_CART                | https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/shopping-cart.html |
+| Begin checkout    | SEL_BEGIN_CHECKOUT      | #cws_btn_cartCheckout                                                  |
+| Checkout URL      | URL_CHECKOUT            | https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html      |
+| Guest email       | SEL_GUEST_EMAIL         | #cws_txt_guestEmail                                                    |
+| Guest continue    | SEL_GUEST_CONTINUE      | #cws_btn_guestChkout                                                   |
+| Payment URL       | URL_PAYMENT             | https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html |
+| CC name           | SEL_CC_NAME             | #cws_txt_ccName                                                        |
+| CC number         | SEL_CC_NUM              | #cws_txt_ccNum                                                         |
+| CC exp month      | SEL_CC_EXP_MON          | #cws_list_ccExpMon                                                     |
+| CC exp year       | SEL_CC_EXP_YR           | #cws_list_ccExpYr                                                      |
+| CVV               | SEL_CC_CVV              | #cws_txt_ccCvv                                                         |
+| Billing addr1     | SEL_BILLING_ADDR1       | #cws_txt_billingAddr1                                                  |
+| Billing country   | SEL_BILLING_COUNTRY     | #cws_list_billingCountry                                               |
+| Billing province  | SEL_BILLING_PROVINCE    | #cws_list_billingProvince                                              |
+| Billing city      | SEL_BILLING_CITY        | #cws_txt_billingCity                                                   |
+| Billing postal    | SEL_BILLING_POSTAL      | #cws_txt_billingPostal                                                 |
+| Billing phone     | SEL_BILLING_PHONE       | #cws_txt_billingPhone                                                  |
+| Complete purchase | SEL_COMPLETE_PURCHASE   | #cws_btn_checkoutPay                                                   |
