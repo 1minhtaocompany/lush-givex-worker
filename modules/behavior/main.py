@@ -6,6 +6,7 @@ Thread-safe via threading.Lock.  No cross-module imports.
 import logging
 import threading
 import time
+from modules.common.thresholds import ERROR_RATE_THRESHOLD, SUCCESS_RATE_MIN, RESTART_RATE_THRESHOLD, SUCCESS_RATE_DROP_THRESHOLD
 
 _logger = logging.getLogger(__name__)
 _lock = threading.Lock()
@@ -15,11 +16,7 @@ SCALE_DOWN = "scale_down"
 HOLD = "hold"
 VALID_DECISIONS = {SCALE_UP, SCALE_DOWN, HOLD}
 
-ERROR_RATE_THRESHOLD = 0.05       # 5% — scale down above this
-SUCCESS_RATE_MIN = 0.70           # 70% — do not scale up below this
-RESTART_RATE_THRESHOLD = 3        # >3 restarts/hour triggers scale down
 COOLDOWN_SECONDS = 30             # minimum seconds between scaling changes
-SUCCESS_RATE_DROP_THRESHOLD = 0.10  # 10% drop from baseline triggers scale down
 _HISTORY_LIMIT = 100              # max entries in decision ring buffer
 _last_decision_time = 0.0
 _decision_history = []
