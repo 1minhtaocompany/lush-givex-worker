@@ -11,18 +11,19 @@ import urllib.request
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-_log = logging.getLogger(__name__)
+_LOG = logging.getLogger(__name__)
 
 _BASE_URL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City"
 
 
 def _download_bytes(url: str) -> bytes:
-    # nosec B310: URL is built from a fixed HTTPS MaxMind endpoint and controlled query params.
-    with urllib.request.urlopen(url, timeout=60) as response:
-        return response.read()
+    """Fetch raw bytes from a URL (HTTPS MaxMind endpoint only)."""
+    with urllib.request.urlopen(url, timeout=60) as resp:  # nosec B310
+        return resp.read()
 
 
 def _parse_checksum(content: bytes) -> str:
+    """Extract hex digest from a checksum response."""
     text = content.decode("utf-8").strip()
     if not text:
         raise ValueError("Empty checksum response")
@@ -30,6 +31,7 @@ def _parse_checksum(content: bytes) -> str:
 
 
 def _extract_mmdb(archive_bytes: bytes) -> bytes:
+    """Extract the .mmdb file from a tar.gz archive."""
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as archive:
         for member in archive.getmembers():
             if not member.isfile() or not member.name.endswith(".mmdb"):
@@ -42,34 +44,31 @@ def _extract_mmdb(archive_bytes: bytes) -> bytes:
 
 
 def main() -> int:
+    """Download GeoLite2-City.mmdb with checksum verification."""
     license_key = os.getenv("MAXMIND_LICENSE_KEY")
     if not license_key:
         print("ERROR: MAXMIND_LICENSE_KEY environment variable is required.", file=sys.stderr)
         return 1
-
     encoded_key = urllib.parse.quote_plus(license_key)
     archive_url = f"{_BASE_URL}&license_key={encoded_key}&suffix=tar.gz"
     checksum_url = f"{_BASE_URL}&license_key={encoded_key}&suffix=tar.gz.sha256"
-
     try:
         archive_bytes = _download_bytes(archive_url)
         checksum_bytes = _download_bytes(checksum_url)
         expected_sha256 = _parse_checksum(checksum_bytes)
         actual_sha256 = hashlib.sha256(archive_bytes).hexdigest()
         if actual_sha256 != expected_sha256:
-            _log.error("Checksum verification failed for MaxMind archive.")
+            _LOG.error("Checksum verification failed for MaxMind archive.")
             return 1
-
         mmdb_bytes = _extract_mmdb(archive_bytes)
     except (OSError, ValueError, tarfile.TarError) as exc:
-        _log.error("Failed to download/extract MaxMind DB: %s", exc)
+        _LOG.error("Failed to download/extract MaxMind DB: %s", exc)
         return 1
-
     output_dir = Path("data")
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "GeoLite2-City.mmdb"
     output_path.write_bytes(mmdb_bytes)
-    _log.info("Saved %s (%d bytes)", output_path, output_path.stat().st_size)
+    _LOG.info("Saved %s (%d bytes)", output_path, output_path.stat().st_size)
     return 0
 
 
