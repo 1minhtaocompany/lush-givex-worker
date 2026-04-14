@@ -42,8 +42,8 @@ class ObservationResetMixin:
         monitor.reset()
         self._billing_pool_dir = tempfile.mkdtemp()
         _p = os.path.join(self._billing_pool_dir, "profiles.txt")
-        with open(_p, "w", encoding="utf-8") as fh:
-            fh.write("Alice|Smith|1 Main St|City|NY|10001|2125550001|a@e.com\n")
+        with open(_p, "w", encoding="utf-8") as handle:
+            handle.write("Alice|Smith|1 Main St|City|NY|10001|2125550001|a@e.com\n")
         self._billing_pool_patcher = patch.object(
             billing, "_pool_dir", return_value=Path(self._billing_pool_dir))
         self._billing_pool_patcher.start()

@@ -18,6 +18,7 @@ from modules.observability import log_sink
 from modules.rollout import main as rollout
 from modules.delay.wrapper import wrap as _behavior_wrap
 from modules.delay.persona import PersonaProfile
+from modules.billing import main as billing
 from modules.common.exceptions import CycleExhaustedError
 _logger = logging.getLogger(__name__)
 ALLOWED_STATES = {"INIT", "RUNNING", "STOPPING", "STOPPED"}
@@ -419,7 +420,7 @@ def register_signal_handlers():
         signal.signal(signal.SIGINT, _handle_shutdown)
     atexit.register(stop, timeout=_WORKER_TIMEOUT)
 
-def _validate_billing_pool_preflight() -> None:
+def _validate_billing_pool_preflight() -> None:  # pylint: disable=protected-access
     """Validate billing pool before runtime startup. Raises RuntimeError if invalid.
 
     Checks:
@@ -430,19 +431,25 @@ def _validate_billing_pool_preflight() -> None:
     Raises:
         RuntimeError: with a descriptive operational message if any check fails.
     """
-    import modules.billing.main as billing
     pool_dir = billing._pool_dir()
     if not pool_dir.is_dir():
-        raise RuntimeError(f"Billing pool directory '{pool_dir}' does not exist. Startup aborted.")
+        raise RuntimeError(
+            f"Billing pool directory '{pool_dir}' does not exist."
+            " Startup aborted."
+        )
     if not list(pool_dir.glob("*.txt")):
-        raise RuntimeError(f"Billing pool directory '{pool_dir}' contains no .txt files. Startup aborted.")
-    if billing._MIN_BILLING_PROFILES > 0:
+        raise RuntimeError(
+            f"Billing pool directory '{pool_dir}' contains no"
+            " .txt files. Startup aborted."
+        )
+    min_profiles = billing._MIN_BILLING_PROFILES
+    if min_profiles > 0:
         profiles = billing._read_profiles_from_disk()
         count = len(profiles)
-        if count < billing._MIN_BILLING_PROFILES:
+        if count < min_profiles:
             raise RuntimeError(
-                f"Billing pool has {count} profiles, below minimum threshold "
-                f"{billing._MIN_BILLING_PROFILES}. Startup aborted."
+                f"Billing pool has {count} profiles, below minimum"
+                f" threshold {min_profiles}. Startup aborted."
             )
     _logger.info("Billing pool preflight OK: dir=%s", pool_dir)
 def start(task_fn, interval=None):
