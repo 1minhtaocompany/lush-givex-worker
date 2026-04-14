@@ -237,8 +237,8 @@ class GivexDriver:
         el.send_keys(value)
 
     def _realistic_type_field(
-        self, sel, val, *, use_burst=False,
-        field_kind="text", typo_rate=None,
+            self, sel, val, *, use_burst=False,
+            field_kind="text", typo_rate=None,
     ):
         els = self.find_elements(sel)
         if not els: raise SelectorTimeoutError(sel, 0)  # noqa: E701
