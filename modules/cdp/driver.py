@@ -280,7 +280,6 @@ class GivexDriver:
             return
 
         rnd = self._get_rng()
-
         n_points = int(rnd.uniform(4, 8))
         points = []
         for i in range(1, n_points + 1):
@@ -330,6 +329,7 @@ class GivexDriver:
                 elements[0],
             )
         except Exception:
+            _log.debug("bounding_box_click: getBoundingClientRect failed, using plain click", exc_info=True)
             rect = None
 
         if rect and self._rnd is not None:
