@@ -7,6 +7,7 @@ this file is the single integration point that wires them together.
 
 import atexit
 import concurrent.futures
+import datetime
 import hashlib
 import ipaddress
 import json
@@ -40,7 +41,7 @@ from modules.watchdog import main as watchdog
 _WATCHDOG_TIMEOUT = 30
 
 _logger = logging.getLogger(__name__)
-_audit_logger = logging.getLogger(f"{__name__}.audit")
+_AUDIT_LOGGER = logging.getLogger(f"{__name__}.audit")
 
 # Redact card-like digit sequences (13–16 consecutive digits) from error messages
 # to prevent PII leakage when CDP exceptions contain card numbers.
@@ -512,10 +513,10 @@ def _make_profile_id(profile: "billing.BillingProfile") -> str:
 
 
 def _emit_billing_audit_event(
-    profile: "billing.BillingProfile",
-    worker_id: str,
-    task_id: str | None,
-    zip_code: str | int | None,
+        profile: "billing.BillingProfile",
+        worker_id: str,
+        task_id: str | None,
+        zip_code: str | int | None,
 ) -> None:
     """Emit a structured audit event for a successful billing profile selection.
 
@@ -530,21 +531,20 @@ def _emit_billing_audit_event(
     - No delay, no state mutation, no FSM interaction.
     """
     try:
-        import datetime
-        normalized_zip = str(zip_code).strip() if zip_code is not None else None
-        selection_method = "zip_match" if normalized_zip else "round_robin"
+        requested_zip = None if zip_code is None else str(zip_code)
+        selection_method = "zip_match" if requested_zip and requested_zip.strip() else "round_robin"
         event = {
             "event_type": "billing_selection",
             "worker_id": worker_id,
             "task_id": task_id,
             "selection_method": selection_method,
-            "requested_zip": normalized_zip,
+            "requested_zip": requested_zip,
             "profile_id": _make_profile_id(profile),
             "trace_id": _get_trace_id(),
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
-        _audit_logger.info("billing_selection %s", json.dumps(event, ensure_ascii=False))
-    except Exception as exc:  # noqa: BLE001
+        _AUDIT_LOGGER.info("billing_selection %s", json.dumps(event, ensure_ascii=False))
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         _logger.warning(
             "[trace=%s] Failed to emit billing audit event for worker=%s: %s",
             _get_trace_id(),

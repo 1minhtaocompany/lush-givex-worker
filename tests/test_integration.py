@@ -1126,7 +1126,7 @@ class TestBillingSelectionAuditEvent(unittest.TestCase):
             patch("integration.orchestrator.cdp"),
             patch("integration.orchestrator.watchdog") as mock_watchdog,
             patch("integration.orchestrator.fsm") as mock_fsm,
-            patch("integration.orchestrator._audit_logger") as mock_audit,
+            patch("integration.orchestrator._AUDIT_LOGGER") as mock_audit,
         ):
             mock_billing.select_profile.return_value = profile
             mock_watchdog.wait_for_total.return_value = 10.0
@@ -1179,6 +1179,14 @@ class TestBillingSelectionAuditEvent(unittest.TestCase):
         event = _json.loads(captured[0])
         self.assertEqual(event["selection_method"], "round_robin")
         self.assertIsNone(event["requested_zip"])
+
+    def test_selection_method_round_robin_when_zip_is_empty(self):
+        """selection_method must be 'round_robin' when zip_code is empty/blank."""
+        profile = self._make_profile()
+        captured = self._run_payment_step_with_known_profile(profile, zip_code="   ")
+        event = _json.loads(captured[0])
+        self.assertEqual(event["selection_method"], "round_robin")
+        self.assertEqual(event["requested_zip"], "   ")
 
     def test_profile_id_is_anonymized(self):
         """profile_id must be a SHA-256 hex hash — not raw first_name or last_name."""
