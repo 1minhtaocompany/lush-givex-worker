@@ -355,7 +355,8 @@ class GivexDriver:
                     if self._temporal.get_time_state(0) == "NIGHT":
                         night_factor = 1.0 + getattr(self._persona, "night_penalty_factor", 0.0)
                 except Exception:
-                    pass
+                    # Temporal state is optional here; fall back to default night_factor.
+                    _log.debug("bounding_box_click: unable to read temporal state; using default night_factor")
             ox = rnd.uniform(-15, 15) * night_factor
             oy = rnd.uniform(-5, 5) * night_factor
             ox = max(-15.0, min(15.0, ox))
