@@ -14,6 +14,7 @@ Validates that:
 
 import logging
 import os
+import shutil
 import tempfile
 import threading
 import time
@@ -67,7 +68,6 @@ class ScalingResetMixin:
 
     def tearDown(self):
         self._billing_pool_patcher.stop()
-        import shutil
         shutil.rmtree(self._billing_pool_dir, ignore_errors=True)
         reset()
         rollout.reset()

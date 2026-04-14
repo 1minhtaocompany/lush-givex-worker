@@ -13,6 +13,7 @@ paths without modifying any production module.
 """
 
 import os
+import shutil
 import tempfile
 import threading
 import time
@@ -57,7 +58,6 @@ class Phase8ResetMixin:
 
     def tearDown(self):
         self._billing_pool_patcher.stop()
-        import shutil
         shutil.rmtree(self._billing_pool_dir, ignore_errors=True)
         reset()
         rollout.reset()

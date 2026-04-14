@@ -12,6 +12,7 @@ Acceptance criteria verified:
 
 import logging
 import os
+import shutil
 import tempfile
 import time
 import unittest
@@ -49,7 +50,6 @@ class ObservationResetMixin:
 
     def tearDown(self):
         self._billing_pool_patcher.stop()
-        import shutil
         shutil.rmtree(self._billing_pool_dir, ignore_errors=True)
         runtime.reset()
         rollout.reset()

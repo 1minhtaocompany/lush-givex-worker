@@ -418,6 +418,7 @@ def register_signal_handlers():
         signal.signal(signal.SIGTERM, _handle_shutdown)
         signal.signal(signal.SIGINT, _handle_shutdown)
     atexit.register(stop, timeout=_WORKER_TIMEOUT)
+
 def _validate_billing_pool_preflight() -> None:
     """Validate billing pool before runtime startup. Raises RuntimeError if invalid.
 

@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import threading
 import time
@@ -49,7 +50,6 @@ class RuntimeResetMixin:
 
     def tearDown(self):
         self._billing_pool_patcher.stop()
-        import shutil
         shutil.rmtree(self._billing_pool_dir, ignore_errors=True)
         reset()
         rollout.reset()
@@ -1494,7 +1494,6 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
         self._tmpdirs = []
 
     def tearDown(self):
-        import shutil
         for d in self._tmpdirs:
             shutil.rmtree(d, ignore_errors=True)
         super().tearDown()
