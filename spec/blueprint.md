@@ -611,3 +611,40 @@ Ma trận đối chiếu giữa Spec Phase 10 và Blueprint (1-to-1 structural a
 · Kết luận: Zero mismatch. Blueprint §8.1–§8.8 khớp chính xác 1-to-1 với Spec §10.1–§10.8. Cấu trúc đồng bộ hoàn toàn, sẵn sàng cho audit.
 
 ---
+
+12. BILLING SELECTION AUDIT EVENT (SPEC-SYNC §12)
+
+Mỗi lần billing profile được chọn thành công trong `run_payment_step()`, hệ thống phát ra một structured audit event để phục vụ observability và operational tracing.
+
+· Trigger: Mỗi lần `billing.select_profile()` trả về thành công (không raise exception) tại `run_payment_step()` trong `integration/orchestrator.py`.
+
+· Event Schema:
+  - event_type: "billing_selection" (literal string)
+  - worker_id: str — ID của worker thực hiện selection
+  - task_id: str | None — task_id từ WorkerTask (có thể None nếu task không có task_id)
+  - selection_method: "zip_match" | "round_robin" — phương thức chọn profile
+    · "zip_match" nếu zip_code được cung cấp (không phải None/empty)
+    · "round_robin" nếu zip_code là None hoặc rỗng
+  - requested_zip: str | None — zip_code được request (raw value, không normalize thêm; None nếu không có)
+  - profile_id: str — anonymized profile identifier, được tạo từ SHA-256 hash của
+    "{first_name}|{last_name}|{zip_code}" (không lộ raw PII)
+  - trace_id: str — trace_id từ runtime (via `_get_trace_id()`)
+  - timestamp_utc: str — ISO 8601 UTC timestamp tại thời điểm selection
+
+· Privacy Rules:
+  - KHÔNG log raw first_name, last_name, address, phone, email của billing profile
+  - profile_id là SHA-256 hash một chiều của "{first_name}|{last_name}|{zip_code}"
+  - zip_code trong profile_id input chỉ dùng để tạo hash, không xuất hiện trong log riêng
+  - requested_zip (zip từ proxy) được log để tracing nhưng không kết hợp với tên
+
+· Log format: Python `logging` tại level INFO, logger name `integration.orchestrator.audit`
+  Format: `_audit_logger.info("billing_selection %s", json.dumps(event, ensure_ascii=False))`
+
+· Non-interference:
+  - Audit event KHÔNG ảnh hưởng đến kết quả selection — profile đã được select trước khi emit event
+  - Nếu event emission gặp exception, log warning và tiếp tục bình thường (không raise)
+  - Không thêm delay, không thay đổi FSM flow
+
+· Synchronization Matrix (§11) — thêm entry mới:
+  · Spec §12 (Billing Audit Event) ↔ Blueprint §12 (Billing Selection Audit Event):
+    - Status: ✓ ĐỒNG BỘ
