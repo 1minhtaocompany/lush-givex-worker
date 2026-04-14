@@ -10,13 +10,14 @@ import os
 import re
 import signal
 import threading
+from typing import Dict, Optional
 
 _log = logging.getLogger(__name__)
 
 _registry_lock = threading.Lock()
 _driver_registry: dict[str, object] = {}
 _pid_registry: dict[str, int] = {}
-_bitbrowser_registry: dict[str, str] = {}
+_bitbrowser_registry: Dict[str, str] = {}
 
 _CARD_PATTERN = re.compile(r"\b\d{16}\b")
 _CVV_PATTERN = re.compile(r"\bcvv\s*=\s*\d{3,4}\b", re.IGNORECASE)
@@ -194,7 +195,7 @@ def register_browser_profile(worker_id: str, profile_id: str) -> None:
         _bitbrowser_registry[worker_id] = profile_id
 
 
-def get_browser_profile(worker_id: str) -> str | None:
+def get_browser_profile(worker_id: str) -> Optional[str]:
     """Get BitBrowser profile id for a worker, if present."""
     with _registry_lock:
         return _bitbrowser_registry.get(worker_id)

@@ -1,12 +1,12 @@
 """BitBrowser client utilities for per-worker fingerprint lifecycle."""
 
-from __future__ import annotations
-
+import json
 import logging
 import os
+import urllib.error
+import urllib.request
+from typing import Dict, Optional, Tuple
 from uuid import uuid4
-
-import requests
 
 _logger = logging.getLogger(__name__)
 
@@ -17,104 +17,97 @@ class BitBrowserClient:
     def __init__(self, endpoint: str, api_key: str):
         self._endpoint = endpoint.rstrip("/")
         self._api_key = api_key
-        self._headers = {
-            "Content-Type": "application/json",
-            "X-Api-Key": api_key,
-        }
 
     def _url(self, path: str) -> str:
         return f"{self._endpoint}{path}"
 
-    def _response_data(self, response: requests.Response) -> dict:
-        payload = response.json()
-        if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
-            return payload["data"]
-        if isinstance(payload, dict):
-            return payload
+    def _post(self, path: str, payload: Dict[str, object],
+              timeout: int = 10) -> Dict[str, object]:
+        """POST JSON to the given API path and return parsed response dict."""
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self._url(path),
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "X-Api-Key": self._api_key,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        if isinstance(body, dict) and isinstance(body.get("data"), dict):
+            return body["data"]
+        if isinstance(body, dict):
+            return body
         raise RuntimeError("BitBrowser API returned non-dict JSON payload")
 
     def create_profile(self) -> str:
+        """POST /api/v1/browser/create → returns profile_id string."""
         payload = {
             "platform": "windows",
             "name": f"worker-{uuid4().hex[:8]}",
         }
         try:
-            response = requests.post(
-                self._url("/api/v1/browser/create"),
-                json=payload,
-                headers=self._headers,
-                timeout=10,
-            )
-            response.raise_for_status()
-            data = self._response_data(response)
-        except requests.exceptions.RequestException as exc:
+            data = self._post("/api/v1/browser/create", payload, timeout=10)
+        except (urllib.error.URLError, OSError) as exc:
             raise RuntimeError("BitBrowser create_profile request failed") from exc
         profile_id = data.get("id") or data.get("profile_id")
         if not isinstance(profile_id, str) or not profile_id:
             raise RuntimeError("BitBrowser create_profile response missing profile id")
         return profile_id
 
-    def launch_profile(self, profile_id: str) -> dict:
+    def launch_profile(self, profile_id: str) -> Dict[str, object]:
+        """POST /api/v1/browser/open → returns response dict."""
         try:
-            response = requests.post(
-                self._url("/api/v1/browser/open"),
-                json={"id": profile_id},
-                headers=self._headers,
-                timeout=30,
-            )
-            response.raise_for_status()
-            data = self._response_data(response)
-        except requests.exceptions.RequestException as exc:
+            data = self._post("/api/v1/browser/open", {"id": profile_id}, timeout=30)
+        except (urllib.error.URLError, OSError) as exc:
             raise RuntimeError("BitBrowser launch_profile request failed") from exc
         if not isinstance(data, dict):
             raise RuntimeError("BitBrowser launch_profile response payload must be dict")
         return data
 
     def close_profile(self, profile_id: str) -> None:
+        """POST /api/v1/browser/close. No-op if request fails."""
         try:
-            response = requests.post(
-                self._url("/api/v1/browser/close"),
-                json={"id": profile_id},
-                headers=self._headers,
-                timeout=10,
-            )
-            response.raise_for_status()
-        except requests.exceptions.RequestException as exc:
+            self._post("/api/v1/browser/close", {"id": profile_id}, timeout=10)
+        except (urllib.error.URLError, OSError) as exc:
             _logger.warning("BitBrowser close_profile failed for %s: %s", profile_id, exc)
 
     def delete_profile(self, profile_id: str) -> None:
+        """POST /api/v1/browser/delete. No-op if request fails."""
         try:
-            response = requests.post(
-                self._url("/api/v1/browser/delete"),
-                json={"id": profile_id},
-                headers=self._headers,
-                timeout=10,
-            )
-            response.raise_for_status()
-        except requests.exceptions.RequestException as exc:
+            self._post("/api/v1/browser/delete", {"id": profile_id}, timeout=10)
+        except (urllib.error.URLError, OSError) as exc:
             _logger.warning("BitBrowser delete_profile failed for %s: %s", profile_id, exc)
 
     def is_available(self) -> bool:
+        """GET /api/v1/browser/list → True if 2xx response."""
         try:
-            response = requests.get(
+            req = urllib.request.Request(
                 self._url("/api/v1/browser/list"),
-                headers=self._headers,
-                timeout=2,
+                headers={"X-Api-Key": self._api_key},
+                method="GET",
             )
-            response.raise_for_status()
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                resp.read()
             return True
-        except requests.exceptions.RequestException:
+        except (urllib.error.URLError, OSError):
             return False
 
 
 class BitBrowserSession:
-    """Context manager for BitBrowser profile lifecycle."""
+    """Context manager for BitBrowser profile lifecycle.
+
+    __enter__: create_profile() → launch_profile() → return (profile_id, webdriver_url)
+    __exit__: close_profile() → delete_profile() (best-effort, log errors)
+    """
 
     def __init__(self, client: BitBrowserClient):
         self._client = client
-        self._profile_id: str | None = None
+        self._profile_id: Optional[str] = None
 
-    def __enter__(self) -> tuple[str, str]:
+    def __enter__(self) -> Tuple[str, str]:
         profile_id = self._client.create_profile()
         launch_data = self._client.launch_profile(profile_id)
         webdriver_url = launch_data.get("webdriver")
@@ -123,22 +116,22 @@ class BitBrowserSession:
         self._profile_id = profile_id
         return profile_id, webdriver_url
 
-    def __exit__(self, _exc_type, _exc_value, _exc_traceback) -> bool:
+    def __exit__(self, exc_type, exc_value, exc_tb) -> bool:
         if self._profile_id is None:
             return False
         try:
             self._client.close_profile(self._profile_id)
-        except requests.exceptions.RequestException:  # pragma: no cover
+        except (urllib.error.URLError, OSError):
             pass
         try:
             self._client.delete_profile(self._profile_id)
-        except requests.exceptions.RequestException:  # pragma: no cover
+        except (urllib.error.URLError, OSError):
             pass
         return False
 
 
-def get_bitbrowser_client() -> BitBrowserClient | None:
-    """Return available BitBrowser client if env config is present, else None."""
+def get_bitbrowser_client() -> Optional[BitBrowserClient]:
+    """Return BitBrowserClient if env vars set and endpoint reachable, else None."""
     api_key = os.getenv("BITBROWSER_API_KEY")
     if not api_key:
         return None

@@ -4,10 +4,10 @@ import json
 import os
 import threading
 import unittest
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, patch
 
-import requests
 from modules.cdp.fingerprint import (
     BitBrowserClient,
     BitBrowserSession,
@@ -21,7 +21,7 @@ from integration import runtime
 class _BitBrowserMockHandler(BaseHTTPRequestHandler):
     _state_lock = threading.Lock()
     _counter = 0
-    _calls = []
+    _calls = []  # pylint: disable=dangerous-default-value
 
     @classmethod
     def reset_state(cls):
@@ -55,8 +55,8 @@ class _BitBrowserMockHandler(BaseHTTPRequestHandler):
             self._calls.append((self.path, payload))
         if self.path == "/api/v1/browser/create":
             with self._state_lock:
-                self.__class__._counter += 1
-                profile_id = f"profile-{self.__class__._counter}"
+                _BitBrowserMockHandler._counter += 1  # pylint: disable=protected-access
+                profile_id = f"profile-{_BitBrowserMockHandler._counter}"  # pylint: disable=protected-access
             self._write_json(200, {"data": {"id": profile_id}})
             return
         if self.path == "/api/v1/browser/open":
@@ -76,7 +76,8 @@ class _BitBrowserMockHandler(BaseHTTPRequestHandler):
             return
         self._write_json(404, {"error": "not found"})
 
-    def log_message(self, _format, *_args):  # pylint: disable=unused-argument
+    def log_message(self, format, *args):  # noqa: A002  # pylint: disable=redefined-builtin
+        """Suppress server log output during tests."""
         return
 
 
@@ -136,22 +137,26 @@ class BitBrowserSessionTests(unittest.TestCase):
         fake_client = MagicMock()
         fake_client.create_profile.return_value = "profile-x"
         fake_client.launch_profile.return_value = {"webdriver": "ws://127.0.0.1:9222/x"}
-        fake_client.close_profile.side_effect = requests.exceptions.RequestException("close failed")
-        fake_client.delete_profile.side_effect = requests.exceptions.RequestException("delete failed")
+        fake_client.close_profile.side_effect = urllib.error.URLError("close failed")
+        fake_client.delete_profile.side_effect = urllib.error.URLError("delete failed")
 
         with BitBrowserSession(fake_client) as (profile_id, webdriver_url):
             self.assertEqual(profile_id, "profile-x")
             self.assertEqual(webdriver_url, "ws://127.0.0.1:9222/x")
 
 
+def _reset_bitbrowser_registry():
+    """Clear the bitbrowser registry via the public API helper."""
+    with cdp._registry_lock:  # pylint: disable=protected-access
+        cdp._bitbrowser_registry.clear()  # pylint: disable=protected-access
+
+
 class RuntimeBrowserProfileAccessorTests(unittest.TestCase):
     def setUp(self):
-        with cdp._registry_lock:
-            cdp._bitbrowser_registry.clear()
+        _reset_bitbrowser_registry()
 
     def tearDown(self):
-        with cdp._registry_lock:
-            cdp._bitbrowser_registry.clear()
+        _reset_bitbrowser_registry()
 
     def test_runtime_returns_registered_profile(self):
         register_browser_profile("worker-a", "profile-a")

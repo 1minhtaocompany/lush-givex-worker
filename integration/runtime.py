@@ -663,7 +663,7 @@ def get_trace_id():
     with _trace_lock: return _trace_id
 
 
-def get_worker_browser_profile(worker_id: str) -> str | None:
+def get_worker_browser_profile(worker_id: str):  # -> Optional[str]
     """Return registered browser profile id for the worker, if any."""
     return cdp.get_browser_profile(worker_id)
 
