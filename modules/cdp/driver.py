@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - tests mock _cdp_select_option
 
 try:
     from selenium.webdriver.common.action_chains import ActionChains as _ActionChains  # type: ignore[import]
-except ImportError:  # pragma: no cover - tests mock _ghost_move_to / _hesitate_before_submit
+except ImportError:  # pragma: no cover - tests mock _ghost_move_to
     _ActionChains = None  # type: ignore[assignment,misc]
 
 from modules.common.exceptions import PageStateError, SelectorTimeoutError
@@ -32,11 +32,8 @@ try:
     from modules.delay.engine import DelayEngine as _DelayEngine  # type: ignore
     from modules.delay.wrapper import inject_card_entry_delays as _inject_card_entry_delays  # type: ignore
 except ImportError:
-    _BiometricProfile = None  # type: ignore[assignment]
-    _TemporalModel = None  # type: ignore[assignment]
-    _BehaviorStateMachine = None  # type: ignore[assignment]
-    _DelayEngine = None  # type: ignore[assignment]
-    _inject_card_entry_delays = None  # type: ignore[assignment]
+    (_BiometricProfile, _TemporalModel, _BehaviorStateMachine,
+     _DelayEngine, _inject_card_entry_delays) = (None, None, None, None, None)
 
 _log = logging.getLogger(__name__)
 
@@ -118,10 +115,7 @@ class GivexDriver:
 
     Args:
         driver: A Selenium WebDriver instance (or test double).
-        persona: Optional PersonaProfile for behavior simulation.  When
-            ``None`` (default) the driver operates in legacy mode using
-            ``secrets``-based randomness and no delay injection — all 36
-            existing tests rely on this default.
+        persona: Optional behavior profile; ``None`` preserves legacy mode.
     """
 
     def __init__(self, driver: object, persona=None) -> None:
@@ -134,15 +128,13 @@ class GivexDriver:
             self._temporal = _TemporalModel(persona)
             self._bio = _BiometricProfile(persona)
         else:
-            self._sm = None
-            self._engine = None
-            self._temporal = None
-            self._bio = None
+            self._sm, self._engine = None, None
+            self._temporal, self._bio = None, None
 
     # ── Low-level helpers ────────────────────────────────────────────────────
 
     def _get_rng(self):
-        """Return the persona random generator, or a new SystemRandom if unavailable."""
+        """Return the persona RNG or a SystemRandom fallback."""
         if self._rnd is not None:
             return self._rnd
         import random as _random  # noqa: PLC0415
@@ -253,7 +245,7 @@ class GivexDriver:
         Select(elements[0]).select_by_value(value)
 
     def _smooth_scroll_to(self, selector: str) -> None:
-        """Scroll element into view with smooth behavior (Blueprint §4 line 65)."""
+        """Scroll an element into view smoothly."""
         elements = self.find_elements(selector)
         if not elements:
             return
@@ -268,11 +260,7 @@ class GivexDriver:
         time.sleep(delay)
 
     def _ghost_move_to(self, selector: str) -> None:
-        """Move mouse along a Bézier curve to the target element (Blueprint §3 line 51, §9 line 470).
-
-        Uses ActionChains.move_by_offset to simulate ghost-cursor movement.
-        Falls back to a no-op if ActionChains is unavailable (e.g. in unit tests).
-        """
+        """Move mouse along a Bézier-like path to the target element."""
         elements = self.find_elements(selector)
         if not elements:
             return
@@ -320,11 +308,7 @@ class GivexDriver:
         time.sleep(click_delay * len(points))
 
     def bounding_box_click(self, selector: str) -> None:
-        """Click element with random bounding-box offset x±15 y±5 (Blueprint §4 line 95, §9 line 471).
-
-        Uses getBoundingClientRect + Input.dispatchMouseEvent for absolute-coordinate
-        click with persona-seeded random offset.  Falls back to plain .click() if
-        CDP or ActionChains are unavailable.
+        """Click using randomized bounding-box coordinates, with safe fallbacks.
 
         Args:
             selector: CSS selector for the element to click.
@@ -355,7 +339,6 @@ class GivexDriver:
                     if self._temporal.get_time_state(0) == "NIGHT":
                         night_factor = 1.0 + getattr(self._persona, "night_penalty_factor", 0.0)
                 except Exception:
-                    # Temporal state is optional here; fall back to default night_factor.
                     _log.debug("bounding_box_click: unable to read temporal state; using default night_factor")
             ox = rnd.uniform(-15, 15) * night_factor
             oy = rnd.uniform(-5, 5) * night_factor
@@ -363,18 +346,15 @@ class GivexDriver:
             oy = max(-5.0, min(5.0, oy))
             center_x = rect["left"] + rect["width"] / 2
             center_y = rect["top"] + rect["height"] / 2
-            # Clamp final coordinates to element bounds
             abs_x = max(rect["left"], min(center_x + ox, rect["left"] + rect["width"]))
             abs_y = max(rect["top"], min(center_y + oy, rect["top"] + rect["height"]))
             try:
                 for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
-                    self._driver.execute_cdp_cmd("Input.dispatchMouseEvent", {
-                        "type": event_type,
-                        "x": abs_x,
-                        "y": abs_y,
-                        "button": "left",
-                        "clickCount": 1,
-                    })
+                    self._driver.execute_cdp_cmd(
+                        "Input.dispatchMouseEvent",
+                        {"type": event_type, "x": abs_x, "y": abs_y,
+                         "button": "left", "clickCount": 1},
+                    )
                 return
             except Exception:
                 _log.debug("bounding_box_click: CDP dispatchMouseEvent failed, fallback to .click()")
@@ -382,31 +362,15 @@ class GivexDriver:
         elements[0].click()
 
     def cdp_click_absolute(self, x: float, y: float) -> None:
-        """Send absolute-coordinate CDP click (Blueprint §6 lines 253-255).
-
-        Used for VBV/3DS iframe interaction where element coordinates must be
-        relative to the viewport rather than the iframe context.
-
-        Args:
-            x: Absolute viewport x coordinate.
-            y: Absolute viewport y coordinate.
-        """
+        """Send an absolute-coordinate CDP click."""
         for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
-            self._driver.execute_cdp_cmd("Input.dispatchMouseEvent", {
-                "type": event_type,
-                "x": x,
-                "y": y,
-                "button": "left",
-                "clickCount": 1,
-            })
+            self._driver.execute_cdp_cmd(
+                "Input.dispatchMouseEvent",
+                {"type": event_type, "x": x, "y": y, "button": "left", "clickCount": 1},
+            )
 
     def _hesitate_before_submit(self) -> None:
-        """Hover mouse around COMPLETE PURCHASE for 3-5s before clicking (Blueprint §5 line 216, §9 lines 483-485).
-
-        Uses persona hesitation_pattern for delay duration.
-        Clamp: min 3.0s, max 5.0s (Blueprint §8.6).
-        CRITICAL_SECTION check: no delay injected if engine says not permitted.
-        """
+        """Hover briefly around COMPLETE PURCHASE before clicking."""
         if self._engine is not None and not self._engine.is_delay_permitted():
             return
 
