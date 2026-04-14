@@ -544,7 +544,7 @@ def _emit_billing_audit_event(
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
         _AUDIT_LOGGER.info("billing_selection %s", json.dumps(event, ensure_ascii=False))
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         _logger.warning(
             "[trace=%s] Failed to emit billing audit event for worker=%s: %s",
             _get_trace_id(),
