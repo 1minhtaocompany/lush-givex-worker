@@ -99,7 +99,7 @@ class ScriptTests(unittest.TestCase):
         checksum = hashlib.sha256(archive_bytes).hexdigest()
         checksum_bytes = ("%s  GeoLite2-City.tar.gz\n" % checksum).encode("utf-8")
 
-        def _mock_urlopen(url, timeout=60):  # pylint: disable=unused-argument
+        def _mock_urlopen(url, **kwargs):
             value = getattr(url, "full_url", url)
             if str(value).endswith("suffix=tar.gz.sha256"):
                 return _FakeResponse(checksum_bytes)

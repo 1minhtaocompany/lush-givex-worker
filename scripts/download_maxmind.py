@@ -17,7 +17,8 @@ _BASE_URL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2
 
 
 def _download_bytes(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310
+    # nosec B310: URL is built from a fixed HTTPS MaxMind endpoint and controlled query params.
+    with urllib.request.urlopen(url, timeout=60) as response:
         return response.read()
 
 
