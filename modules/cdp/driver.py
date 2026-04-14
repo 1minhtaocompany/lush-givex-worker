@@ -28,6 +28,12 @@ try:
 except ImportError:  # pragma: no cover - defensive; mouse.py is always present
     _GhostCursor = None  # type: ignore[assignment,misc]
 
+try:
+    from modules.cdp.keyboard import type_value as _type_value, adjacent_char as _adjacent_char
+except ImportError:  # pragma: no cover - defensive; keyboard.py is always present
+    _type_value = None  # type: ignore[assignment,misc]
+    _adjacent_char = None  # type: ignore[assignment,misc]
+
 from modules.common.exceptions import PageStateError, SelectorTimeoutError
 
 try:
@@ -124,9 +130,10 @@ class GivexDriver:
         persona: Optional behavior profile; ``None`` preserves legacy mode.
     """
 
-    def __init__(self, driver: object, persona=None) -> None:
+    def __init__(self, driver: object, persona=None, *, strict: bool = False) -> None:
         self._driver = driver
         self._persona = persona
+        self._strict = strict
         self._rnd = persona._rnd if persona is not None else None
         if persona is not None and _BehaviorStateMachine is not None:
             self._sm = _BehaviorStateMachine()
@@ -235,6 +242,27 @@ class GivexDriver:
             _log.debug("Element clear() skipped in _cdp_type_field")
         el.send_keys(value)
 
+    def _realistic_type_field(self, selector: str, value: str, *, use_burst: bool = False) -> None:
+        """Type *value* per-character via keyboard module; falls back to _cdp_type_field."""
+        elements = self.find_elements(selector)
+        if not elements:
+            raise SelectorTimeoutError(selector, 0)
+        if _type_value is None:
+            if self._strict:
+                _log.warning("_realistic_type_field: keyboard unavailable (strict mode)")
+            return self._cdp_type_field(selector, value)
+        typo_rate = self._persona.get_typo_probability() if self._persona else 0.0
+        if self._persona and self._temporal:
+            typo_rate += self._temporal.get_night_typo_increase()
+        delays = None
+        if self._bio:
+            delays = (self._bio.generate_4x4_pattern() if use_burst and len(value) >= 16
+                      else self._bio.generate_burst_pattern(len(value)))
+        stats = _type_value(elements[0], value, self._get_rng(),
+                            typo_rate=typo_rate, delays=delays, strict=self._strict)
+        _log.debug("_realistic_type_field: selector=%s mode=%s chars=%d typos=%d",
+                   selector, stats["mode"], stats["typed_chars"], stats["typos_injected"])
+
     def _cdp_select_option(self, selector: str, value: str) -> None:
         """Select the option matching *value* in a ``<select>`` element.
 
@@ -265,10 +293,12 @@ class GivexDriver:
                 "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
                 elements[0],
             )
-            # Wheel-style micro-correction: a small upward nudge (~8 px) mimics
-            # the natural overshoot correction a user makes after a smooth scroll
-            # settles near the target element.
-            self._driver.execute_script("window.scrollBy(0, -8);")
+            # Micro-correction: prefer wheel-style CDP event (more realistic);
+            # fall back to JS scrollBy when GhostCursor is unavailable.
+            if self._cursor is not None:
+                self._cursor.scroll_wheel(-8.0, steps=2)
+            else:
+                self._driver.execute_script("window.scrollBy(0, -8);")
         except Exception:
             _log.debug("_smooth_scroll_to: execute_script skipped")
         delay = self._persona.get_click_delay() if self._persona is not None else 0.15
@@ -388,9 +418,16 @@ class GivexDriver:
                     )
                 return
             except Exception:
+                if self._strict:
+                    _log.warning(
+                        "bounding_box_click: CDP dispatchMouseEvent failed in strict mode; "
+                        "suppressing .click() fallback"
+                    )
+                    return
                 _log.debug("bounding_box_click: CDP dispatchMouseEvent failed, fallback to .click()", exc_info=True)
 
-        elements[0].click()
+        if not self._strict:
+            elements[0].click()
 
     def cdp_click_absolute(self, x: float, y: float) -> None:
         """Send an absolute-coordinate CDP click."""
@@ -401,18 +438,17 @@ class GivexDriver:
             )
 
     def _hesitate_before_submit(self) -> None:
-        """Hover and lightly scroll around COMPLETE PURCHASE before clicking."""
+        """Distribute hover/scroll across the 3–5 s window before submit."""
         if self._engine is not None and not self._engine.is_delay_permitted():
             return
-
         if self._persona is not None:
             raw = self._persona.get_hesitation_delay()
         else:
             raw = self._get_rng().uniform(3.0, 5.0)
-
         delay = max(3.0, min(raw, 5.0))
-
+        rnd = self._get_rng()
         elements = self.find_elements(SEL_COMPLETE_PURCHASE)
+        rect = None
         if elements:
             try:
                 rect = self._driver.execute_script(
@@ -420,28 +456,36 @@ class GivexDriver:
                     "return {left:r.left,top:r.top,width:r.width,height:r.height};",
                     elements[0],
                 )
-                if rect:
-                    rnd = self._get_rng()
-                    # Light scroll down toward the button area.
-                    self._driver.execute_script(
-                        "window.scrollBy(0, arguments[0]);",
-                        int(rnd.uniform(15, 30)),
-                    )
-                    if _ActionChains is not None:
-                        actions = _ActionChains(self._driver)
-                        for _ in range(4):
-                            actions.move_by_offset(int(rnd.uniform(-8, 8)), int(rnd.uniform(-3, 3)))
-                        actions.perform()
-                    # Light scroll back up to restore position.
-                    self._driver.execute_script(
-                        "window.scrollBy(0, arguments[0]);",
-                        int(rnd.uniform(-30, -15)),
-                    )
             except Exception:
-                _log.debug("_hesitate_before_submit: hover failed, still sleeping")
-
-        _log.debug("_hesitate_before_submit: sleeping %.3fs", delay)
-        time.sleep(delay)
+                _log.debug("_hesitate_before_submit: getBoundingClientRect skipped")
+        if not rect:
+            _log.debug("_hesitate_before_submit: sleeping %.3fs (no rect)", delay)
+            time.sleep(delay)
+            return
+        slot = delay / 4.0
+        for phase in range(4):
+            t0 = time.monotonic()
+            try:
+                if phase == 0 and self._cursor is not None:
+                    self._cursor.scroll_wheel(rnd.uniform(15, 30), steps=3)
+                elif phase == 1 and self._cursor is not None:
+                    self._cursor.move_to(
+                        rect["left"] + rect["width"] / 2 + rnd.uniform(-20, 20),
+                        rect["top"] + rect["height"] / 2 + rnd.uniform(-8, 8),
+                    )
+                elif phase == 2 and _ActionChains is not None:
+                    ac = _ActionChains(self._driver)
+                    for _ in range(3):
+                        ac.move_by_offset(int(rnd.uniform(-6, 6)), int(rnd.uniform(-3, 3)))
+                    ac.perform()
+                elif phase == 3 and self._cursor is not None:
+                    self._cursor.scroll_wheel(rnd.uniform(-25, -12), steps=2)
+            except Exception:
+                _log.debug("_hesitate_before_submit: phase %d skipped", phase, exc_info=True)
+            r = max(0.0, slot - (time.monotonic() - t0))
+            if r > 0:
+                time.sleep(r)
+        _log.debug("_hesitate_before_submit: distributed %.3fs over 4 phases", delay)
 
     # ── Navigation ──────────────────────────────────────────────────────────
 
@@ -567,14 +611,14 @@ class GivexDriver:
         """
         if self._sm is not None:
             self._sm.transition("PAYMENT")
-        # Card section
-        self._cdp_type_field(SEL_CARD_NAME, card_info.card_name)
-        self._cdp_type_field(SEL_CARD_NUMBER, card_info.card_number)
+        # Card section — use realistic per-character typing for name and number.
+        self._realistic_type_field(SEL_CARD_NAME, card_info.card_name)
+        self._realistic_type_field(SEL_CARD_NUMBER, card_info.card_number, use_burst=True)
         if self._bio is not None and _inject_card_entry_delays is not None:
             _inject_card_entry_delays(self._bio, engine=self._engine)
         self._cdp_select_option(SEL_CARD_EXPIRY_MONTH, card_info.exp_month)
         self._cdp_select_option(SEL_CARD_EXPIRY_YEAR, card_info.exp_year)
-        self._cdp_type_field(SEL_CARD_CVV, card_info.cvv)
+        self._realistic_type_field(SEL_CARD_CVV, card_info.cvv)
         # Billing section
         self._cdp_type_field(SEL_BILLING_ADDRESS, billing_profile.address)
         self._cdp_select_option(SEL_BILLING_COUNTRY, billing_profile.country)

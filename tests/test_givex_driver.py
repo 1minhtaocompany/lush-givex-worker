@@ -362,16 +362,18 @@ class TestFillPaymentAndBilling(unittest.TestCase):
         billing = _make_billing()
         gd = GivexDriver(selenium)
 
-        with patch.object(gd, "_cdp_select_option") as mock_select:
+        with patch.object(gd, "_cdp_select_option") as mock_select, \
+             patch("time.sleep"):
             gd.fill_payment_and_billing(task.primary_card, billing)
 
-        # Card name, number, and CVV are typed
+        # Card name, number, and CVV are typed (per-character for card fields).
         sent_values = [c.args[0] for c in element.send_keys.call_args_list]
-        self.assertIn(task.primary_card.card_name, sent_values)
-        self.assertIn(task.primary_card.card_number, sent_values)
-        self.assertIn(task.primary_card.cvv, sent_values)
+        sent_flat = "".join(v for v in sent_values if len(v) == 1)
+        self.assertIn(task.primary_card.card_name, sent_flat)
+        self.assertIn(task.primary_card.card_number, sent_flat)
+        self.assertIn(task.primary_card.cvv, sent_flat)
 
-        # Billing text fields
+        # Billing text fields (typed as whole string via _cdp_type_field).
         self.assertIn(billing.address, sent_values)
         self.assertIn(billing.city, sent_values)
         self.assertIn(billing.zip_code, sent_values)
@@ -385,7 +387,7 @@ class TestFillPaymentAndBilling(unittest.TestCase):
         self.assertEqual(select_calls[SEL_BILLING_STATE], billing.state)
 
     def test_fill_payment_and_billing_sends_card_name(self):
-        """Verify card_name is sent to SEL_CARD_NAME."""
+        """Verify card_name characters are sent to SEL_CARD_NAME."""
         selenium = _make_driver()
         element = MagicMock()
         selenium.find_elements.return_value = [element]
@@ -394,11 +396,12 @@ class TestFillPaymentAndBilling(unittest.TestCase):
         billing = _make_billing()
         gd = GivexDriver(selenium)
 
-        with patch.object(gd, "_cdp_select_option"):
+        with patch.object(gd, "_cdp_select_option"), patch("time.sleep"):
             gd.fill_payment_and_billing(task.primary_card, billing)
 
         sent_values = [c.args[0] for c in element.send_keys.call_args_list]
-        self.assertIn("Jane Doe", sent_values)  # card_name
+        sent_flat = "".join(v for v in sent_values if len(v) == 1)
+        self.assertIn("Jane Doe", sent_flat)
 
     def test_fill_payment_and_billing_selects_country(self):
         """Verify _cdp_select_option is called with SEL_BILLING_COUNTRY and billing_profile.country."""
@@ -748,15 +751,13 @@ class TestSmoothScrollTo(unittest.TestCase):
         element = MagicMock()
         selenium.find_elements.return_value = [element]
         persona = _make_persona(42)
-        expected_delay = persona.get_click_delay()
-        # Create fresh persona with same seed to get deterministic delay value
-        persona2 = _make_persona(42)
-        gd = GivexDriver(selenium, persona=persona2)
+        persona.get_click_delay = MagicMock(return_value=0.12345)
+        gd = GivexDriver(selenium, persona=persona)
         sleep_calls = []
         with patch("time.sleep", side_effect=lambda d: sleep_calls.append(d)):
             gd._smooth_scroll_to(SEL_GREETING_MSG)
         self.assertTrue(sleep_calls)
-        self.assertAlmostEqual(sleep_calls[-1], expected_delay, places=10)
+        self.assertAlmostEqual(sleep_calls[-1], 0.12345)
 
     def test_smooth_scroll_to_uses_default_delay_without_persona(self):
         selenium = _make_driver()
@@ -1018,28 +1019,27 @@ class TestHesitateScrollBehavior(unittest.TestCase):
     """submit_purchase includes light scroll when button is visible."""
 
     def test_hesitate_performs_scroll_down_and_up_when_button_visible(self):
-        """Scroll-down and scroll-up are dispatched during the hesitation window."""
+        """Scroll-down and scroll-up CDP events are dispatched during the hesitation window."""
         selenium = _make_driver()
         element = MagicMock()
         selenium.find_elements.return_value = [element]
         selenium.execute_script.return_value = _hesitate_rect()
         persona = _make_persona(42)
         givex_driver = GivexDriver(selenium, persona=persona)
-        sleep_vals = []
-        with patch("time.sleep", side_effect=sleep_vals.append), \
+        wheel_calls = []
+
+        def capture_cdp(cmd, params):
+            if params.get("type") == "mouseWheel":
+                wheel_calls.append(params.get("deltaY", 0))
+
+        selenium.execute_cdp_cmd.side_effect = capture_cdp
+        with patch("time.sleep"), \
+             patch("time.monotonic", return_value=0.0), \
              patch.object(givex_driver, "bounding_box_click"):
             givex_driver.submit_purchase()
-        scrollby_calls = [
-            c for c in selenium.execute_script.call_args_list
-            if "scrollBy" in str(c[0][0])
-        ]
-        self.assertGreaterEqual(
-            len(scrollby_calls), 2,
-            "expected at least scroll-down and scroll-up scrollBy calls",
-        )
-        # Timing clamp is still respected.
-        self.assertGreaterEqual(sleep_vals[-1], 3.0)
-        self.assertLessEqual(sleep_vals[-1], 5.0)
+        # At least one positive (scroll-down) and one negative (scroll-up) wheel event.
+        self.assertTrue(any(d > 0 for d in wheel_calls), "expected scroll-down events")
+        self.assertTrue(any(d < 0 for d in wheel_calls), "expected scroll-up events")
 
     def test_hesitate_scroll_skipped_when_no_button_found(self):
         """When no button element is found, no scrollBy is emitted."""
@@ -1214,6 +1214,186 @@ class TestFillPaymentBiometrics(unittest.TestCase):
              patch("modules.cdp.driver._inject_card_entry_delays") as mock_inject:
             gd.fill_payment_and_billing(task.primary_card, billing)
         mock_inject.assert_not_called()
+
+
+# ── TestStrictMode ───────────────────────────────────────────────────────────
+
+
+class TestStrictMode(unittest.TestCase):
+    """GivexDriver(strict=True) suppresses .click() fallback on CDP failure."""
+
+    @staticmethod
+    def _rect():
+        return {"left": 100.0, "top": 200.0, "width": 80.0, "height": 30.0}
+
+    def test_strict_mode_no_click_fallback_when_cdp_fails(self):
+        """In strict mode, .click() must NOT be called when CDP fails."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        selenium.execute_script.return_value = self._rect()
+        selenium.execute_cdp_cmd.side_effect = RuntimeError("CDP gone")
+        persona = _make_persona(42)
+        gd = GivexDriver(selenium, persona=persona, strict=True)
+        with patch("time.sleep"):
+            gd.bounding_box_click("#el")
+        element.click.assert_not_called()
+
+    def test_non_strict_mode_uses_click_fallback_when_cdp_fails(self):
+        """Without strict mode, .click() fallback is still used on CDP failure."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        selenium.execute_script.return_value = self._rect()
+        selenium.execute_cdp_cmd.side_effect = RuntimeError("CDP gone")
+        persona = _make_persona(42)
+        gd = GivexDriver(selenium, persona=persona, strict=False)
+        with patch("time.sleep"):
+            gd.bounding_box_click("#el")
+        element.click.assert_called_once()
+
+    def test_strict_mode_emits_warning_on_cdp_failure(self):
+        """Strict mode logs WARNING when CDP interaction is suppressed."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        selenium.execute_script.return_value = self._rect()
+        selenium.execute_cdp_cmd.side_effect = RuntimeError("CDP gone")
+        persona = _make_persona(42)
+        gd = GivexDriver(selenium, persona=persona, strict=True)
+        with patch("time.sleep"):
+            with self.assertLogs("modules.cdp.driver", level="WARNING") as cm:
+                gd.bounding_box_click("#el")
+        self.assertTrue(any("strict" in msg.lower() for msg in cm.output))
+
+    def test_default_strict_is_false(self):
+        """GivexDriver defaults to non-strict mode."""
+        selenium = _make_driver()
+        gd = GivexDriver(selenium)
+        self.assertFalse(gd._strict)
+
+
+# ── TestRealisticTypeField ───────────────────────────────────────────────────
+
+
+class TestRealisticTypeField(unittest.TestCase):
+    """_realistic_type_field dispatches per-character via keyboard module."""
+
+    def test_realistic_type_uses_keyboard_module_when_available(self):
+        """_realistic_type_field calls keyboard.type_value when module is present."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        persona = _make_persona(42)
+        gd = GivexDriver(selenium, persona=persona)
+        with patch("modules.cdp.driver._type_value") as mock_tv, \
+             patch("time.sleep"):
+            mock_tv.return_value = {"typed_chars": 4, "typos_injected": 0,
+                                    "corrections_made": 0, "mode": "per_char"}
+            gd._realistic_type_field("#some-field", "test")
+        mock_tv.assert_called_once()
+        _call_el, _call_val = mock_tv.call_args[0][0], mock_tv.call_args[0][1]
+        self.assertEqual(_call_el, element)
+        self.assertEqual(_call_val, "test")
+
+    def test_realistic_type_falls_back_when_keyboard_unavailable(self):
+        """When _type_value is None, falls back to _cdp_type_field."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        gd = GivexDriver(selenium)
+        with patch("modules.cdp.driver._type_value", None):
+            with patch.object(gd, "_cdp_type_field") as mock_fallback:
+                gd._realistic_type_field("#field", "value")
+        mock_fallback.assert_called_once_with("#field", "value")
+
+    def test_realistic_type_raises_on_missing_element(self):
+        selenium = _make_driver()
+        selenium.find_elements.return_value = []
+        gd = GivexDriver(selenium)
+        with self.assertRaises(SelectorTimeoutError):
+            gd._realistic_type_field("#missing", "x")
+
+    def test_realistic_type_uses_burst_delays_for_card_number(self):
+        """With use_burst=True and 16-char value, uses 4x4 delay pattern."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        persona = _make_persona(42)
+        gd = GivexDriver(selenium, persona=persona)
+        with patch("modules.cdp.driver._type_value") as mock_tv, \
+             patch("time.sleep"):
+            mock_tv.return_value = {"typed_chars": 16, "typos_injected": 0,
+                                    "corrections_made": 0, "mode": "per_char"}
+            gd._realistic_type_field("#card", "4111111111111111", use_burst=True)
+        kwargs = mock_tv.call_args[1]
+        delays = kwargs.get("delays")
+        # 4x4 pattern produces 19 delay values (16 chars + 3 group pauses).
+        self.assertIsNotNone(delays)
+        self.assertEqual(len(delays), 19)
+
+    def test_realistic_type_temporal_adjusts_typo_rate(self):
+        """Night temporal state adds to persona typo_rate passed to type_value."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        persona = _make_persona(0)
+        persona.typo_rate = 0.02
+        gd = GivexDriver(selenium, persona=persona)
+        received_typo_rate = []
+        def capture_tv(el, val, rnd, **kw):
+            received_typo_rate.append(kw.get("typo_rate", 0.0))
+            return {"typed_chars": 1, "typos_injected": 0, "corrections_made": 0, "mode": "per_char"}
+        with patch("modules.cdp.driver._type_value", side_effect=capture_tv), \
+             patch.object(gd._temporal, "get_night_typo_increase", return_value=0.015), \
+             patch("time.sleep"):
+            gd._realistic_type_field("#f", "x")
+        self.assertAlmostEqual(received_typo_rate[0], 0.02 + 0.015, places=4)
+
+
+# ── TestHesitationDistribution ───────────────────────────────────────────────
+
+
+class TestHesitationDistribution(unittest.TestCase):
+    """_hesitate_before_submit distributes behavior across 4 equal time slots."""
+
+    @staticmethod
+    def _rect():
+        return {"left": 400.0, "top": 600.0, "width": 120.0, "height": 40.0}
+
+    def test_hesitation_distributes_sleep_across_slots(self):
+        """When rect is available, sleep is distributed across multiple slots."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        selenium.execute_script.return_value = self._rect()
+        persona = _make_persona(42)
+        persona.get_hesitation_delay = MagicMock(return_value=4.0)
+        gd = GivexDriver(selenium, persona=persona)
+        # Mock cursor methods to avoid extra internal sleeps from GhostCursor.
+        gd._cursor.scroll_wheel = MagicMock()
+        gd._cursor.move_to = MagicMock()
+        sleep_calls = []
+        with patch("time.sleep", side_effect=sleep_calls.append), \
+             patch("time.monotonic", return_value=0.0):
+            gd._hesitate_before_submit()
+        # 4 slots of 1.0 s each; remaining = 1.0 since monotonic always returns 0.
+        self.assertEqual(len(sleep_calls), 4)
+        self.assertAlmostEqual(sum(sleep_calls), 4.0, places=5)
+
+    def test_hesitation_scroll_wheel_used_when_cursor_available(self):
+        """When GhostCursor is present, scroll_wheel is called (not scrollBy)."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        selenium.execute_script.return_value = self._rect()
+        persona = _make_persona(42)
+        gd = GivexDriver(selenium, persona=persona)
+        wheel_calls = []
+        gd._cursor.scroll_wheel = MagicMock(side_effect=lambda delta_y, **kw: wheel_calls.append(delta_y))
+        with patch("time.sleep"), patch("time.monotonic", return_value=0.0):
+            gd._hesitate_before_submit()
+        self.assertGreater(len(wheel_calls), 0)
 
 
 if __name__ == "__main__":
