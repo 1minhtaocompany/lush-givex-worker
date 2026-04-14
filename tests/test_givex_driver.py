@@ -770,13 +770,15 @@ class TestSmoothScrollTo(unittest.TestCase):
         self.assertAlmostEqual(sleep_calls[-1], 0.15)
 
     def test_smooth_scroll_to_includes_correction_step(self):
-        """_smooth_scroll_to emits a scrollBy correction after scrollIntoView."""
+        """fill_egift_form triggers a scrollBy correction via _smooth_scroll_to."""
         selenium = _make_driver()
         element = MagicMock()
         selenium.find_elements.return_value = [element]
-        gd = GivexDriver(selenium)
-        with patch("time.sleep"):
-            gd._smooth_scroll_to(SEL_GREETING_MSG)
+        givex_driver = GivexDriver(selenium)
+        with patch.object(givex_driver, "_cdp_type_field"), \
+             patch("modules.cdp.driver._random_greeting", return_value="Hi"), \
+             patch("time.sleep"):
+            givex_driver.fill_egift_form(_make_task(), _make_billing())
         all_scripts = [c[0][0] for c in selenium.execute_script.call_args_list]
         scrollby_scripts = [s for s in all_scripts if "scrollBy" in s]
         self.assertGreaterEqual(
@@ -1007,23 +1009,26 @@ class TestHesitateBeforeSubmit(unittest.TestCase):
 # ── TestHesitateScrollBehavior ───────────────────────────────────────────────
 
 
-class TestHesitateScrollBehavior(unittest.TestCase):
-    """_hesitate_before_submit includes light scroll when button is visible."""
+def _hesitate_rect():
+    """Return a sample bounding rect for hesitate-scroll tests."""
+    return {"left": 400.0, "top": 600.0, "width": 120.0, "height": 40.0}
 
-    def _rect(self):
-        return {"left": 400.0, "top": 600.0, "width": 120.0, "height": 40.0}
+
+class TestHesitateScrollBehavior(unittest.TestCase):
+    """submit_purchase includes light scroll when button is visible."""
 
     def test_hesitate_performs_scroll_down_and_up_when_button_visible(self):
         """Scroll-down and scroll-up are dispatched during the hesitation window."""
         selenium = _make_driver()
         element = MagicMock()
         selenium.find_elements.return_value = [element]
-        selenium.execute_script.return_value = self._rect()
+        selenium.execute_script.return_value = _hesitate_rect()
         persona = _make_persona(42)
-        gd = GivexDriver(selenium, persona=persona)
+        givex_driver = GivexDriver(selenium, persona=persona)
         sleep_vals = []
-        with patch("time.sleep", side_effect=lambda d: sleep_vals.append(d)):
-            gd._hesitate_before_submit()
+        with patch("time.sleep", side_effect=sleep_vals.append), \
+             patch.object(givex_driver, "bounding_box_click"):
+            givex_driver.submit_purchase()
         scrollby_calls = [
             c for c in selenium.execute_script.call_args_list
             if "scrollBy" in str(c[0][0])
@@ -1041,9 +1046,10 @@ class TestHesitateScrollBehavior(unittest.TestCase):
         selenium = _make_driver()
         selenium.find_elements.return_value = []
         persona = _make_persona(42)
-        gd = GivexDriver(selenium, persona=persona)
-        with patch("time.sleep"):
-            gd._hesitate_before_submit()
+        givex_driver = GivexDriver(selenium, persona=persona)
+        with patch("time.sleep"), \
+             patch.object(givex_driver, "bounding_box_click"):
+            givex_driver.submit_purchase()
         scrollby_calls = [
             c for c in selenium.execute_script.call_args_list
             if "scrollBy" in str(c[0][0])
@@ -1057,9 +1063,10 @@ class TestHesitateScrollBehavior(unittest.TestCase):
         selenium.find_elements.return_value = [element]
         selenium.execute_script.return_value = None
         persona = _make_persona(42)
-        gd = GivexDriver(selenium, persona=persona)
-        with patch("time.sleep"):
-            gd._hesitate_before_submit()
+        givex_driver = GivexDriver(selenium, persona=persona)
+        with patch("time.sleep"), \
+             patch.object(givex_driver, "bounding_box_click"):
+            givex_driver.submit_purchase()
         scrollby_calls = [
             c for c in selenium.execute_script.call_args_list
             if "scrollBy" in str(c[0][0])
