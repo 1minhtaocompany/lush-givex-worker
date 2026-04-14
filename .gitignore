@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .venv/
 .idempotency_store.json
+billing_pool/*.txt
+data/GeoLite2-City.mmdb
