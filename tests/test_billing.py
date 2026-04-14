@@ -1,6 +1,7 @@
 import collections
 import os
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -270,11 +271,25 @@ class ZipAffinityTests(unittest.TestCase):
 
     def test_concurrent_same_zip_gets_different_profiles(self):
         """Concurrent same-zip requests get distinct profiles when pool is sufficient."""
-        profiles = [self._make_profile(f"C{i}", "10001") for i in range(4)]
+        num_threads = 4
+        profiles = [self._make_profile(f"C{i}", "10001") for i in range(num_threads)]
         self._set_profiles(profiles)
 
-        results = [billing.select_profile("10001").first_name for _ in range(4)]
-        self.assertEqual(len(set(results)), 4, f"Expected 4 distinct profiles, got {results}")
+        barrier = threading.Barrier(num_threads)
+        results = [None] * num_threads
+
+        def worker(idx):
+            barrier.wait()
+            results[idx] = billing.select_profile("10001").first_name
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(num_threads)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+        self.assertFalse(any(t.is_alive() for t in threads), "Some threads timed out")
+
+        self.assertEqual(len(set(results)), num_threads, f"Expected {num_threads} distinct profiles, got {results}")
 
     def test_non_zip_round_robin_unaffected(self):
         """Non-zip round-robin still works correctly after zip-affinity fix."""
