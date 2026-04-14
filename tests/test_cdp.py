@@ -35,6 +35,7 @@ def _reset_cdp():
     with cdp._registry_lock:
         cdp._driver_registry.clear()
         cdp._pid_registry.clear()
+        cdp._bitbrowser_registry.clear()
 
 
 class DriverRegistryTests(unittest.TestCase):

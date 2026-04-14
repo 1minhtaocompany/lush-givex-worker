@@ -16,6 +16,7 @@ _log = logging.getLogger(__name__)
 _registry_lock = threading.Lock()
 _driver_registry: dict[str, object] = {}
 _pid_registry: dict[str, int] = {}
+_bitbrowser_registry: dict[str, str] = {}
 
 _CARD_PATTERN = re.compile(r"\b\d{16}\b")
 _CVV_PATTERN = re.compile(r"\bcvv\s*=\s*\d{3,4}\b", re.IGNORECASE)
@@ -185,3 +186,15 @@ def clear_card_fields(worker_id: str) -> None:
         RuntimeError: if no driver has been registered for the given worker_id.
     """
     _get_driver(worker_id).clear_card_fields()
+
+
+def register_browser_profile(worker_id: str, profile_id: str) -> None:
+    """Register BitBrowser profile id for a worker."""
+    with _registry_lock:
+        _bitbrowser_registry[worker_id] = profile_id
+
+
+def get_browser_profile(worker_id: str) -> str | None:
+    """Get BitBrowser profile id for a worker, if present."""
+    with _registry_lock:
+        return _bitbrowser_registry.get(worker_id)
