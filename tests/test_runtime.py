@@ -1565,9 +1565,7 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
         """_state must remain INIT after preflight failure (not RUNNING)."""
         missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
         with patch.object(billing, "_pool_dir", return_value=missing):
-            try:
+            with self.assertRaises(RuntimeError):
                 start(lambda _: None, interval=0.05)
-            except RuntimeError:
-                pass
         self.assertNotEqual(runtime.get_state(), "RUNNING")
         self.assertIn(runtime.get_state(), ("INIT", "STOPPED"))
