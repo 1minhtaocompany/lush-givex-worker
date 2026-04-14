@@ -77,7 +77,8 @@ def _pool_dir() -> Path:
             for prefix in allowed_prefixes
         ):
             _logger.warning(
-                "BILLING_POOL_DIR resolves outside allowed prefixes %s; using default billing_pool.",
+                "BILLING_POOL_DIR resolves outside allowed prefixes %s;"
+                " using default billing_pool.",
                 [str(p) for p in allowed_prefixes],
             )
             return Path(__file__).resolve().parents[2] / "billing_pool"
