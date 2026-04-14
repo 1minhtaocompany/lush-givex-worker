@@ -26,14 +26,12 @@ except ImportError:  # pragma: no cover - tests mock _ghost_move_to / _hesitate_
 from modules.common.exceptions import PageStateError, SelectorTimeoutError
 
 try:
-    from modules.delay.persona import PersonaProfile as _PersonaProfile  # type: ignore
     from modules.delay.biometrics import BiometricProfile as _BiometricProfile  # type: ignore
     from modules.delay.temporal import TemporalModel as _TemporalModel  # type: ignore
     from modules.delay.state import BehaviorStateMachine as _BehaviorStateMachine  # type: ignore
     from modules.delay.engine import DelayEngine as _DelayEngine  # type: ignore
     from modules.delay.wrapper import inject_card_entry_delays as _inject_card_entry_delays  # type: ignore
 except ImportError:
-    _PersonaProfile = None  # type: ignore[assignment]
     _BiometricProfile = None  # type: ignore[assignment]
     _TemporalModel = None  # type: ignore[assignment]
     _BehaviorStateMachine = None  # type: ignore[assignment]
