@@ -14,7 +14,8 @@ def adjacent_char(c, rnd):
 
 def _dispatch(drv, el, ch, strict):
     try:
-        vk = _VK_MAP.get(ch, ord(ch)); mod = 8 if ch in _SHIFT_REQUIRED else 0
+        vk = _VK_MAP.get(ch, ord(ch))
+        mod = 8 if ch in _SHIFT_REQUIRED else 0
         for t in ("keyDown", "keyUp"):
             drv.execute_cdp_cmd("Input.dispatchKeyEvent",
                                 {"type": t, "text": ch, "key": ch, "code": _DOM_CODE_MAP.get(ch, f"Key{ch.upper()}" if ch.isalpha() else ""), "windowsVirtualKeyCode": vk, "modifiers": mod, "isKeypad": False})
