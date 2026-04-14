@@ -238,5 +238,62 @@ class BillingHardeningTests(unittest.TestCase):
         self.assertIn("rejected=1", summary)
 
 
+class ZipAffinityTests(unittest.TestCase):
+    """Tests for zip-affinity rotation in billing selection."""
+
+    def setUp(self):
+        billing._reset_state()
+
+    def tearDown(self):
+        billing._reset_state()
+
+    def _set_profiles(self, profiles):
+        with billing._lock:
+            billing._profiles = collections.deque(profiles)
+
+    def _make_profile(self, name, zip_code):
+        return BillingProfile(
+            first_name=name, last_name="L", address="1 St",
+            city="City", state="NY", zip_code=zip_code,
+            phone="2125550001", email="u@e.com",
+        )
+
+    def test_same_zip_rotates_across_matching_profiles(self):
+        """Repeated same-zip selections rotate through all matching profiles."""
+        profiles = [self._make_profile(f"P{i}", "10001") for i in range(3)]
+        self._set_profiles(profiles)
+
+        names = [billing.select_profile("10001").first_name for _ in range(6)]
+        self.assertEqual(names, ["P0", "P1", "P2", "P0", "P1", "P2"])
+
+    def test_concurrent_same_zip_gets_different_profiles(self):
+        """Concurrent same-zip requests get distinct profiles when pool is sufficient."""
+        profiles = [self._make_profile(f"C{i}", "10001") for i in range(4)]
+        self._set_profiles(profiles)
+
+        results = [billing.select_profile("10001").first_name for _ in range(4)]
+        self.assertEqual(len(set(results)), 4, f"Expected 4 distinct profiles, got {results}")
+
+    def test_non_zip_round_robin_unaffected(self):
+        """Non-zip round-robin still works correctly after zip-affinity fix."""
+        profiles = [self._make_profile(f"R{i}", f"0000{i}") for i in range(3)]
+        self._set_profiles(profiles)
+
+        names = [billing.select_profile("99999").first_name for _ in range(6)]
+        self.assertEqual(names, ["R0", "R1", "R2", "R0", "R1", "R2"])
+
+    def test_zip_match_mixed_with_non_match(self):
+        """Zip-matched and non-matched profiles coexist; zip picks only matches."""
+        p_match1 = self._make_profile("M1", "10001")
+        p_other = self._make_profile("O1", "20002")
+        p_match2 = self._make_profile("M2", "10001")
+        self._set_profiles([p_match1, p_other, p_match2])
+
+        first = billing.select_profile("10001")
+        second = billing.select_profile("10001")
+        self.assertEqual(first.first_name, "M1")
+        self.assertEqual(second.first_name, "M2")
+
+
 if __name__ == "__main__":
     unittest.main()
