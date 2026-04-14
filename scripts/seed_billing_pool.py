@@ -47,7 +47,10 @@ def main() -> int:
         _LOG.error("Input file not found: %s", input_path)
         return 1
     output_dir.mkdir(parents=True, exist_ok=True)
-    total_lines, accepted, files_written, batch_index = 0, 0, 0, 1
+    total_lines = 0
+    accepted = 0
+    files_written = 0
+    batch_index = 1
     current_batch: List[str] = []
     with input_path.open("r", encoding="utf-8", newline="") as handle:
         sample = handle.read(4096)

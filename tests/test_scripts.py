@@ -43,21 +43,22 @@ class ScriptTests(unittest.TestCase):
     def test_seed_billing_pool_cli_creates_txt_output(self):
         """CLI creates .txt with correct pipe-delimited output and skips short rows."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            input_path = os.path.join(tmp_dir, "profiles.csv")
-            output_dir = os.path.join(tmp_dir, "pool")
-            with open(input_path, "w", encoding="utf-8") as handle:
-                handle.write(
-                    "Jane,Doe,123 Main St,Austin,TX,78701,5551231234,jane@example.com\n"
-                    "Only,Five,Fields,Will,Skip\n"
-                    "John,Smith,45 Oak Rd,Dallas,TX,75001\n"
-                )
+            tmp_path = Path(tmp_dir)
+            input_path = tmp_path / "profiles.csv"
+            output_dir = tmp_path / "pool"
+            input_path.write_text(
+                "Jane,Doe,123 Main St,Austin,TX,78701,5551231234,jane@example.com\n"
+                "Only,Five,Fields,Will,Skip\n"
+                "John,Smith,45 Oak Rd,Dallas,TX,75001\n",
+                encoding="utf-8",
+            )
             proc = subprocess.run(  # nosec B603
                 [sys.executable, str(SCRIPTS_DIR / "seed_billing_pool.py"),
-                 "--input", input_path, "--output", output_dir],
+                 "--input", str(input_path), "--output", str(output_dir)],
                 capture_output=True, text=True, check=False,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            txt_files = list(Path(output_dir).glob("*.txt"))
+            txt_files = list(output_dir.glob("*.txt"))
             self.assertGreaterEqual(len(txt_files), 1)
             lines = txt_files[0].read_text(encoding="utf-8").strip().splitlines()
             self.assertEqual(len(lines), 2)
@@ -108,10 +109,9 @@ class ScriptTests(unittest.TestCase):
                                       side_effect=_mock_urlopen):
                         code = module.main()
                 self.assertEqual(code, 0)
-                mmdb_path = os.path.join(tmp_dir, "data", "GeoLite2-City.mmdb")
-                self.assertTrue(os.path.exists(mmdb_path))
-                with open(mmdb_path, "rb") as handle:
-                    self.assertEqual(handle.read(), mmdb_payload)
+                mmdb_path = Path(tmp_dir) / "data" / "GeoLite2-City.mmdb"
+                self.assertTrue(mmdb_path.exists())
+                self.assertEqual(mmdb_path.read_bytes(), mmdb_payload)
             finally:
                 os.chdir(saved_cwd)
 
