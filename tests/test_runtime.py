@@ -1,9 +1,12 @@
+import os
+import tempfile
 import threading
 import time
 import unittest
 from unittest.mock import patch
 
 from integration import runtime
+from modules.billing import main as billing
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 from integration.runtime import (
@@ -34,8 +37,20 @@ class RuntimeResetMixin:
         reset()
         rollout.reset()
         monitor.reset()
+        self._billing_pool_dir = tempfile.mkdtemp()
+        _pool_profile = os.path.join(self._billing_pool_dir, "profiles.txt")
+        with open(_pool_profile, "w", encoding="utf-8") as fh:
+            fh.write("Alice|Smith|1 Main St|City|NY|10001|2125550001|a@e.com\n")
+        self._billing_pool_patcher = patch.object(
+            billing, "_pool_dir",
+            return_value=__import__("pathlib").Path(self._billing_pool_dir),
+        )
+        self._billing_pool_patcher.start()
 
     def tearDown(self):
+        self._billing_pool_patcher.stop()
+        import shutil
+        shutil.rmtree(self._billing_pool_dir, ignore_errors=True)
         reset()
         rollout.reset()
         monitor.reset()
@@ -1466,3 +1481,95 @@ class TestBillingCircuitBreaker(RuntimeResetMixin, unittest.TestCase):
             runtime._BILLING_CB_THRESHOLD = original_threshold
             runtime._BILLING_CB_PAUSE = original_pause
             runtime._state = "INIT"
+
+
+# ── Billing Pool Preflight Validation ───────────────────────────────
+
+
+class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
+    """Billing pool preflight validation: startup must fail-fast if pool is invalid."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdirs = []
+
+    def tearDown(self):
+        import shutil
+        for d in self._tmpdirs:
+            shutil.rmtree(d, ignore_errors=True)
+        super().tearDown()
+
+    def _make_pool_dir(self, with_txt=False):
+        tmpdir = tempfile.mkdtemp()
+        self._tmpdirs.append(tmpdir)
+        if with_txt:
+            path = os.path.join(tmpdir, "profiles.txt")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("Alice|Smith|1 Main St|City|NY|10001|2125550001|a@e.com\n")
+        return tmpdir
+
+    def test_start_fails_if_pool_dir_missing(self):
+        """start() must raise RuntimeError if BILLING_POOL_DIR does not exist."""
+        from pathlib import Path
+        missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
+        with patch.object(billing, "_pool_dir", return_value=missing):
+            with self.assertRaises(RuntimeError) as ctx:
+                start(lambda _: None, interval=0.05)
+        self.assertIn("does not exist", str(ctx.exception))
+
+    def test_start_fails_if_pool_dir_empty(self):
+        """start() must raise RuntimeError if pool dir has no .txt files."""
+        from pathlib import Path
+        tmpdir = self._make_pool_dir(with_txt=False)
+        with patch.object(billing, "_pool_dir", return_value=Path(tmpdir)):
+            with self.assertRaises(RuntimeError) as ctx:
+                start(lambda _: None, interval=0.05)
+        self.assertIn("no .txt files", str(ctx.exception))
+
+    def test_start_fails_if_pool_below_min_threshold(self):
+        """start() must raise RuntimeError if pool has fewer profiles than MIN_BILLING_PROFILES."""
+        from pathlib import Path
+        tmpdir = self._make_pool_dir(with_txt=True)
+        original_min = billing._MIN_BILLING_PROFILES
+        try:
+            billing._MIN_BILLING_PROFILES = 999
+            with patch.object(billing, "_pool_dir", return_value=Path(tmpdir)):
+                with self.assertRaises(RuntimeError) as ctx:
+                    start(lambda _: None, interval=0.05)
+            self.assertIn("below minimum threshold", str(ctx.exception))
+        finally:
+            billing._MIN_BILLING_PROFILES = original_min
+
+    def test_start_succeeds_with_valid_pool(self):
+        """start() succeeds when pool dir exists with at least one valid .txt file."""
+        from pathlib import Path
+        tmpdir = self._make_pool_dir(with_txt=True)
+        with patch.object(billing, "_pool_dir", return_value=Path(tmpdir)):
+            result = start(lambda _: None, interval=0.05)
+        self.assertTrue(result)
+        self.assertEqual(runtime.get_state(), "RUNNING")
+        stop()
+
+    def test_no_payment_attempt_when_preflight_fails(self):
+        """task_fn must never be called when preflight validation fails."""
+        from pathlib import Path
+        missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
+        called = []
+        with patch.object(billing, "_pool_dir", return_value=missing):
+            try:
+                start(lambda _: called.append(1), interval=0.05)
+            except RuntimeError:
+                pass
+        self.assertEqual(called, [], "task_fn must not be called when preflight fails")
+
+    def test_runtime_state_unchanged_after_preflight_fail(self):
+        """_state must remain INIT after preflight failure (not RUNNING)."""
+        from pathlib import Path
+        missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
+        with patch.object(billing, "_pool_dir", return_value=missing):
+            try:
+                start(lambda _: None, interval=0.05)
+            except RuntimeError:
+                pass
+        self.assertNotEqual(runtime.get_state(), "RUNNING")
+        self.assertIn(runtime.get_state(), ("INIT", "STOPPED"))

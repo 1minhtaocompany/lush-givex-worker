@@ -418,6 +418,32 @@ def register_signal_handlers():
         signal.signal(signal.SIGTERM, _handle_shutdown)
         signal.signal(signal.SIGINT, _handle_shutdown)
     atexit.register(stop, timeout=_WORKER_TIMEOUT)
+def _validate_billing_pool_preflight() -> None:
+    """Validate billing pool before runtime startup. Raises RuntimeError if invalid.
+
+    Checks:
+    1. BILLING_POOL_DIR exists and is a directory.
+    2. At least one .txt file exists in the pool directory.
+    3. If MIN_BILLING_PROFILES > 0, at least that many valid profiles can be loaded.
+
+    Raises:
+        RuntimeError: with a descriptive operational message if any check fails.
+    """
+    import modules.billing.main as billing
+    pool_dir = billing._pool_dir()
+    if not pool_dir.is_dir():
+        raise RuntimeError(f"Billing pool directory '{pool_dir}' does not exist. Startup aborted.")
+    if not list(pool_dir.glob("*.txt")):
+        raise RuntimeError(f"Billing pool directory '{pool_dir}' contains no .txt files. Startup aborted.")
+    if billing._MIN_BILLING_PROFILES > 0:
+        profiles = billing._read_profiles_from_disk()
+        count = len(profiles)
+        if count < billing._MIN_BILLING_PROFILES:
+            raise RuntimeError(
+                f"Billing pool has {count} profiles, below minimum threshold "
+                f"{billing._MIN_BILLING_PROFILES}. Startup aborted."
+            )
+    _logger.info("Billing pool preflight OK: dir=%s", pool_dir)
 def start(task_fn, interval=None):
     """Start the runtime loop. Returns True if started, False if already running."""
     global _state, _loop_thread, _trace_id
@@ -427,6 +453,11 @@ def start(task_fn, interval=None):
     except TypeError:
         interval = _MIN_LOOP_INTERVAL
     _ensure_rollout_configured()
+    try:
+        _validate_billing_pool_preflight()
+    except RuntimeError as exc:
+        _logger.error("Billing pool preflight validation failed: %s", exc)
+        raise
     with _lock:
         if _state not in ("INIT", "STOPPED"):
             return False

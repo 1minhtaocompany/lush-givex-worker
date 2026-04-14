@@ -11,8 +11,11 @@ Acceptance criteria verified:
 """
 
 import logging
+import os
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from integration import runtime
@@ -22,6 +25,7 @@ from integration.runtime import (
     start,
     stop,
 )
+from modules.billing import main as billing
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
 
@@ -35,8 +39,18 @@ class ObservationResetMixin:
         runtime.reset()
         rollout.reset()
         monitor.reset()
+        self._billing_pool_dir = tempfile.mkdtemp()
+        _p = os.path.join(self._billing_pool_dir, "profiles.txt")
+        with open(_p, "w", encoding="utf-8") as fh:
+            fh.write("Alice|Smith|1 Main St|City|NY|10001|2125550001|a@e.com\n")
+        self._billing_pool_patcher = patch.object(
+            billing, "_pool_dir", return_value=Path(self._billing_pool_dir))
+        self._billing_pool_patcher.start()
 
     def tearDown(self):
+        self._billing_pool_patcher.stop()
+        import shutil
+        shutil.rmtree(self._billing_pool_dir, ignore_errors=True)
         runtime.reset()
         rollout.reset()
         monitor.reset()
