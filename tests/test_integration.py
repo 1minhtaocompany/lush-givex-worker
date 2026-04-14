@@ -1,3 +1,5 @@
+import hashlib
+import json as _json
 import os
 import sys
 import time
@@ -29,6 +31,7 @@ from integration.orchestrator import (
     _IDEMPOTENCY_TTL,
     _cdp_call_with_timeout,
     _load_idempotency_store,
+    _make_profile_id,
     _save_idempotency_store,
     get_cdp_metrics,
     handle_outcome,
@@ -1097,6 +1100,149 @@ class WatchdogTimingInvariantTests(unittest.TestCase):
             "orchestrator._CDP_CALL_TIMEOUT must equal config.CDP_CALL_TIMEOUT "
             "when CDP_CALL_TIMEOUT_SECONDS env var is not set",
         )
+
+
+class TestBillingSelectionAuditEvent(unittest.TestCase):
+    """Tests for the structured billing selection audit event (SPEC-SYNC §12)."""
+
+    def _make_profile(self, first_name="Jane", last_name="Doe", zip_code="90210"):
+        from modules.common.types import BillingProfile
+        return BillingProfile(
+            first_name=first_name,
+            last_name=last_name,
+            address="123 Main St",
+            city="Beverly Hills",
+            state="CA",
+            zip_code=zip_code,
+            phone="5555555555",
+            email="jane@example.com",
+        )
+
+    def _run_payment_step_with_known_profile(self, profile, zip_code=None, worker_id="default"):
+        """Run run_payment_step with a known profile and return captured audit log args."""
+        captured = []
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm") as mock_fsm,
+            patch("integration.orchestrator._AUDIT_LOGGER") as mock_audit,
+        ):
+            mock_billing.select_profile.return_value = profile
+            mock_watchdog.wait_for_total.return_value = 10.0
+            mock_fsm.get_current_state_for_worker.return_value = None
+            mock_audit.info.side_effect = lambda fmt, payload: captured.append(payload)
+            _reset_watchdog()
+            reset_states()
+            cleanup_worker(worker_id)
+            run_payment_step(_make_task(), zip_code=zip_code, worker_id=worker_id)
+        return captured
+
+    def test_audit_event_emitted_on_successful_selection(self):
+        """Audit event must be emitted exactly once per successful billing.select_profile() call."""
+        profile = self._make_profile()
+        captured = self._run_payment_step_with_known_profile(profile)
+        self.assertEqual(len(captured), 1)
+
+    def test_audit_event_schema(self):
+        """Emitted event must contain all required fields with correct types."""
+        profile = self._make_profile()
+        captured = self._run_payment_step_with_known_profile(profile, zip_code="90210")
+        self.assertEqual(len(captured), 1)
+        event = _json.loads(captured[0])
+        self.assertIn("event_type", event)
+        self.assertIn("worker_id", event)
+        self.assertIn("task_id", event)
+        self.assertIn("selection_method", event)
+        self.assertIn("requested_zip", event)
+        self.assertIn("profile_id", event)
+        self.assertIn("trace_id", event)
+        self.assertIn("timestamp_utc", event)
+        self.assertEqual(event["event_type"], "billing_selection")
+        self.assertIsInstance(event["worker_id"], str)
+        self.assertIsInstance(event["profile_id"], str)
+        self.assertIsInstance(event["trace_id"], str)
+        self.assertIsInstance(event["timestamp_utc"], str)
+
+    def test_selection_method_zip_match_when_zip_provided(self):
+        """selection_method must be 'zip_match' when zip_code is non-empty."""
+        profile = self._make_profile()
+        captured = self._run_payment_step_with_known_profile(profile, zip_code="90210")
+        event = _json.loads(captured[0])
+        self.assertEqual(event["selection_method"], "zip_match")
+        self.assertEqual(event["requested_zip"], "90210")
+
+    def test_selection_method_round_robin_when_no_zip(self):
+        """selection_method must be 'round_robin' when zip_code is None."""
+        profile = self._make_profile()
+        captured = self._run_payment_step_with_known_profile(profile, zip_code=None)
+        event = _json.loads(captured[0])
+        self.assertEqual(event["selection_method"], "round_robin")
+        self.assertIsNone(event["requested_zip"])
+
+    def test_selection_method_round_robin_when_zip_is_empty(self):
+        """selection_method must be 'round_robin' when zip_code is empty/blank."""
+        profile = self._make_profile()
+        captured = self._run_payment_step_with_known_profile(profile, zip_code="   ")
+        event = _json.loads(captured[0])
+        self.assertEqual(event["selection_method"], "round_robin")
+        self.assertEqual(event["requested_zip"], "   ")
+
+    def test_profile_id_is_anonymized(self):
+        """profile_id must be a SHA-256 hex hash — not raw first_name or last_name."""
+        profile = self._make_profile(first_name="Jane", last_name="Doe", zip_code="90210")
+        captured = self._run_payment_step_with_known_profile(profile)
+        event = _json.loads(captured[0])
+        profile_id = event["profile_id"]
+        self.assertNotIn("Jane", profile_id)
+        self.assertNotIn("Doe", profile_id)
+        expected = hashlib.sha256("Jane|Doe|90210".encode("utf-8")).hexdigest()[:16]
+        self.assertEqual(profile_id, expected)
+
+    def test_no_raw_pii_in_audit_event(self):
+        """Raw first_name, last_name, address, phone, email must NOT appear in logged event."""
+        profile = self._make_profile(first_name="UniqueFirst", last_name="UniqueLast")
+        captured = self._run_payment_step_with_known_profile(profile)
+        self.assertEqual(len(captured), 1)
+        raw_payload = captured[0]
+        self.assertNotIn("UniqueFirst", raw_payload)
+        self.assertNotIn("UniqueLast", raw_payload)
+        self.assertNotIn("123 Main St", raw_payload)
+        self.assertNotIn("5555555555", raw_payload)
+        self.assertNotIn("jane@example.com", raw_payload)
+
+    def test_audit_event_failure_does_not_crash_payment(self):
+        """If _emit_billing_audit_event raises, run_payment_step must continue normally."""
+        profile = self._make_profile()
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm") as mock_fsm,
+            patch("integration.orchestrator._make_profile_id", side_effect=RuntimeError("hash-fail")),
+        ):
+            mock_billing.select_profile.return_value = profile
+            mock_watchdog.wait_for_total.return_value = 10.0
+            mock_fsm.get_current_state_for_worker.return_value = None
+            _reset_watchdog()
+            reset_states()
+            cleanup_worker("default")
+            state, total = run_payment_step(_make_task())
+        self.assertEqual(total, 10.0)
+
+    def test_make_profile_id_is_deterministic(self):
+        """Same profile always produces same profile_id."""
+        profile = self._make_profile(first_name="Alice", last_name="Smith", zip_code="12345")
+        id1 = _make_profile_id(profile)
+        id2 = _make_profile_id(profile)
+        self.assertEqual(id1, id2)
+
+    def test_make_profile_id_format(self):
+        """profile_id must be exactly 16 lowercase hex characters."""
+        profile = self._make_profile()
+        profile_id = _make_profile_id(profile)
+        self.assertEqual(len(profile_id), 16)
+        self.assertRegex(profile_id, r'^[0-9a-f]{16}$')
 
 
 if __name__ == "__main__":

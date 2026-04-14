@@ -7,6 +7,8 @@ this file is the single integration point that wires them together.
 
 import atexit
 import concurrent.futures
+import datetime
+import hashlib
 import ipaddress
 import json
 import logging
@@ -39,6 +41,7 @@ from modules.watchdog import main as watchdog
 _WATCHDOG_TIMEOUT = 30
 
 _logger = logging.getLogger(__name__)
+_AUDIT_LOGGER = logging.getLogger(f"{__name__}.audit")
 
 # Redact card-like digit sequences (13–16 consecutive digits) from error messages
 # to prevent PII leakage when CDP exceptions contain card numbers.
@@ -496,6 +499,63 @@ def initialize_cycle(worker_id: str = "default"):
     fsm.initialize_for_worker(worker_id)
 
 
+def _make_profile_id(profile: "billing.BillingProfile") -> str:
+    """Create a one-way anonymized identifier for a billing profile.
+
+    Uses SHA-256 hash of 'first_name|last_name|zip_code' to produce
+    a non-reversible profile fingerprint. No raw PII is included in logs.
+
+    Returns:
+        First 16 hex characters of SHA-256 hash (64-bit prefix for log correlation).
+    """
+    raw = f"{profile.first_name}|{profile.last_name}|{profile.zip_code}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _emit_billing_audit_event(
+    profile: "billing.BillingProfile",
+    worker_id: str,
+    task_id: str | None,
+    zip_code: str | int | None,
+) -> None:
+    """Emit a structured audit event for a successful billing profile selection.
+
+    Privacy contract:
+    - No raw PII (name, address, phone, email) is included in the event.
+    - profile_id is a one-way SHA-256 hash of 'first_name|last_name|zip_code'.
+    - requested_zip is the raw zip_code argument (proxy zip), logged for tracing only.
+
+    Non-interference contract:
+    - This function MUST only be called AFTER billing.select_profile() has returned.
+    - Exceptions are caught and logged as warnings; they never propagate.
+    - No delay, no state mutation, no FSM interaction.
+    """
+    try:
+        requested_zip = None if zip_code is None else str(zip_code)
+        # Preserve the raw requested zip for tracing, but treat blank/whitespace
+        # input as "no zip" when determining the selection strategy.
+        has_requested_zip = bool(requested_zip and requested_zip.strip())
+        selection_method = "zip_match" if has_requested_zip else "round_robin"
+        event = {
+            "event_type": "billing_selection",
+            "worker_id": worker_id,
+            "task_id": task_id,
+            "selection_method": selection_method,
+            "requested_zip": requested_zip,
+            "profile_id": _make_profile_id(profile),
+            "trace_id": _get_trace_id(),
+            "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _AUDIT_LOGGER.info("billing_selection %s", json.dumps(event, ensure_ascii=False))
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        _logger.warning(
+            "[trace=%s] Failed to emit billing audit event for worker=%s: %s",
+            _get_trace_id(),
+            worker_id,
+            exc,
+        )
+
+
 def run_payment_step(task, zip_code=None, worker_id: str = "default"):
     """Execute one payment attempt.
 
@@ -521,6 +581,13 @@ def run_payment_step(task, zip_code=None, worker_id: str = "default"):
         RuntimeError: if no CDP driver has been registered.
     """
     profile = billing.select_profile(zip_code)
+    # Emit audit event AFTER successful selection — never before.
+    _emit_billing_audit_event(
+        profile=profile,
+        worker_id=worker_id,
+        task_id=getattr(task, "task_id", None),
+        zip_code=zip_code,
+    )
     watchdog.enable_network_monitor(worker_id)
     try:
         _cdp_call_with_timeout(
