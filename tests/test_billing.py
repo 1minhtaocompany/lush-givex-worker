@@ -247,11 +247,13 @@ class ZipAffinityTests(unittest.TestCase):
     def tearDown(self):
         billing._reset_state()
 
-    def _set_profiles(self, profiles):
+    @staticmethod
+    def _set_profiles(profiles):
         with billing._lock:
             billing._profiles = collections.deque(profiles)
 
-    def _make_profile(self, name, zip_code):
+    @staticmethod
+    def _make_profile(name, zip_code):
         return BillingProfile(
             first_name=name, last_name="L", address="1 St",
             city="City", state="NY", zip_code=zip_code,
