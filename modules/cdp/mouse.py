@@ -8,42 +8,32 @@ Isolates path generation and movement dispatch from the driver integration
 layer so that both are independently testable and reusable.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 
 _log = logging.getLogger(__name__)
 
 
-def build_path(
-    start_x: float,
-    start_y: float,
-    target_x: float,
-    target_y: float,
-    rnd,
-    n_points: int,
-) -> list[tuple[float, float]]:
-    """Generate a Bézier-like waypoint list from start to target.
+def build_path(start, target, rnd, n_points):
+    """Generate a Bézier-like waypoint list from *start* to *target*.
 
     Uses linear interpolation with per-point random jitter to simulate
-    natural cursor travel.  The final point is exactly
-    ``(target_x, target_y)``.
+    natural cursor travel.  The final point is exactly *target*.
 
     Args:
-        start_x: Starting X coordinate in viewport pixels.
-        start_y: Starting Y coordinate in viewport pixels.
-        target_x: Destination X coordinate in viewport pixels.
-        target_y: Destination Y coordinate in viewport pixels.
+        start: ``(x, y)`` starting coordinate in viewport pixels.
+        target: ``(x, y)`` destination coordinate in viewport pixels.
         rnd: A ``random.Random``-compatible instance for reproducible paths.
         n_points: Number of intermediate jitter waypoints to insert before
             the exact target point.
 
     Returns:
         List of ``(x, y)`` tuples with ``n_points + 1`` entries; the last
-        entry is exactly ``(target_x, target_y)``.
+        entry is exactly *target*.
     """
-    points: list[tuple[float, float]] = []
+    start_x, start_y = start
+    target_x, target_y = target
+    points = []
     for i in range(1, n_points + 1):
         t = i / (n_points + 1)
         x = start_x + (target_x - start_x) * t + rnd.uniform(-30, 30)
@@ -74,7 +64,7 @@ class GhostCursor:
         self._y: float = 0.0
 
     @property
-    def position(self) -> tuple[float, float]:
+    def position(self):
         """Current logical cursor position as ``(x, y)``."""
         return self._x, self._y
 
@@ -83,7 +73,7 @@ class GhostCursor:
         target_x: float,
         target_y: float,
         *,
-        n_points: int | None = None,
+        n_points=None,
         click_delay: float = 0.05,
     ) -> None:
         """Move cursor to ``(target_x, target_y)`` via CDP mouseMoved events.
@@ -103,7 +93,7 @@ class GhostCursor:
         if n_points is None:
             n_points = self._rnd.randint(4, 8)
 
-        path = build_path(self._x, self._y, target_x, target_y, self._rnd, n_points)
+        path = build_path((self._x, self._y), (target_x, target_y), self._rnd, n_points)
 
         for px, py in path:
             try:

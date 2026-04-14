@@ -27,28 +27,28 @@ class TestBuildPath(unittest.TestCase):
     """build_path returns a deterministic Bézier-like waypoint list."""
 
     def test_returns_n_plus_one_points(self):
-        path = build_path(0.0, 0.0, 200.0, 100.0, _rnd(1), n_points=5)
+        path = build_path((0.0, 0.0), (200.0, 100.0), _rnd(1), n_points=5)
         self.assertEqual(len(path), 6)
 
     def test_last_point_is_exact_target(self):
-        path = build_path(10.0, 20.0, 300.0, 150.0, _rnd(7), n_points=4)
+        path = build_path((10.0, 20.0), (300.0, 150.0), _rnd(7), n_points=4)
         self.assertEqual(path[-1], (300.0, 150.0))
 
     def test_deterministic_under_fixed_seed(self):
-        path_a = build_path(0.0, 0.0, 200.0, 100.0, _rnd(42), n_points=5)
-        path_b = build_path(0.0, 0.0, 200.0, 100.0, _rnd(42), n_points=5)
+        path_a = build_path((0.0, 0.0), (200.0, 100.0), _rnd(42), n_points=5)
+        path_b = build_path((0.0, 0.0), (200.0, 100.0), _rnd(42), n_points=5)
         self.assertEqual(path_a, path_b)
 
     def test_different_seeds_produce_different_paths(self):
-        path_a = build_path(0.0, 0.0, 200.0, 100.0, _rnd(1), n_points=5)
-        path_b = build_path(0.0, 0.0, 200.0, 100.0, _rnd(2), n_points=5)
+        path_a = build_path((0.0, 0.0), (200.0, 100.0), _rnd(1), n_points=5)
+        path_b = build_path((0.0, 0.0), (200.0, 100.0), _rnd(2), n_points=5)
         self.assertNotEqual(path_a[:-1], path_b[:-1])
 
     def test_intermediate_points_have_jitter(self):
-        """Intermediate waypoints include ±30/±20 jitter so they are not on a strict line."""
+        """Intermediate waypoints include jitter so they are not on a strict line."""
         n = 10
         rnd = _rnd(99)
-        path = build_path(0.0, 0.0, 100.0, 50.0, rnd, n_points=n)
+        path = build_path((0.0, 0.0), (100.0, 50.0), rnd, n_points=n)
         intermediate = path[:-1]
         # At least one intermediate point must deviate from the straight line
         on_line = all(
@@ -59,8 +59,8 @@ class TestBuildPath(unittest.TestCase):
         self.assertFalse(on_line, "Expected jitter on intermediate points")
 
     def test_non_zero_start_shifts_path(self):
-        path_from_zero = build_path(0.0, 0.0, 100.0, 50.0, _rnd(5), n_points=3)
-        path_from_offset = build_path(50.0, 25.0, 100.0, 50.0, _rnd(5), n_points=3)
+        path_from_zero = build_path((0.0, 0.0), (100.0, 50.0), _rnd(5), n_points=3)
+        path_from_offset = build_path((50.0, 25.0), (100.0, 50.0), _rnd(5), n_points=3)
         # The exact target is the same but intermediate points differ
         self.assertNotEqual(path_from_zero[:-1], path_from_offset[:-1])
 
@@ -116,10 +116,10 @@ class TestGhostCursorDispatch(unittest.TestCase):
         self.assertEqual(params["y"], 150.0)
 
     def test_deterministic_waypoints_under_fixed_seed(self):
-        def get_dispatched_coordinates(rnd_seed: int) -> list[tuple[float, float]]:
+        def get_dispatched_coordinates(rnd_seed):
             driver = MagicMock()
-            coords: list[tuple[float, float]] = []
-            driver.execute_cdp_cmd.side_effect = lambda cmd, p: coords.append((p["x"], p["y"]))
+            coords = []
+            driver.execute_cdp_cmd.side_effect = lambda _cmd, p: coords.append((p["x"], p["y"]))
             gc = GhostCursor(driver, _rnd(rnd_seed))
             with patch("time.sleep"):
                 gc.move_to(200.0, 100.0, n_points=5)
@@ -141,7 +141,7 @@ class TestGhostCursorDispatch(unittest.TestCase):
         driver = MagicMock()
         call_count = [0]
 
-        def flaky_cdp(cmd, params):
+        def flaky_cdp(_cmd, _params):
             call_count[0] += 1
             if call_count[0] == 2:
                 raise RuntimeError("transient failure")
@@ -155,9 +155,13 @@ class TestGhostCursorDispatch(unittest.TestCase):
 
     def test_sleep_called_per_waypoint(self):
         driver = MagicMock()
-        sleep_calls: list[float] = []
+        sleep_calls = []
+
+        def record_sleep(delay):
+            sleep_calls.append(delay)
+
         gc = GhostCursor(driver, _rnd(0))
-        with patch("time.sleep", side_effect=lambda d: sleep_calls.append(d)):
+        with patch("time.sleep", side_effect=record_sleep):
             gc.move_to(100.0, 50.0, n_points=4, click_delay=0.07)
         # One sleep per waypoint (4 intermediate + 1 target = 5)
         self.assertEqual(len(sleep_calls), 5)

@@ -808,10 +808,12 @@ class TestBoundingBoxClickCoordinates(unittest.TestCase):
         gd = GivexDriver(selenium, persona=persona)
         cx = rect["left"] + rect["width"] / 2
         cy = rect["top"] + rect["height"] / 2
-        click_coords: list[dict] = []
-        def capture_cdp(cmd, params):
+        click_coords = []
+
+        def capture_cdp(_cmd, params):
             if params.get("button") == "left":
                 click_coords.append(params.copy())
+
         selenium.execute_cdp_cmd.side_effect = capture_cdp
         with patch("time.sleep"):
             gd.bounding_box_click("#some-el")
@@ -853,10 +855,12 @@ class TestBoundingBoxClickCoordinates(unittest.TestCase):
         selenium.execute_script.return_value = self._rect()
         persona = _make_persona(42)
         gd = GivexDriver(selenium, persona=persona)
-        click_calls: list[dict] = []
-        def capture_cdp(cmd, params):
+        click_calls = []
+
+        def capture_cdp(_cmd, params):
             if params.get("button") == "left":
                 click_calls.append(params.copy())
+
         selenium.execute_cdp_cmd.side_effect = capture_cdp
         with patch.object(gd._temporal, "get_time_state", return_value="NIGHT"), \
              patch("time.sleep"):
