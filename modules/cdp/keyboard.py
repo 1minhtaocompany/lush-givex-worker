@@ -1,5 +1,5 @@
-"""Keyboard helpers: CDP key dispatch with adjacent-key typo simulation."""
-import logging, time  # noqa: E401
+import logging
+import time
 _log = logging.getLogger(__name__)
 _ADJACENT = {'a':'sqwz','b':'vghn','c':'xdfv','d':'erfcs','e':'rdsw','f':'rtgvd','g':'tyhbf','h':'yujng','i':'uojk','j':'uikmh','k':'iolmj','l':'opk','m':'nkj','n':'bhjm','o':'iplk','p':'ol','q':'wa','r':'etdf','s':'wedaz','t':'ryfg','u':'yhij','v':'cfgb','w':'qase','x':'zsdc','y':'tugi','z':'asx','0':'9','1':'2','2':'13','3':'24','4':'35','5':'46','6':'57','7':'68','8':'79','9':'80'}
 _BACKSPACE, _MAX_TYPO_RATE = '\b', 0.06
@@ -41,8 +41,8 @@ def type_value(driver, element, value, rnd, *, typo_rate=0.0, delays=None,
                 if _dispatch(driver, element, w, strict):
                     res["typos_injected"] += 1
                 time.sleep(max(0.08, d * 1.5))
-                _dispatch(driver, element, _BACKSPACE, strict)
-                res["corrections_made"] += 1
+                if _dispatch(driver, element, _BACKSPACE, strict):
+                    res["corrections_made"] += 1
         if _dispatch(driver, element, ch, strict):
             res["typed_chars"] += 1
         if d > 0:
