@@ -20,6 +20,7 @@ from modules.delay.wrapper import wrap as _behavior_wrap
 from modules.delay.persona import PersonaProfile
 from modules.billing import main as billing
 from modules.common.exceptions import CycleExhaustedError
+from modules.common.thresholds import ERROR_RATE_THRESHOLD, MAX_RESTARTS_PER_HOUR
 _logger = logging.getLogger(__name__)
 ALLOWED_STATES = {"INIT", "RUNNING", "STOPPING", "STOPPED"}
 ALLOWED_WORKER_STATES = {"IDLE", "IN_CYCLE", "CRITICAL_SECTION", "SAFE_POINT"}
@@ -591,8 +592,6 @@ def get_deployment_status():
         "trace_id": status["trace_id"],
         "metrics": metrics,
     }
-_ERROR_RATE_THRESHOLD = getattr(monitor, "_ERROR_RATE_THRESHOLD", 0.05)
-_MAX_RESTARTS_PER_HOUR = getattr(monitor, "_MAX_RESTARTS_PER_HOUR", 3)
 def verify_deployment():
     """Verify production deployment status.
 
@@ -623,12 +622,20 @@ def verify_deployment():
         errors.append(f"Consecutive rollbacks: {ds['consecutive_rollbacks']}")
     metrics = ds["metrics"]
     if metrics is not None:
-        if metrics["error_rate"] > _ERROR_RATE_THRESHOLD:
+        if metrics["error_rate"] > ERROR_RATE_THRESHOLD:
             no_startup_errors = False
-            errors.append(f"Error rate above threshold: {metrics['error_rate']:.2%} > {_ERROR_RATE_THRESHOLD:.0%}")
-        if metrics["restarts_last_hour"] > _MAX_RESTARTS_PER_HOUR:
+            errors.append(
+                f"Error rate above threshold:"
+                f" {metrics['error_rate']:.2%}"
+                f" > {ERROR_RATE_THRESHOLD:.0%}"
+            )
+        if metrics["restarts_last_hour"] > MAX_RESTARTS_PER_HOUR:
             no_startup_errors = False
-            errors.append(f"Restarts above threshold: {metrics['restarts_last_hour']} > {_MAX_RESTARTS_PER_HOUR}")
+            errors.append(
+                f"Restarts above threshold:"
+                f" {metrics['restarts_last_hour']}"
+                f" > {MAX_RESTARTS_PER_HOUR}"
+            )
     elif ds["running"]:
         no_startup_errors = False
         errors.append("Monitor metrics unavailable while service running")

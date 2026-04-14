@@ -8,6 +8,11 @@ import sys
 import threading
 import time
 import logging
+from modules.common.thresholds import (
+    ERROR_RATE_THRESHOLD,
+    SUCCESS_RATE_DROP_THRESHOLD,
+    MAX_RESTARTS_PER_HOUR,
+)
 
 _lock = threading.Lock()
 _logger = logging.getLogger(__name__)
@@ -27,11 +32,6 @@ _baseline_success_rate = None
 
 # Memory threshold in bytes (2 GB)
 _MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
-
-# Rollback thresholds
-_SUCCESS_RATE_DROP_THRESHOLD = 0.10  # 10%
-_ERROR_RATE_THRESHOLD = 0.05  # 5%
-_MAX_RESTARTS_PER_HOUR = 3
 
 
 def record_success(persona_type: str | None = None) -> None:
@@ -226,13 +226,13 @@ def check_rollback_needed():
     baseline = metrics["baseline_success_rate"]
     if baseline is not None:
         drop = baseline - metrics["success_rate"]
-        if drop > _SUCCESS_RATE_DROP_THRESHOLD:
+        if drop > SUCCESS_RATE_DROP_THRESHOLD:
             reasons.append(
                 f"success rate dropped {drop:.1%} from baseline {baseline:.1%}"
             )
 
     # Check absolute error rate
-    if metrics["error_rate"] > _ERROR_RATE_THRESHOLD:
+    if metrics["error_rate"] > ERROR_RATE_THRESHOLD:
         reasons.append(f"error rate {metrics['error_rate']:.1%} exceeds 5%")
 
     # Check memory
@@ -241,7 +241,7 @@ def check_rollback_needed():
         reasons.append(f"memory usage {mb:.0f} MB exceeds 2048 MB")
 
     # Check restart frequency
-    if metrics["restarts_last_hour"] > _MAX_RESTARTS_PER_HOUR:
+    if metrics["restarts_last_hour"] > MAX_RESTARTS_PER_HOUR:
         reasons.append(
             f"worker restarts {metrics['restarts_last_hour']} in last hour exceeds 3"
         )

@@ -6,16 +6,17 @@ Custom backends can be registered via register_alert_handler() / unregister_aler
 """
 import logging
 import threading
+from modules.common.thresholds import (
+    ERROR_RATE_THRESHOLD,
+    RESTART_RATE_THRESHOLD,
+    SUCCESS_RATE_DROP_THRESHOLD,
+)
 
 _logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _alert_handlers: list = []  # list of callable(message: str) -> None
 _alert_count: int = 0
 _log_alert_enabled = True
-
-ERROR_RATE_THRESHOLD = 0.05        # > 5%
-RESTART_THRESHOLD = 3              # > 3 per hour
-SUCCESS_RATE_DROP_THRESHOLD = 0.10  # > 10% drop from baseline
 
 
 def evaluate_alerts(metrics: dict) -> list[str]:
@@ -32,9 +33,9 @@ def evaluate_alerts(metrics: dict) -> list[str]:
                 f"error_rate={error_rate:.1%} exceeds threshold {ERROR_RATE_THRESHOLD:.0%}"
             )
         restarts = metrics.get("restarts_last_hour")
-        if restarts is not None and restarts > RESTART_THRESHOLD:
+        if restarts is not None and restarts > RESTART_RATE_THRESHOLD:
             alerts.append(
-                f"restarts_last_hour={restarts} exceeds threshold {RESTART_THRESHOLD}"
+                f"restarts_last_hour={restarts} exceeds threshold {RESTART_RATE_THRESHOLD}"
             )
         baseline = metrics.get("baseline_success_rate")
         success_rate = metrics.get("success_rate")
