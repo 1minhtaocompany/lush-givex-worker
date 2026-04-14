@@ -1,9 +1,11 @@
 import collections
-import logging
 import os
 import tempfile
 import unittest
 from unittest.mock import patch
+
+# Tests legitimately access module internals (_lock, _profiles, _reset_state, etc.)
+# pylint: disable=protected-access
 
 from modules.billing import main as billing
 from modules.common.exceptions import CycleExhaustedError
