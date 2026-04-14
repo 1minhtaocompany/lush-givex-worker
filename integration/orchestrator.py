@@ -513,10 +513,10 @@ def _make_profile_id(profile: "billing.BillingProfile") -> str:
 
 
 def _emit_billing_audit_event(
-        profile: "billing.BillingProfile",
-        worker_id: str,
-        task_id: str | None,
-        zip_code: str | int | None,
+    profile: "billing.BillingProfile",
+    worker_id: str,
+    task_id: str | None,
+    zip_code: str | int | None,
 ) -> None:
     """Emit a structured audit event for a successful billing profile selection.
 
