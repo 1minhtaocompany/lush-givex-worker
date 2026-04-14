@@ -1,3 +1,4 @@
+import logging
 import threading
 import unittest
 
@@ -212,6 +213,37 @@ class FSMConcurrentInitializationTests(unittest.TestCase):
             self.assertEqual(s.name, state_name)
             # Re-initialize before the next iteration so we always start fresh.
             initialize_for_worker(worker_id)
+
+class FSMLegacyWarnTests(unittest.TestCase):
+    """Verify _legacy_warn decorator emits warnings for global API calls."""
+
+    def setUp(self):
+        with self.assertLogs("modules.fsm.main", level="WARNING"):
+            reset_states()
+
+    def test_transition_to_emits_warning(self):
+        with self.assertLogs("modules.fsm.main", level="WARNING") as log_ctx:
+            add_new_state("success")
+        with self.assertLogs("modules.fsm.main", level="WARNING") as log_ctx:
+            transition_to("success")
+        self.assertTrue(
+            any("transition_to" in msg for msg in log_ctx.output),
+            "Expected WARNING for transition_to",
+        )
+
+    def test_reset_states_does_not_raise_only_warns(self):
+        with self.assertLogs("modules.fsm.main", level="WARNING") as log_ctx:
+            reset_states()
+        self.assertTrue(
+            any("reset_states" in msg for msg in log_ctx.output),
+            "Expected WARNING for reset_states",
+        )
+
+    def test_initialize_for_worker_no_warning(self):
+        with self.assertNoLogs("modules.fsm.main", level="WARNING"):
+            initialize_for_worker("w1")
+        cleanup_worker("w1")
+
 
 if __name__ == "__main__":
     unittest.main()
