@@ -11,7 +11,7 @@ Covers:
 
 import random
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from modules.cdp.mouse import GhostCursor, build_path
 
