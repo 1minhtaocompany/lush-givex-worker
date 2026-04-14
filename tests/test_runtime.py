@@ -1514,7 +1514,7 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
 
     def test_start_fails_if_pool_dir_missing(self):
         """start() must raise RuntimeError if BILLING_POOL_DIR does not exist."""
-        missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
+        missing = Path(tempfile.gettempdir()) / "_nonexistent_billing_pool_dir_xyz"
         with patch.object(billing, "_pool_dir", return_value=missing):
             with self.assertRaises(RuntimeError) as ctx:
                 start(lambda _: None, interval=0.05)
@@ -1552,7 +1552,7 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
 
     def test_no_payment_attempt_when_preflight_fails(self):
         """task_fn must never be called when preflight validation fails."""
-        missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
+        missing = Path(tempfile.gettempdir()) / "_nonexistent_billing_pool_dir_xyz"
         called = []
         with patch.object(billing, "_pool_dir", return_value=missing):
             try:
@@ -1563,7 +1563,7 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
 
     def test_runtime_state_unchanged_after_preflight_fail(self):
         """_state must remain INIT after preflight failure (not RUNNING)."""
-        missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
+        missing = Path(tempfile.gettempdir()) / "_nonexistent_billing_pool_dir_xyz"
         with patch.object(billing, "_pool_dir", return_value=missing):
             with self.assertRaises(RuntimeError):
                 start(lambda _: None, interval=0.05)
@@ -1573,7 +1573,7 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
     def test_start_returns_false_when_already_running(self):
         """start() must preserve its False return when runtime is already running."""
         self.assertTrue(start(lambda _: None, interval=0.05))
-        missing = Path("/tmp/_nonexistent_billing_pool_dir_xyz")
+        missing = Path(tempfile.gettempdir()) / "_nonexistent_billing_pool_dir_xyz"
         try:
             with patch.object(billing, "_pool_dir", return_value=missing):
                 self.assertFalse(start(lambda _: None, interval=0.05))
