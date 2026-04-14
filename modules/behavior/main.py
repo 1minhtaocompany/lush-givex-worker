@@ -6,7 +6,12 @@ Thread-safe via threading.Lock.  No cross-module imports.
 import logging
 import threading
 import time
-from modules.common.thresholds import ERROR_RATE_THRESHOLD, SUCCESS_RATE_MIN, RESTART_RATE_THRESHOLD, SUCCESS_RATE_DROP_THRESHOLD
+from modules.common.thresholds import (
+    ERROR_RATE_THRESHOLD,
+    RESTART_RATE_THRESHOLD,
+    SUCCESS_RATE_DROP_THRESHOLD,
+    SUCCESS_RATE_MIN,
+)
 
 _logger = logging.getLogger(__name__)
 _lock = threading.Lock()

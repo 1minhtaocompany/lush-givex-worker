@@ -624,10 +624,18 @@ def verify_deployment():
     if metrics is not None:
         if metrics["error_rate"] > ERROR_RATE_THRESHOLD:
             no_startup_errors = False
-            errors.append(f"Error rate above threshold: {metrics['error_rate']:.2%} > {ERROR_RATE_THRESHOLD:.0%}")
+            errors.append(
+                f"Error rate above threshold:"
+                f" {metrics['error_rate']:.2%}"
+                f" > {ERROR_RATE_THRESHOLD:.0%}"
+            )
         if metrics["restarts_last_hour"] > MAX_RESTARTS_PER_HOUR:
             no_startup_errors = False
-            errors.append(f"Restarts above threshold: {metrics['restarts_last_hour']} > {MAX_RESTARTS_PER_HOUR}")
+            errors.append(
+                f"Restarts above threshold:"
+                f" {metrics['restarts_last_hour']}"
+                f" > {MAX_RESTARTS_PER_HOUR}"
+            )
     elif ds["running"]:
         no_startup_errors = False
         errors.append("Monitor metrics unavailable while service running")

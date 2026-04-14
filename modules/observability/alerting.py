@@ -6,7 +6,11 @@ Custom backends can be registered via register_alert_handler() / unregister_aler
 """
 import logging
 import threading
-from modules.common.thresholds import ERROR_RATE_THRESHOLD, RESTART_RATE_THRESHOLD, SUCCESS_RATE_DROP_THRESHOLD
+from modules.common.thresholds import (
+    ERROR_RATE_THRESHOLD,
+    RESTART_RATE_THRESHOLD,
+    SUCCESS_RATE_DROP_THRESHOLD,
+)
 
 _logger = logging.getLogger(__name__)
 _lock = threading.Lock()
