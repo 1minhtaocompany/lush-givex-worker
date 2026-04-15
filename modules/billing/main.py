@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import hashlib
 import logging
 import os
 import random
@@ -18,6 +19,9 @@ _logger = logging.getLogger(__name__)
 _EMAIL_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "icloud.com")
 _PHONE_FIRST_DIGITS = "23456789"
 _PHONE_OTHER_DIGITS = "0123456789"
+_HEX_CHARS = "0123456789abcdef"
+# Mix persona seed into a dedicated RNG stream used only for billing field fills.
+_FILL_RNG_XOR_MASK = 0xDEAD_BEEF
 
 
 def _get_max_billing_profiles() -> int:
@@ -182,7 +186,7 @@ def _read_profiles_from_disk() -> collections.deque[BillingProfile]:
 def _get_fill_rng(persona_seed: int | None = None) -> random.Random:
     """Get per-thread or per-persona deterministic RNG."""
     if persona_seed is not None:
-        return random.Random(persona_seed ^ 0xDEAD_BEEF)
+        return random.Random(persona_seed ^ _FILL_RNG_XOR_MASK)
     if not hasattr(_local_fill_rng, "rng"):
         _local_fill_rng.rng = random.Random()
     return _local_fill_rng.rng
@@ -202,7 +206,7 @@ def _generate_email(
 ) -> str:
     # Parameters unused intentionally; randomized token prevents PII leakage via name-derived emails
     r = rng or _get_fill_rng()
-    token = "".join(r.choice("0123456789abcdef") for _ in range(8))
+    token = "".join(r.choice(_HEX_CHARS) for _ in range(8))
     domain = r.choice(_EMAIL_DOMAINS)
     return f"user{token}@{domain}"
 
@@ -224,7 +228,16 @@ def _find_matching_index(zip_code: str) -> int | None:
 
 
 def _fill_missing(profile: BillingProfile) -> BillingProfile:
-    seed = hash(profile.first_name + profile.last_name) & 0x7FFFFFFF
+    name_key = f"{profile.first_name or ''}{profile.last_name or ''}"
+    if not name_key:
+        name_key = (
+            f"{profile.address}|{profile.city}|{profile.state}|{profile.zip_code}"
+        )
+    if not name_key.replace("|", "").strip():
+        name_key = f"{profile.phone or ''}|{profile.email or ''}" or "anonymous-profile"
+    seed = int.from_bytes(hashlib.sha256(name_key.encode("utf-8")).digest()[:4], "big")
+    # Keep seed in positive 31-bit range for stable Random seeding semantics.
+    seed &= 0x7FFFFFFF
     _rng = _get_fill_rng(seed)
     phone = profile.phone or _generate_phone(rng=_rng)
     email = profile.email or _generate_email(profile.first_name, profile.last_name, rng=_rng)
