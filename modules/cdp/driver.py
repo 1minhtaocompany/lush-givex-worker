@@ -119,7 +119,7 @@ def _random_greeting() -> str:
 
 def _lookup_maxmind_utc_offset(ip_addr: str) -> int | None:
     """Look up UTC offset for an IP using MaxMind GeoLite2-City.mmdb."""
-    import zoneinfo as _zoneinfo  # pylint: disable=import-outside-toplevel
+    import zoneinfo  # pylint: disable=import-outside-toplevel
 
     mmdb_path = os.environ.get("GEOIP_DB_PATH", "data/GeoLite2-City.mmdb")
     if not os.path.exists(mmdb_path):
@@ -133,14 +133,14 @@ def _lookup_maxmind_utc_offset(ip_addr: str) -> int | None:
             record = reader.city(ip_addr)
             tz_name = record.location.time_zone
             if tz_name:
-                tz_info = _zoneinfo.ZoneInfo(tz_name)
+                tz_info = zoneinfo.ZoneInfo(tz_name)
                 now = datetime.datetime.now(tz_info)
                 offset = now.utcoffset()
                 if offset is None:
                     return None
                 return int(offset.total_seconds() // 3600)
     except (OSError, ValueError, AttributeError,
-            _zoneinfo.ZoneInfoNotFoundError) as exc:
+            zoneinfo.ZoneInfoNotFoundError) as exc:
         _log.debug("MaxMind lookup failed for %s: %s", ip_addr, exc)
     return None
 
