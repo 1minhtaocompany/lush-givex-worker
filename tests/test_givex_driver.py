@@ -701,6 +701,14 @@ class TestNavigateToEgift(unittest.TestCase):
 
     _CLEAR_SCRIPT = "window.localStorage.clear(); window.sessionStorage.clear();"
 
+    def _assert_clear_script_called_twice(self, selenium):
+        clear_script_calls = [
+            c.args[0]
+            for c in selenium.execute_script.call_args_list
+            if c.args and c.args[0] == self._CLEAR_SCRIPT
+        ]
+        self.assertEqual(clear_script_calls, [self._CLEAR_SCRIPT, self._CLEAR_SCRIPT])
+
     def test_navigate_to_egift_waits_for_url(self):
         selenium = _make_driver(current_url=URL_EGIFT)
         btn_el = MagicMock()
@@ -738,15 +746,7 @@ class TestNavigateToEgift(unittest.TestCase):
             gd.navigate_to_egift()
 
         self.assertEqual(selenium.delete_all_cookies.call_count, 2)
-        clear_script_calls = [
-            c.args[0]
-            for c in selenium.execute_script.call_args_list
-            if c.args and c.args[0] == self._CLEAR_SCRIPT
-        ]
-        self.assertEqual(
-            clear_script_calls,
-            [self._CLEAR_SCRIPT, self._CLEAR_SCRIPT],
-        )
+        self._assert_clear_script_called_twice(selenium)
 
     def test_navigate_to_egift_does_not_crash_when_script_clear_fails(self):
         selenium = _make_driver(current_url=URL_EGIFT)
@@ -765,12 +765,7 @@ class TestNavigateToEgift(unittest.TestCase):
         with patch("time.sleep"):
             gd.navigate_to_egift()
 
-        clear_script_calls = [
-            c.args[0]
-            for c in selenium.execute_script.call_args_list
-            if c.args and c.args[0] == self._CLEAR_SCRIPT
-        ]
-        self.assertEqual(clear_script_calls, [self._CLEAR_SCRIPT, self._CLEAR_SCRIPT])
+        self._assert_clear_script_called_twice(selenium)
         self.assertEqual(selenium.delete_all_cookies.call_count, 2)
         selenium.get.assert_called_once_with(URL_BASE)
         btn_el.click.assert_called_once()
