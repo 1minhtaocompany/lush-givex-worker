@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from typing import Dict, List, Optional, Tuple
 
 from modules.common.thresholds import ERROR_RATE_THRESHOLD
 from . import main as rollout
@@ -14,7 +15,7 @@ class AutoScaler:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._consecutive_failures: dict[str, int] = {}
+        self._consecutive_failures: Dict[str, int] = {}
         self._CONSECUTIVE_FAILURE_THRESHOLD: int = 5
 
     def _scale_down(self, reason: str) -> None:
@@ -35,7 +36,7 @@ class AutoScaler:
             )
             return
         with self._lock:
-            workers_to_scale = []
+            workers_to_scale: List[Tuple[str, int]] = []
             for worker_id, count in self._consecutive_failures.items():
                 if count >= self._CONSECUTIVE_FAILURE_THRESHOLD:
                     workers_to_scale.append((worker_id, count))
@@ -69,7 +70,7 @@ class AutoScaler:
             return self._consecutive_failures.get(worker_id, 0)
 
 
-_autoscaler_instance: "AutoScaler | None" = None
+_autoscaler_instance: Optional["AutoScaler"] = None  # pylint: disable=invalid-name
 _autoscaler_lock = threading.Lock()
 
 

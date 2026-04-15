@@ -8,10 +8,10 @@ from modules.rollout import autoscaler as autoscaler_module
 
 class AutoScalerResetMixin:
     def setUp(self):
-        autoscaler_module._autoscaler_instance = None
+        autoscaler_module._autoscaler_instance = None  # pylint: disable=protected-access
 
     def tearDown(self):
-        autoscaler_module._autoscaler_instance = None
+        autoscaler_module._autoscaler_instance = None  # pylint: disable=protected-access
 
 
 class TestConsecutiveFailures(AutoScalerResetMixin, unittest.TestCase):
@@ -66,14 +66,14 @@ class TestConsecutiveFailures(AutoScalerResetMixin, unittest.TestCase):
     def test_evaluate_scale_down_on_error_rate_threshold_breach(self):
         scaler = autoscaler_module.AutoScaler()
         with patch.object(scaler, "_scale_down") as mock_scale_down:
-            scaler._evaluate_scale_down(ERROR_RATE_THRESHOLD + 0.01)
+            scaler._evaluate_scale_down(ERROR_RATE_THRESHOLD + 0.01)  # pylint: disable=protected-access
             mock_scale_down.assert_called_once()
 
     def test_evaluate_scale_down_checks_worker_failure_thresholds(self):
         scaler = autoscaler_module.AutoScaler()
-        scaler._consecutive_failures = {"w1": 5, "w2": 4, "w3": 6}
+        scaler._consecutive_failures = {"w1": 5, "w2": 4, "w3": 6}  # pylint: disable=protected-access
         with patch.object(scaler, "_scale_down_worker") as mock_scale_down_worker:
-            scaler._evaluate_scale_down(0.0)
+            scaler._evaluate_scale_down(0.0)  # pylint: disable=protected-access
             self.assertEqual(mock_scale_down_worker.call_count, 2)
             mock_scale_down_worker.assert_any_call("w1")
             mock_scale_down_worker.assert_any_call("w3")
