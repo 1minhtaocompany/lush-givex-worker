@@ -60,7 +60,7 @@ def test_egift_form_uses_realistic_typing_not_send_keys(mock_webdriver):
     with patch.object(driver_mod, "_random_greeting", return_value="Hi"), \
             patch.object(givex, "_realistic_type_field") as mock_type:
         givex.fill_egift_form(_task(), _billing())
-    assert mock_type.call_count == 6
+    assert mock_type.call_count == 6  # nosec B101
     mock_element.send_keys.assert_not_called()
 
 
@@ -71,7 +71,7 @@ def test_amount_field_typed_with_zero_typo_rate(mock_webdriver):
             patch.object(givex, "_realistic_type_field") as mock_type:
         givex.fill_egift_form(_task(), _billing())
     expected = call(SEL_AMOUNT_INPUT, "50", field_kind="amount", typo_rate=0.0)
-    assert expected in mock_type.call_args_list
+    assert expected in mock_type.call_args_list  # nosec B101
 
 
 def test_navigate_clears_browser_state_before_each_cycle(mock_webdriver):
@@ -82,22 +82,22 @@ def test_navigate_clears_browser_state_before_each_cycle(mock_webdriver):
             patch.object(givex, "_wait_for_url"), \
             patch.object(givex, "bounding_box_click"):
         givex.navigate_to_egift()
-    assert mock_webdriver.execute_script.call_count == 2
-    assert mock_webdriver.delete_all_cookies.call_count == 2
+    assert mock_webdriver.execute_script.call_count == 2  # nosec B101
+    assert mock_webdriver.delete_all_cookies.call_count == 2  # nosec B101
 
 
 def test_proxy_pool_assigns_unique_proxies_per_worker(proxy_pool_3: ProxyPool):
     """3 workers → 3 unique proxies from pool, none shared."""
     assigned = [proxy_pool_3.acquire(f"worker-{i}") for i in range(3)]
-    assert len(set(assigned)) == 3
-    assert None not in assigned
+    assert len(set(assigned)) == 3  # nosec B101
+    assert None not in assigned  # nosec B101
 
 
 def test_proxy_pool_gracefully_handles_empty_pool(proxy_pool_3: ProxyPool):
     """4th worker with pool of 3 → acquire() returns None, no exception."""
     for i in range(3):
-        assert proxy_pool_3.acquire(f"worker-{i}") is not None
-    assert proxy_pool_3.acquire("worker-4") is None
+        assert proxy_pool_3.acquire(f"worker-{i}") is not None  # nosec B101
+    assert proxy_pool_3.acquire("worker-4") is None  # nosec B101
 
 
 def test_proxy_pool_release_returns_to_pool(proxy_pool_3: ProxyPool):
@@ -105,13 +105,13 @@ def test_proxy_pool_release_returns_to_pool(proxy_pool_3: ProxyPool):
     first = proxy_pool_3.acquire("worker-1")
     proxy_pool_3.release("worker-1")
     reassigned = [proxy_pool_3.acquire(f"worker-{i}") for i in range(2, 6)]
-    assert first in reassigned
+    assert first in reassigned  # nosec B101
 
 
 def test_bitbrowser_client_returns_none_when_api_key_missing():
     """get_bitbrowser_client() returns None when BITBROWSER_API_KEY not set."""
     with patch.dict(os.environ, {}, clear=True):
-        assert get_bitbrowser_client() is None
+        assert get_bitbrowser_client() is None  # nosec B101
 
 
 def test_bitbrowser_session_cleanup_does_not_propagate_errors():
@@ -141,7 +141,7 @@ def test_autoscaler_success_resets_consecutive_counter():
         for _ in range(3):
             scaler.record_failure("worker-1")
         scaler.record_success("worker-1")
-    assert scaler.get_consecutive_failures("worker-1") == 0
+    assert scaler.get_consecutive_failures("worker-1") == 0  # nosec B101
 
 
 def test_orchestrator_calls_record_success_on_payment_complete():
@@ -220,7 +220,7 @@ def test_startup_config_warns_on_missing_worker_count():
             patch("integration.runtime.validate_config", return_value=None), \
             patch("integration.runtime._logger.warning") as mock_warning:
         runtime._validate_startup_config()  # pylint: disable=protected-access
-    assert any(
+    assert any(  # nosec B101
         "WORKER_COUNT not set" in str(c.args[0])
         for c in mock_warning.call_args_list
     )
@@ -230,7 +230,7 @@ def test_ghost_cursor_never_starts_at_origin(mock_webdriver):
     """1000 GhostCursor instances → none start at (0.0, 0.0)."""
     for seed in range(1000):
         cursor = GhostCursor(mock_webdriver, random.Random(seed))
-        assert cursor.position != (0.0, 0.0)
+        assert cursor.position != (0.0, 0.0)  # nosec B101
 
 
 def test_bezier_arc_direction_is_bidirectional():
@@ -244,8 +244,8 @@ def test_bezier_arc_direction_is_bidirectional():
             positives += 1
         elif coord_y < 0:
             negatives += 1
-    assert positives >= 30
-    assert negatives >= 30
+    assert positives >= 30  # nosec B101
+    assert negatives >= 30  # nosec B101
 
 
 def test_driver_utc_offset_flows_to_temporal_model(mock_webdriver):

@@ -73,7 +73,6 @@ class _BitBrowserMockHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):  # noqa: A002  # pylint: disable=redefined-builtin
         """Suppress server log output during tests."""
-        pass  # noqa: PIE790 — intentionally silent override
 
 
 @pytest.fixture
