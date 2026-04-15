@@ -28,7 +28,7 @@ class _BitBrowserMockHandler(BaseHTTPRequestHandler):
     """Tiny BitBrowser API mock server for tests."""
 
     _lock = threading.Lock()
-    _calls = []  # pylint: disable=dangerous-default-value
+    _calls = None
 
     @classmethod
     def reset_calls(cls):
@@ -38,7 +38,7 @@ class _BitBrowserMockHandler(BaseHTTPRequestHandler):
     @classmethod
     def snapshot_calls(cls):
         with cls._lock:
-            return list(cls._calls)
+            return list(cls._calls or [])
 
     def _write_json(self, payload):
         body = json.dumps(payload).encode("utf-8")

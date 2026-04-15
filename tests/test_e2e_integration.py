@@ -141,7 +141,18 @@ def test_orchestrator_calls_record_success_on_payment_complete():
     store = MagicMock()
     store.is_duplicate.return_value = False
     task = _task()
-    with patch("integration.orchestrator._get_autoscaler", return_value=autoscaler), patch("integration.orchestrator._get_idempotency_store", return_value=store), patch("integration.orchestrator.initialize_cycle"), patch("integration.orchestrator.run_payment_step", return_value=(SimpleNamespace(name="success"), 50.0)), patch("integration.orchestrator.handle_outcome", return_value="complete"), patch("integration.orchestrator.cdp.unregister_driver"), patch("integration.orchestrator.fsm.cleanup_worker"):
+    with (
+        patch("integration.orchestrator._get_autoscaler", return_value=autoscaler),
+        patch("integration.orchestrator._get_idempotency_store", return_value=store),
+        patch("integration.orchestrator.initialize_cycle"),
+        patch(
+            "integration.orchestrator.run_payment_step",
+            return_value=(SimpleNamespace(name="success"), 50.0),
+        ),
+        patch("integration.orchestrator.handle_outcome", return_value="complete"),
+        patch("integration.orchestrator.cdp.unregister_driver"),
+        patch("integration.orchestrator.fsm.cleanup_worker"),
+    ):
         orchestrator.run_cycle(task, worker_id="worker-1")
     autoscaler.record_success.assert_called_once_with("worker-1")
 
@@ -151,7 +162,16 @@ def test_orchestrator_calls_record_failure_on_session_flagged():
     autoscaler = MagicMock()
     store = MagicMock()
     store.is_duplicate.return_value = False
-    with patch("integration.orchestrator._get_autoscaler", return_value=autoscaler), patch("integration.orchestrator._get_idempotency_store", return_value=store), patch("integration.orchestrator.initialize_cycle", side_effect=SessionFlaggedError("flagged")), patch("integration.orchestrator.cdp.unregister_driver"), patch("integration.orchestrator.fsm.cleanup_worker"):
+    with (
+        patch("integration.orchestrator._get_autoscaler", return_value=autoscaler),
+        patch("integration.orchestrator._get_idempotency_store", return_value=store),
+        patch(
+            "integration.orchestrator.initialize_cycle",
+            side_effect=SessionFlaggedError("flagged"),
+        ),
+        patch("integration.orchestrator.cdp.unregister_driver"),
+        patch("integration.orchestrator.fsm.cleanup_worker"),
+    ):
         try:
             orchestrator.run_cycle(_task(), worker_id="worker-1")
             assert False, "Expected SessionFlaggedError"
