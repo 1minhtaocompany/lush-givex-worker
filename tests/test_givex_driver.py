@@ -17,6 +17,7 @@ Covers:
 
 import time
 import types
+import datetime
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -842,6 +843,14 @@ class TestMaxMindGeoLookup(unittest.TestCase):
     def test_lookup_maxmind_utc_offset_uses_timezone_from_record(self):
         fake_record = MagicMock()
         fake_record.location.time_zone = "America/New_York"
+        fixed_now = datetime.datetime(
+            2026,
+            1,
+            15,
+            12,
+            0,
+            tzinfo=datetime.timezone(datetime.timedelta(hours=-5)),
+        )
 
         class FakeReader:
             def __init__(self, _path):
@@ -859,12 +868,14 @@ class TestMaxMindGeoLookup(unittest.TestCase):
         fake_database_module = types.SimpleNamespace(Reader=FakeReader)
         fake_geoip2_module = types.SimpleNamespace(database=fake_database_module)
         with patch("modules.cdp.driver.os.path.exists", return_value=True), \
+             patch("modules.cdp.driver.datetime.datetime") as mock_datetime, \
              patch.dict(
                  "sys.modules",
                  {"geoip2": fake_geoip2_module, "geoip2.database": fake_database_module},
              ):
+            mock_datetime.now.return_value = fixed_now
             offset = drv._lookup_maxmind_utc_offset("8.8.8.8")
-        self.assertIn(offset, (-5, -4))
+        self.assertEqual(offset, -5)
 
     def test_lookup_maxmind_utc_offset_returns_none_when_db_missing(self):
         with patch.dict("os.environ", {}, clear=True), \

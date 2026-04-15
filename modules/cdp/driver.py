@@ -13,7 +13,11 @@ import logging
 import os
 import secrets
 import time
+import datetime
+import ipaddress
 import urllib.request
+import urllib.error
+import zoneinfo
 
 try:
     from selenium.webdriver.support.ui import Select  # type: ignore[import]
@@ -128,16 +132,13 @@ def _lookup_maxmind_utc_offset(ip: str) -> int | None:
             record = reader.city(ip)
             tz_name = record.location.time_zone
             if tz_name:
-                import datetime
-                import zoneinfo
-
                 tz = zoneinfo.ZoneInfo(tz_name)
                 now = datetime.datetime.now(tz)
                 offset = now.utcoffset()
                 if offset is None:
                     return None
                 return int(offset.total_seconds() // 3600)
-    except Exception as exc:
+    except (OSError, ValueError, AttributeError, zoneinfo.ZoneInfoNotFoundError) as exc:
         _log.debug("MaxMind lookup failed for %s: %s", ip, exc)
     return None
 
@@ -511,10 +512,14 @@ class GivexDriver:
     def _get_current_ip_best_effort(self) -> str | None:
         """Return current public IP using a short best-effort ipify request."""
         try:
-            with urllib.request.urlopen("https://api.ipify.org", timeout=3) as response:  # nosec B310
+            # nosec B310: fixed HTTPS endpoint, read-only plaintext IP response.
+            with urllib.request.urlopen("https://api.ipify.org", timeout=3) as response:
                 ip_value = response.read().decode("utf-8").strip()
-                return ip_value or None
-        except Exception as exc:
+                if not ip_value:
+                    return None
+                ipaddress.ip_address(ip_value)
+                return ip_value
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, UnicodeDecodeError) as exc:
             _log.debug("Public IP lookup failed: %s", exc)
             return None
 
@@ -535,8 +540,15 @@ class GivexDriver:
             _log.warning("preflight_geo_check: API failed, trying MaxMind fallback: %s", exc)
             detected_ip = self._get_current_ip_best_effort()
             if detected_ip:
-                utc_offset = _lookup_maxmind_utc_offset(detected_ip) or 0
+                detected_offset = _lookup_maxmind_utc_offset(detected_ip)
+                if detected_offset is None:
+                    _log.warning(
+                        "preflight_geo_check: MaxMind fallback unavailable for IP %s; using UTC offset 0",
+                        detected_ip,
+                    )
+                utc_offset = detected_offset or 0
             else:
+                _log.warning("preflight_geo_check: unable to detect public IP; using UTC offset 0")
                 utc_offset = 0
             self.set_proxy_utc_offset(utc_offset)
             return "UNKNOWN"
