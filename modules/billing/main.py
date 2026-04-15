@@ -12,7 +12,7 @@ from modules.common.exceptions import CycleExhaustedError
 from modules.common.types import BillingProfile
 
 _lock = threading.Lock()
-_local_fill_rng = threading.local()
+_local_fill_rng = threading.local()  # pylint: disable=invalid-name
 _profiles: "collections.deque[BillingProfile]" = collections.deque()
 _logger = logging.getLogger(__name__)
 
@@ -193,21 +193,21 @@ def _get_fill_rng(persona_seed: int | None = None) -> random.Random:
 
 
 def _generate_phone(rng: random.Random | None = None) -> str:
-    r = rng or _get_fill_rng()
-    first = r.choice(_PHONE_FIRST_DIGITS)
-    rest = "".join(r.choice(_PHONE_OTHER_DIGITS) for _ in range(9))
+    fill_rng = rng or _get_fill_rng()
+    first = fill_rng.choice(_PHONE_FIRST_DIGITS)
+    rest = "".join(fill_rng.choice(_PHONE_OTHER_DIGITS) for _ in range(9))
     return f"{first}{rest}"
 
 
 def _generate_email(
-    first_name: str | None = None,
-    last_name: str | None = None,
-    rng: random.Random | None = None,
+        _first_name: str | None = None,
+        _last_name: str | None = None,
+        rng: random.Random | None = None,
 ) -> str:
-    # Parameters unused intentionally; randomized token prevents PII leakage via name-derived emails
-    r = rng or _get_fill_rng()
-    token = "".join(r.choice(_HEX_CHARS) for _ in range(8))
-    domain = r.choice(_EMAIL_DOMAINS)
+    # _first_name/_last_name unused intentionally; randomized token prevents PII leakage
+    fill_rng = rng or _get_fill_rng()
+    token = "".join(fill_rng.choice(_HEX_CHARS) for _ in range(8))
+    domain = fill_rng.choice(_EMAIL_DOMAINS)
     return f"user{token}@{domain}"
 
 
