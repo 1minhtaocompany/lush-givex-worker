@@ -128,6 +128,95 @@ class BillingTests(unittest.TestCase):
                     billing._MAX_BILLING_PROFILES = original
 
 
+class BillingDeterministicFillTests(unittest.TestCase):
+    """Regression tests for deterministic persona-scoped fill generation."""
+
+    def test_fill_missing_is_deterministic_for_same_persona(self):
+        """Same persona data yields the same generated phone/email on repeated fills."""
+        profile = BillingProfile(
+            first_name="Ada",
+            last_name="Lovelace",
+            address="1 Analytical St",
+            city="London",
+            state="LN",
+            zip_code="12345",
+            phone=None,
+            email=None,
+        )
+
+        result1 = billing._fill_missing(profile)
+        result2 = billing._fill_missing(profile)
+
+        self.assertEqual(result1.phone, result2.phone)
+        self.assertEqual(result1.email, result2.email)
+
+    def test_fill_missing_diff_personas_produce_diff_outputs(self):
+        """Different persona seeds should not collapse to the same generated values."""
+        profile1 = BillingProfile(
+            first_name="Ada",
+            last_name="Lovelace",
+            address="1 Analytical St",
+            city="London",
+            state="LN",
+            zip_code="12345",
+            phone=None,
+            email=None,
+        )
+        profile2 = BillingProfile(
+            first_name="Grace",
+            last_name="Hopper",
+            address="2 Compiler Ave",
+            city="Arlington",
+            state="VA",
+            zip_code="22201",
+            phone=None,
+            email=None,
+        )
+
+        result1 = billing._fill_missing(profile1)
+        result2 = billing._fill_missing(profile2)
+
+        self.assertNotEqual((result1.phone, result1.email), (result2.phone, result2.email))
+
+    def test_fill_missing_uses_address_seed_when_names_blank(self):
+        """Address fields become the deterministic seed when first/last names are blank."""
+        profile = BillingProfile(
+            first_name="",
+            last_name="",
+            address="123 Main St",
+            city="Seattle",
+            state="WA",
+            zip_code="98101",
+            phone=None,
+            email=None,
+        )
+
+        result1 = billing._fill_missing(profile)
+        result2 = billing._fill_missing(profile)
+
+        self.assertEqual(result1.phone, result2.phone)
+        self.assertEqual(result1.email, result2.email)
+
+    def test_fill_missing_uses_phone_seed_when_names_blank(self):
+        """Phone/email fallback seed stays deterministic when names and address are blank."""
+        profile = BillingProfile(
+            first_name="",
+            last_name="",
+            address="",
+            city="",
+            state="",
+            zip_code="",
+            phone="2125550101",
+            email=None,
+        )
+
+        result1 = billing._fill_missing(profile)
+        result2 = billing._fill_missing(profile)
+
+        self.assertEqual(result1.phone, "2125550101")
+        self.assertEqual(result1.email, result2.email)
+
+
 class BillingHardeningTests(unittest.TestCase):
     """Tests for billing loader hardening: encoding faults, env validation, min threshold."""
 

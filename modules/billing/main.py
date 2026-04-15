@@ -1,23 +1,27 @@
 from __future__ import annotations
 
 import collections
+import hashlib
 import logging
 import os
 import random
 import threading
-import uuid
 from pathlib import Path
 
 from modules.common.exceptions import CycleExhaustedError
 from modules.common.types import BillingProfile
 
 _lock = threading.Lock()
+_local_fill_rng = threading.local()  # pylint: disable=invalid-name
 _profiles: "collections.deque[BillingProfile]" = collections.deque()
 _logger = logging.getLogger(__name__)
 
 _EMAIL_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "icloud.com")
 _PHONE_FIRST_DIGITS = "23456789"
 _PHONE_OTHER_DIGITS = "0123456789"
+_HEX_CHARS = "0123456789abcdef"
+# Mix persona seed into a dedicated RNG stream used only for billing field fills.
+_FILL_RNG_XOR_MASK = 0xDEAD_BEEF
 
 
 def _get_max_billing_profiles() -> int:
@@ -179,16 +183,31 @@ def _read_profiles_from_disk() -> collections.deque[BillingProfile]:
     return collections.deque(profiles)
 
 
-def _generate_phone() -> str:
-    first = random.choice(_PHONE_FIRST_DIGITS)
-    rest = "".join(random.choice(_PHONE_OTHER_DIGITS) for _ in range(9))
+def _get_fill_rng(persona_seed: int | None = None) -> random.Random:
+    """Get per-thread or per-persona deterministic RNG."""
+    if persona_seed is not None:
+        return random.Random(persona_seed ^ _FILL_RNG_XOR_MASK)
+    if not hasattr(_local_fill_rng, "rng"):
+        _local_fill_rng.rng = random.Random()
+    return _local_fill_rng.rng
+
+
+def _generate_phone(rng: random.Random | None = None) -> str:
+    fill_rng = rng or _get_fill_rng()
+    first = fill_rng.choice(_PHONE_FIRST_DIGITS)
+    rest = "".join(fill_rng.choice(_PHONE_OTHER_DIGITS) for _ in range(9))
     return f"{first}{rest}"
 
 
-def _generate_email(first_name: str | None = None, last_name: str | None = None) -> str:
-    # Parameters unused intentionally; UUID token prevents PII leakage via name-derived emails
-    token = uuid.uuid4().hex[:8]
-    domain = random.choice(_EMAIL_DOMAINS)
+def _generate_email(
+        _first_name: str | None = None,
+        _last_name: str | None = None,
+        rng: random.Random | None = None,
+) -> str:
+    # _first_name/_last_name unused intentionally; randomized token prevents PII leakage
+    fill_rng = rng or _get_fill_rng()
+    token = "".join(fill_rng.choice(_HEX_CHARS) for _ in range(8))
+    domain = fill_rng.choice(_EMAIL_DOMAINS)
     return f"user{token}@{domain}"
 
 
@@ -209,8 +228,19 @@ def _find_matching_index(zip_code: str) -> int | None:
 
 
 def _fill_missing(profile: BillingProfile) -> BillingProfile:
-    phone = profile.phone or _generate_phone()
-    email = profile.email or _generate_email(profile.first_name, profile.last_name)
+    name_key = f"{profile.first_name or ''}{profile.last_name or ''}"
+    if not name_key:
+        name_key = (
+            f"{profile.address}|{profile.city}|{profile.state}|{profile.zip_code}"
+        )
+    if not name_key.replace("|", "").strip():
+        name_key = f"{profile.phone or ''}|{profile.email or ''}" or "anonymous-profile"
+    seed = int.from_bytes(hashlib.sha256(name_key.encode("utf-8")).digest()[:4], "big")
+    # Keep seed in positive 31-bit range for stable Random seeding semantics.
+    seed &= 0x7FFFFFFF
+    _rng = _get_fill_rng(seed)
+    phone = profile.phone or _generate_phone(rng=_rng)
+    email = profile.email or _generate_email(profile.first_name, profile.last_name, rng=_rng)
     return BillingProfile(
         first_name=profile.first_name,
         last_name=profile.last_name,
