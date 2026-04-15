@@ -2,6 +2,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from integration import runtime as runtime_module
 from modules.common.thresholds import ERROR_RATE_THRESHOLD
 from modules.rollout import autoscaler as autoscaler_module
 
@@ -95,12 +96,11 @@ class TestAutoscalerReset(AutoScalerResetMixin, unittest.TestCase):
         self.assertIsNone(autoscaler_module._autoscaler_instance)  # pylint: disable=protected-access
 
     def test_runtime_reset_clears_autoscaler_state(self):
-        from integration import runtime
-        runtime.reset()
+        runtime_module.reset()
         scaler = autoscaler_module.get_autoscaler()
         with patch.object(scaler, "_scale_down_worker"):
             for _ in range(3):
                 scaler.record_failure("worker-1")
         self.assertEqual(scaler.get_consecutive_failures("worker-1"), 3)
-        runtime.reset()
+        runtime_module.reset()
         self.assertEqual(autoscaler_module.get_autoscaler().get_consecutive_failures("worker-1"), 0)
