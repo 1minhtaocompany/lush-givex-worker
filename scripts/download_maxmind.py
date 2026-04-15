@@ -8,7 +8,6 @@ import sys
 import tarfile
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 _LOG = logging.getLogger(__name__)
@@ -64,11 +63,12 @@ def main() -> int:
     except (OSError, ValueError, tarfile.TarError) as exc:
         _LOG.error("Failed to download/extract MaxMind DB: %s", exc)
         return 1
-    output_dir = Path("data")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "GeoLite2-City.mmdb"
-    output_path.write_bytes(mmdb_bytes)
-    _LOG.info("Saved %s (%d bytes)", output_path, output_path.stat().st_size)
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "GeoLite2-City.mmdb")
+    with open(output_path, "wb") as handle:
+        handle.write(mmdb_bytes)
+    _LOG.info("Saved %s (%d bytes)", output_path, os.path.getsize(output_path))
     return 0
 
 
