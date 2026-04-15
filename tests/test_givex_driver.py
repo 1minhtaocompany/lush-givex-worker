@@ -1294,14 +1294,14 @@ class TestStrictMode(unittest.TestCase):
     def test_default_strict_is_true(self):
         """GivexDriver defaults to strict mode."""
         selenium = _make_driver()
-        gd = GivexDriver(selenium)
-        self.assertTrue(gd._strict)
+        givex_driver = GivexDriver(selenium)
+        self.assertTrue(givex_driver._strict)  # pylint: disable=protected-access
 
     def test_explicit_strict_false_is_supported(self):
         """GivexDriver(strict=False) enables legacy fallback mode."""
         selenium = _make_driver()
-        gd = GivexDriver(selenium, strict=False)
-        self.assertFalse(gd._strict)
+        givex_driver = GivexDriver(selenium, strict=False)
+        self.assertFalse(givex_driver._strict)  # pylint: disable=protected-access
 
 
 # ── TestRealisticTypeField ───────────────────────────────────────────────────
