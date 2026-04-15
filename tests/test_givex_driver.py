@@ -810,6 +810,18 @@ class TestPreflightGeoCheck(unittest.TestCase):
 
         selenium.get.assert_called_once_with(URL_GEO_CHECK)
 
+    def test_preflight_sets_proxy_utc_offset_from_response(self):
+        """preflight_geo_check parses utc_offset and stores it as the proxy UTC offset."""
+        selenium = _make_driver()
+        body_el = MagicMock()
+        body_el.text = '{"country": "US", "utc_offset": -5}'
+        selenium.find_element.return_value = body_el
+        driver = GivexDriver(selenium)
+
+        driver.preflight_geo_check()
+
+        self.assertEqual(driver._utc_offset_hours, -5)  # pylint: disable=protected-access
+
 
 # ── Helpers for persona-aware tests ─────────────────────────────────────────
 
@@ -991,6 +1003,21 @@ class TestBoundingBoxClickCoordinates(unittest.TestCase):
         self.assertLessEqual(x, rect["left"] + rect["width"])
         self.assertGreaterEqual(y, rect["top"])
         self.assertLessEqual(y, rect["top"] + rect["height"])
+
+    def test_bounding_box_click_uses_proxy_utc_offset_for_temporal_state(self):
+        """set_proxy_utc_offset(7) propagates to get_time_state call in bounding_box_click."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        selenium.execute_script.return_value = self._rect()
+        persona = _make_persona(42)
+        driver = GivexDriver(selenium, persona=persona)
+        driver.set_proxy_utc_offset(7)
+        temporal = driver._temporal  # pylint: disable=protected-access
+        with patch.object(temporal, "get_time_state", return_value="DAY") as mock_get_time_state, \
+             patch("time.sleep"):
+            driver.bounding_box_click("#some-el")
+        mock_get_time_state.assert_called_with(7)
 
 
 # ── TestGhostMoveTo ──────────────────────────────────────────────────────────
@@ -1470,6 +1497,25 @@ class TestRealisticTypeField(unittest.TestCase):
              patch("time.sleep"):
             gd._realistic_type_field("#f", "x")
         self.assertAlmostEqual(received_typo_rate[0], 0.02 + 0.015, places=4)
+
+    def test_realistic_type_passes_proxy_utc_offset_to_temporal(self):
+        """_realistic_type_field forwards _utc_offset_hours to get_night_typo_increase."""
+        selenium = _make_driver()
+        element = MagicMock()
+        selenium.find_elements.return_value = [element]
+        persona = _make_persona(0)
+        driver = GivexDriver(selenium, persona=persona)
+        driver.set_proxy_utc_offset(-3)
+        tv_result = {
+            "typed_chars": 1, "typos_injected": 0, "corrections_made": 0, "mode": "cdp_key",
+        }
+        temporal = driver._temporal  # pylint: disable=protected-access
+        typo_patcher = patch.object(temporal, "get_night_typo_increase", return_value=0.01)
+        with patch("modules.cdp.driver._type_value", return_value=tv_result), \
+             typo_patcher as mock_typo, \
+             patch("time.sleep"):
+            driver._realistic_type_field("#f", "x")  # pylint: disable=protected-access
+        self.assertEqual(mock_typo.call_args, call(-3))
 
 
 # ── TestHesitationDistribution ───────────────────────────────────────────────
