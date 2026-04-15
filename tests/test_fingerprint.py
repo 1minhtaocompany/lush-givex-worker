@@ -9,10 +9,10 @@ import json
 import os
 import threading
 import unittest
+from unittest.mock import MagicMock, patch
 import urllib.error
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer  # pylint: disable=no-name-in-module
-from unittest.mock import MagicMock, patch
 
 from modules.cdp.fingerprint import (
     BitBrowserClient,
