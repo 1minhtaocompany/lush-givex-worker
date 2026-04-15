@@ -81,3 +81,11 @@ def get_autoscaler() -> "AutoScaler":
             if _autoscaler_instance is None:
                 _autoscaler_instance = AutoScaler()
     return _autoscaler_instance
+
+
+def reset() -> None:
+    """Reset autoscaler state. Intended for testing and runtime lifecycle restarts."""
+    with _autoscaler_lock:
+        if _autoscaler_instance is not None:
+            with _autoscaler_instance._lock:  # pylint: disable=protected-access
+                _autoscaler_instance._consecutive_failures.clear()  # pylint: disable=protected-access

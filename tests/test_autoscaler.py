@@ -77,3 +77,28 @@ class TestConsecutiveFailures(AutoScalerResetMixin, unittest.TestCase):
             self.assertEqual(mock_scale_down_worker.call_count, 2)
             mock_scale_down_worker.assert_any_call("w1")
             mock_scale_down_worker.assert_any_call("w3")
+
+
+class TestAutoscalerReset(AutoScalerResetMixin, unittest.TestCase):
+    def test_reset_clears_failure_counts(self):
+        scaler = autoscaler_module.get_autoscaler()
+        with patch.object(scaler, "_scale_down_worker"):
+            for _ in range(3):
+                scaler.record_failure("worker-1")
+        self.assertEqual(scaler.get_consecutive_failures("worker-1"), 3)
+        autoscaler_module.reset()
+        self.assertEqual(autoscaler_module.get_autoscaler().get_consecutive_failures("worker-1"), 0)
+
+    def test_reset_is_idempotent_when_no_instance(self):
+        autoscaler_module.reset()  # must not raise when no instance exists
+
+    def test_runtime_reset_clears_autoscaler_state(self):
+        from integration import runtime
+        runtime.reset()
+        scaler = autoscaler_module.get_autoscaler()
+        with patch.object(scaler, "_scale_down_worker"):
+            for _ in range(3):
+                scaler.record_failure("worker-1")
+        self.assertEqual(scaler.get_consecutive_failures("worker-1"), 3)
+        runtime.reset()
+        self.assertEqual(autoscaler_module.get_autoscaler().get_consecutive_failures("worker-1"), 0)

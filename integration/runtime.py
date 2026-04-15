@@ -16,6 +16,7 @@ from modules.observability import alerting
 from modules.observability import metrics_exporter
 from modules.observability import log_sink
 from modules.rollout.autoscaler import get_autoscaler
+from modules.rollout import autoscaler as _autoscaler_module
 from modules.rollout import main as rollout
 from modules.delay.wrapper import wrap as _behavior_wrap
 from modules.delay.persona import PersonaProfile
@@ -708,6 +709,7 @@ def reset():
     behavior.reset()
     rollout.reset()
     monitor.reset()
+    _autoscaler_module.reset()
     fsm.reset_states()  # intentional: legacy global reset for test isolation
     fsm.reset_registry()
     metrics_exporter.reset()
