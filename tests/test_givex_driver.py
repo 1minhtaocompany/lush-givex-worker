@@ -770,6 +770,28 @@ class TestNavigateToEgift(unittest.TestCase):
         selenium.get.assert_called_once_with(URL_BASE)
         btn_el.click.assert_called_once()
 
+    def test_navigate_to_egift_does_not_crash_when_cookie_clear_fails(self):
+        selenium = _make_driver(current_url=URL_EGIFT)
+        btn_el = MagicMock()
+
+        def side_effect(_method, selector):
+            clean = selector.strip()
+            if clean == "#button--accept-cookies":
+                return []
+            return [btn_el]
+
+        selenium.find_elements.side_effect = side_effect
+        selenium.delete_all_cookies.side_effect = RuntimeError("cookie clear error")
+        gd = GivexDriver(selenium)
+
+        with patch("time.sleep"):
+            gd.navigate_to_egift()
+
+        self._assert_clear_script_called_twice(selenium)
+        self.assertEqual(selenium.delete_all_cookies.call_count, 2)
+        selenium.get.assert_called_once_with(URL_BASE)
+        btn_el.click.assert_called_once()
+
 
 class TestPreflightGeoCheck(unittest.TestCase):
     """preflight_geo_check uses URL_GEO_CHECK constant."""
