@@ -135,7 +135,7 @@ class BitBrowserSession:
         try:
             self._client.delete_profile(self._profile_id)
         except (urllib.error.URLError, OSError):
-            pass
+            _log.warning("Best-effort BitBrowser delete_profile failed for %s", self._profile_id, exc_info=True)
         return False
 
 
