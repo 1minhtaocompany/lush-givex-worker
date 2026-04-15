@@ -16,6 +16,7 @@ Covers:
 """
 
 import time
+import types
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -821,6 +822,66 @@ class TestPreflightGeoCheck(unittest.TestCase):
         driver.preflight_geo_check()
 
         self.assertEqual(driver._utc_offset_hours, -5)  # pylint: disable=protected-access
+
+    def test_preflight_api_failure_uses_maxmind_fallback_and_returns_unknown(self):
+        selenium = _make_driver()
+        selenium.find_element.side_effect = RuntimeError("geo api down")
+        driver = GivexDriver(selenium)
+
+        with patch.object(driver, "_get_current_ip_best_effort", return_value="1.1.1.1"), \
+             patch("modules.cdp.driver._lookup_maxmind_utc_offset", return_value=-5):
+            result = driver.preflight_geo_check()
+
+        self.assertEqual(result, "UNKNOWN")
+        self.assertEqual(driver._utc_offset_hours, -5)  # pylint: disable=protected-access
+
+
+class TestMaxMindGeoLookup(unittest.TestCase):
+    """Tests for MaxMind UTC offset fallback helper."""
+
+    def test_lookup_maxmind_utc_offset_uses_timezone_from_record(self):
+        fake_record = MagicMock()
+        fake_record.location.time_zone = "America/New_York"
+
+        class FakeReader:
+            def __init__(self, _path):
+                self._path = _path
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def city(self, _ip):
+                return fake_record
+
+        fake_database_module = types.SimpleNamespace(Reader=FakeReader)
+        fake_geoip2_module = types.SimpleNamespace(database=fake_database_module)
+        with patch("modules.cdp.driver.os.path.exists", return_value=True), \
+             patch.dict(
+                 "sys.modules",
+                 {"geoip2": fake_geoip2_module, "geoip2.database": fake_database_module},
+             ):
+            offset = drv._lookup_maxmind_utc_offset("8.8.8.8")
+        self.assertIn(offset, (-5, -4))
+
+    def test_lookup_maxmind_utc_offset_returns_none_when_db_missing(self):
+        with patch.dict("os.environ", {}, clear=True), \
+             patch("modules.cdp.driver.os.path.exists", return_value=False):
+            self.assertIsNone(drv._lookup_maxmind_utc_offset("8.8.8.8"))
+
+    def test_lookup_maxmind_utc_offset_returns_none_when_geoip2_missing(self):
+        real_import = __import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "geoip2.database":
+                raise ImportError("geoip2 missing")
+            return real_import(name, *args, **kwargs)
+
+        with patch("modules.cdp.driver.os.path.exists", return_value=True), \
+             patch("builtins.__import__", side_effect=_fake_import):
+            self.assertIsNone(drv._lookup_maxmind_utc_offset("8.8.8.8"))
 
 
 # ── Helpers for persona-aware tests ─────────────────────────────────────────
