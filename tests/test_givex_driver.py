@@ -730,6 +730,7 @@ class TestNavigateToEgift(unittest.TestCase):
         btn_el.click.assert_called_once()
 
     def test_navigate_to_egift_clears_browser_state_twice(self):
+        """localStorage/sessionStorage clear and delete_all_cookies called twice."""
         selenium = _make_driver(current_url=URL_EGIFT)
         btn_el = MagicMock()
 
@@ -749,6 +750,7 @@ class TestNavigateToEgift(unittest.TestCase):
         self._assert_clear_script_called_twice(selenium)
 
     def test_navigate_to_egift_does_not_crash_when_script_clear_fails(self):
+        """execute_script exception does not abort navigate_to_egift flow."""
         selenium = _make_driver(current_url=URL_EGIFT)
         btn_el = MagicMock()
 
@@ -771,6 +773,7 @@ class TestNavigateToEgift(unittest.TestCase):
         btn_el.click.assert_called_once()
 
     def test_navigate_to_egift_does_not_crash_when_cookie_clear_fails(self):
+        """delete_all_cookies exception does not abort navigate_to_egift flow."""
         selenium = _make_driver(current_url=URL_EGIFT)
         btn_el = MagicMock()
 
