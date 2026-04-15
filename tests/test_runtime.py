@@ -1593,23 +1593,30 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
 
 
 class TestStartupConfigValidation(RuntimeResetMixin, unittest.TestCase):
+    """Startup config validation raises ConfigError or warns on invalid WORKER_COUNT."""
+
     def test_start_raises_config_error_for_zero_worker_count(self):
+        """start() raises ConfigError when WORKER_COUNT is set to zero."""
         try:
-            with patch.dict(os.environ, {"WORKER_COUNT": "0", "GIVEX_ENDPOINT": "https://example.test"}):
+            env_override = {"WORKER_COUNT": "0", "GIVEX_ENDPOINT": "https://example.test"}
+            with patch.dict(os.environ, env_override):
                 with self.assertRaises(ConfigError):
                     start(lambda _: None, interval=0.05)
         finally:
             stop()
 
     def test_start_raises_config_error_for_non_integer_worker_count(self):
+        """start() raises ConfigError when WORKER_COUNT is not a valid integer."""
         try:
-            with patch.dict(os.environ, {"WORKER_COUNT": "abc", "GIVEX_ENDPOINT": "https://example.test"}):
+            env_override = {"WORKER_COUNT": "abc", "GIVEX_ENDPOINT": "https://example.test"}
+            with patch.dict(os.environ, env_override):
                 with self.assertRaises(ConfigError):
                     start(lambda _: None, interval=0.05)
         finally:
             stop()
 
     def test_start_warns_when_worker_count_missing(self):
+        """start() logs a WARNING when WORKER_COUNT env var is not set."""
         env = dict(os.environ)
         env.pop("WORKER_COUNT", None)
         env["GIVEX_ENDPOINT"] = "https://example.test"

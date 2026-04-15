@@ -80,19 +80,41 @@ NIGHT_TYPO_INCREASE_RANGE: tuple = (
 def validate_config() -> None:
     """Validate timing invariants. Raises DelayConfigError on violation."""
     if not (MIN_TYPING_DELAY < MAX_TYPING_DELAY):
-        raise DelayConfigError(f"MIN_TYPING_DELAY({MIN_TYPING_DELAY}) must be < MAX_TYPING_DELAY({MAX_TYPING_DELAY})")
+        raise DelayConfigError(
+            f"MIN_TYPING_DELAY({MIN_TYPING_DELAY}) must be"
+            f" < MAX_TYPING_DELAY({MAX_TYPING_DELAY})"
+        )
     if not (MIN_THINKING_DELAY <= MAX_HESITATION_DELAY):
-        raise DelayConfigError(f"MIN_THINKING_DELAY({MIN_THINKING_DELAY}) must be <= MAX_HESITATION_DELAY({MAX_HESITATION_DELAY})")
+        raise DelayConfigError(
+            f"MIN_THINKING_DELAY({MIN_THINKING_DELAY}) must be"
+            f" <= MAX_HESITATION_DELAY({MAX_HESITATION_DELAY})"
+        )
     if not (MAX_STEP_DELAY + WATCHDOG_HEADROOM <= _STEP_BUDGET_TOTAL):
-        raise DelayConfigError(f"MAX_STEP_DELAY({MAX_STEP_DELAY})+WATCHDOG_HEADROOM({WATCHDOG_HEADROOM}) must be <= {_STEP_BUDGET_TOTAL}")
+        raise DelayConfigError(
+            f"MAX_STEP_DELAY({MAX_STEP_DELAY})"
+            f"+WATCHDOG_HEADROOM({WATCHDOG_HEADROOM})"
+            f" must be <= {_STEP_BUDGET_TOTAL}"
+        )
     if not (TYPO_RATE_MIN <= TYPO_RATE_MAX):
-        raise DelayConfigError(f"TYPO_RATE_MIN({TYPO_RATE_MIN}) must be <= TYPO_RATE_MAX({TYPO_RATE_MAX})")
+        raise DelayConfigError(
+            f"TYPO_RATE_MIN({TYPO_RATE_MIN}) must be"
+            f" <= TYPO_RATE_MAX({TYPO_RATE_MAX})"
+        )
     if not (FATIGUE_THRESHOLD_MIN <= FATIGUE_THRESHOLD_MAX):
-        raise DelayConfigError(f"FATIGUE_THRESHOLD_MIN({FATIGUE_THRESHOLD_MIN}) must be <= FATIGUE_THRESHOLD_MAX({FATIGUE_THRESHOLD_MAX})")
+        raise DelayConfigError(
+            f"FATIGUE_THRESHOLD_MIN({FATIGUE_THRESHOLD_MIN}) must be"
+            f" <= FATIGUE_THRESHOLD_MAX({FATIGUE_THRESHOLD_MAX})"
+        )
     if not (NIGHT_PENALTY_MIN <= NIGHT_PENALTY_MAX):
-        raise DelayConfigError(f"NIGHT_PENALTY_MIN({NIGHT_PENALTY_MIN}) must be <= NIGHT_PENALTY_MAX({NIGHT_PENALTY_MAX})")
+        raise DelayConfigError(
+            f"NIGHT_PENALTY_MIN({NIGHT_PENALTY_MIN}) must be"
+            f" <= NIGHT_PENALTY_MAX({NIGHT_PENALTY_MAX})"
+        )
     if not (MIN_CLICK_DELAY < MAX_CLICK_DELAY):
-        raise DelayConfigError(f"MIN_CLICK_DELAY({MIN_CLICK_DELAY}) must be < MAX_CLICK_DELAY({MAX_CLICK_DELAY})")
+        raise DelayConfigError(
+            f"MIN_CLICK_DELAY({MIN_CLICK_DELAY}) must be"
+            f" < MAX_CLICK_DELAY({MAX_CLICK_DELAY})"
+        )
     if not (CDP_CALL_TIMEOUT > 0):
         raise DelayConfigError(f"CDP_CALL_TIMEOUT({CDP_CALL_TIMEOUT}) must be > 0")
 

@@ -5,7 +5,10 @@ import modules.delay.config as config
 
 
 class TestDelayConfigValidation(unittest.TestCase):
+    """Delay config validate_config raises DelayConfigError on invariant violations."""
+
     def test_validate_config_raises_delay_config_error_for_step_budget_violation(self):
+        """validate_config raises DelayConfigError when step-budget invariant is violated."""
         original_max_step_delay = config.MAX_STEP_DELAY
         original_watchdog_headroom = config.WATCHDOG_HEADROOM
         try:
