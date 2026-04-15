@@ -170,7 +170,8 @@ def _worker_fn(worker_id, task_fn, persona):
                         _log_event(worker_id, "critical", "billing_cb_triggered", {"count": fail_count, "pause_seconds": pause_dur})
                         _logger.error("Billing circuit breaker triggered. Pausing billing for %ds.", pause_dur)
                         _consecutive_billing_failures = 0
-                    if worker_id in _workers and worker_id not in _stop_requests: _pending_restarts += 1
+                    if worker_id in _workers and worker_id not in _stop_requests:
+                        _pending_restarts += 1
                 err_data: dict = {"error": _sanitize_error(exc)}
                 if persona_type_tag is not None:
                     err_data["persona_type"] = persona_type_tag
@@ -185,7 +186,8 @@ def _worker_fn(worker_id, task_fn, persona):
                     _logger.warning("monitor.record_error() failed for %s", worker_id, exc_info=True)
                 get_autoscaler().record_failure(worker_id)
                 with _lock:
-                    if worker_id in _workers and worker_id not in _stop_requests: _pending_restarts += 1
+                    if worker_id in _workers and worker_id not in _stop_requests:
+                        _pending_restarts += 1
                 err_data: dict = {"error": _sanitize_error(exc)}
                 if persona_type_tag is not None:
                     err_data["persona_type"] = persona_type_tag

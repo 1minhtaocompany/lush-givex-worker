@@ -2,6 +2,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from modules.common.thresholds import ERROR_RATE_THRESHOLD
 from modules.rollout import autoscaler as autoscaler_module
 
 
@@ -34,7 +35,6 @@ class TestConsecutiveFailures(AutoScalerResetMixin, unittest.TestCase):
 
     def test_record_methods_are_thread_safe(self):
         scaler = autoscaler_module.AutoScaler()
-        scaler._CONSECUTIVE_FAILURE_THRESHOLD = 10_000
         errors = []
 
         def worker_failure():
@@ -51,14 +51,29 @@ class TestConsecutiveFailures(AutoScalerResetMixin, unittest.TestCase):
             except Exception as exc:  # pylint: disable=broad-except
                 errors.append(exc)
 
-        threads = [threading.Thread(target=worker_failure) for _ in range(4)]
-        threads += [threading.Thread(target=worker_success) for _ in range(4)]
+        with patch.object(scaler, "_scale_down_worker"):
+            threads = [threading.Thread(target=worker_failure) for _ in range(4)]
+            threads += [threading.Thread(target=worker_success) for _ in range(4)]
 
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
 
         self.assertEqual(errors, [])
         self.assertGreaterEqual(scaler.get_consecutive_failures("w1"), 0)
 
+    def test_evaluate_scale_down_on_error_rate_threshold_breach(self):
+        scaler = autoscaler_module.AutoScaler()
+        with patch.object(scaler, "_scale_down") as mock_scale_down:
+            scaler._evaluate_scale_down(ERROR_RATE_THRESHOLD + 0.01)
+            mock_scale_down.assert_called_once()
+
+    def test_evaluate_scale_down_checks_worker_failure_thresholds(self):
+        scaler = autoscaler_module.AutoScaler()
+        scaler._consecutive_failures = {"w1": 5, "w2": 4, "w3": 6}
+        with patch.object(scaler, "_scale_down_worker") as mock_scale_down_worker:
+            scaler._evaluate_scale_down(0.0)
+            self.assertEqual(mock_scale_down_worker.call_count, 2)
+            mock_scale_down_worker.assert_any_call("w1")
+            mock_scale_down_worker.assert_any_call("w3")
