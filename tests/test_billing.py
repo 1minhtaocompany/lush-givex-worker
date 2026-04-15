@@ -132,6 +132,7 @@ class BillingDeterministicFillTests(unittest.TestCase):
     """Regression tests for deterministic persona-scoped fill generation."""
 
     def test_fill_missing_is_deterministic_for_same_persona(self):
+        """Same persona data yields the same generated phone/email on repeated fills."""
         profile = BillingProfile(
             first_name="Ada",
             last_name="Lovelace",
@@ -150,6 +151,7 @@ class BillingDeterministicFillTests(unittest.TestCase):
         self.assertEqual(result1.email, result2.email)
 
     def test_fill_missing_diff_personas_produce_diff_outputs(self):
+        """Different persona seeds should not collapse to the same generated values."""
         profile1 = BillingProfile(
             first_name="Ada",
             last_name="Lovelace",
@@ -177,6 +179,7 @@ class BillingDeterministicFillTests(unittest.TestCase):
         self.assertNotEqual((result1.phone, result1.email), (result2.phone, result2.email))
 
     def test_fill_missing_uses_address_seed_when_names_blank(self):
+        """Address fields become the deterministic seed when first/last names are blank."""
         profile = BillingProfile(
             first_name="",
             last_name="",
@@ -195,6 +198,7 @@ class BillingDeterministicFillTests(unittest.TestCase):
         self.assertEqual(result1.email, result2.email)
 
     def test_fill_missing_uses_phone_seed_when_names_blank(self):
+        """Phone/email fallback seed stays deterministic when names and address are blank."""
         profile = BillingProfile(
             first_name="",
             last_name="",
