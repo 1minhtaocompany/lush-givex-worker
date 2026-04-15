@@ -365,6 +365,26 @@ class RunCycleTests(unittest.TestCase):
                 run_cycle(_make_task())
         autoscaler.record_failure.assert_called_once_with("default")
 
+    def test_run_cycle_non_complete_outcomes_record_autoscaler_failure(self):
+        """Non-exception outcomes that are not 'complete' must record failure, not success."""
+        non_success_states = [None, State("declined"), State("ui_lock"), State("vbv_3ds")]
+        for state in non_success_states:
+            with self.subTest(state=getattr(state, "name", None)):
+                autoscaler = MagicMock()
+                with (
+                    patch("integration.orchestrator._get_autoscaler", return_value=autoscaler),
+                    patch("integration.orchestrator.billing") as mock_billing,
+                    patch("integration.orchestrator.cdp"),
+                    patch("integration.orchestrator.watchdog") as mock_watchdog,
+                    patch("integration.orchestrator.fsm") as mock_fsm,
+                ):
+                    mock_billing.select_profile.return_value = MagicMock()
+                    mock_watchdog.wait_for_total.return_value = 50.0
+                    mock_fsm.get_current_state_for_worker.return_value = state
+                    run_cycle(_make_task())
+                autoscaler.record_failure.assert_called_once_with("default")
+                autoscaler.record_success.assert_not_called()
+
     def test_run_cycle_initializes_fsm_before_payment(self):
         with (
             patch("integration.orchestrator.billing") as mock_billing,

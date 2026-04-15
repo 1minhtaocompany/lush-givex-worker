@@ -786,8 +786,11 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         initialize_cycle(worker_id)
         state, total = run_payment_step(task, zip_code, worker_id=worker_id)
         action = handle_outcome(state, task.order_queue, worker_id=worker_id)
-        success = True
-        _record_autoscaler_success(worker_id)
+        if action == "complete":
+            success = True
+            _record_autoscaler_success(worker_id)
+        else:
+            _record_autoscaler_failure(worker_id)
         if task_id is not None:
             _get_idempotency_store().mark_completed(task_id)
         return action, state, total
