@@ -59,9 +59,9 @@ class ProxyPool:
 
     def load_from_file(self, path: str) -> int:
         """Load proxies from file and return number loaded."""
-        with open(path, "r", encoding="utf-8") as handle:
-            loaded = [line.strip() for line in handle if line.strip()]
         with self._lock:
+            with open(path, "r", encoding="utf-8") as handle:
+                loaded = [line.strip() for line in handle if line.strip()]
             self._proxies.extend(loaded)
         return len(loaded)
 

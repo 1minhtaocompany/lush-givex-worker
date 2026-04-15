@@ -290,7 +290,8 @@ def stop_worker(worker_id, timeout=None):
         # the thread eventually exits.
         return False
     with _lock:
-        _stop_requests.discard(worker_id); _workers.pop(worker_id, None)
+        _stop_requests.discard(worker_id)
+        _workers.pop(worker_id, None)
         _worker_states.pop(worker_id, None)
     _log_event(worker_id, "stopped", "stop_requested")
     try:
