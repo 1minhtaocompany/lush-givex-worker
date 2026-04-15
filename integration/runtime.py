@@ -237,7 +237,11 @@ def start_worker(task_fn):
         else:
             _logger.debug("Assigned proxy for worker %s", wid)
     except Exception:
-        _logger.warning("Failed to acquire proxy from pool for worker %s", wid, exc_info=True)
+        _logger.warning(
+            "Failed to acquire proxy from pool for worker %s — continuing without proxy",
+            wid,
+            exc_info=True,
+        )
     try:
         t.start()
     except (RuntimeError, OSError):
@@ -293,7 +297,7 @@ def stop_worker(worker_id, timeout=None):
         from modules.cdp.proxy import get_default_pool
         get_default_pool().release(worker_id)
     except Exception:
-        _logger.debug("Failed to release proxy for worker %s", worker_id, exc_info=True)
+        _logger.warning("Failed to release proxy for worker %s", worker_id, exc_info=True)
     return True
 def get_active_workers() -> list[str]:
     """Return a list of active worker ids."""
