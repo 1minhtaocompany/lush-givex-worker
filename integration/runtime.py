@@ -512,7 +512,7 @@ def start(task_fn, interval=None):
     with _lock:
         if _state not in ("INIT", "STOPPED"):
             return False
-    _validate_startup_config()
+        _validate_startup_config()
     _ensure_rollout_configured()
     try:
         _validate_billing_pool_preflight()

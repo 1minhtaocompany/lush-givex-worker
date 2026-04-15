@@ -1594,14 +1594,20 @@ class TestBillingPoolPreflightValidation(RuntimeResetMixin, unittest.TestCase):
 
 class TestStartupConfigValidation(RuntimeResetMixin, unittest.TestCase):
     def test_start_raises_config_error_for_zero_worker_count(self):
-        with patch.dict(os.environ, {"WORKER_COUNT": "0", "GIVEX_ENDPOINT": "https://example.test"}):
-            with self.assertRaises(ConfigError):
-                start(lambda _: None, interval=0.05)
+        try:
+            with patch.dict(os.environ, {"WORKER_COUNT": "0", "GIVEX_ENDPOINT": "https://example.test"}):
+                with self.assertRaises(ConfigError):
+                    start(lambda _: None, interval=0.05)
+        finally:
+            stop()
 
     def test_start_raises_config_error_for_non_integer_worker_count(self):
-        with patch.dict(os.environ, {"WORKER_COUNT": "abc", "GIVEX_ENDPOINT": "https://example.test"}):
-            with self.assertRaises(ConfigError):
-                start(lambda _: None, interval=0.05)
+        try:
+            with patch.dict(os.environ, {"WORKER_COUNT": "abc", "GIVEX_ENDPOINT": "https://example.test"}):
+                with self.assertRaises(ConfigError):
+                    start(lambda _: None, interval=0.05)
+        finally:
+            stop()
 
     def test_start_warns_when_worker_count_missing(self):
         env = dict(os.environ)
