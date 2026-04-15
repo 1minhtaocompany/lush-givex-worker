@@ -772,14 +772,14 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         return action, state, total
     except SessionFlaggedError as exc:
         _logger.error(
-            "[trace=%s] worker=%s SessionFlaggedError: %s",
-            _get_trace_id(), worker_id, exc
+            "[trace=%s] worker=%s, task_id=%s SessionFlaggedError: %s",
+            _get_trace_id(), worker_id, task_id, exc
         )
         try:
             from modules.rollout.autoscaler import get_autoscaler
             get_autoscaler().record_failure(worker_id)
         except Exception:
-            pass
+            _logger.debug("autoscaler.record_failure skipped", exc_info=True)
         raise
     except Exception as exc:
         try:
