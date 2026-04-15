@@ -129,6 +129,7 @@ class GivexDriver:
         self._persona = persona
         self._strict = strict
         self._rnd = persona._rnd if persona is not None else None
+        self._utc_offset_hours: int = 0
         if persona is not None and _BehaviorStateMachine is not None:
             self._sm = _BehaviorStateMachine()
             self._engine = _DelayEngine(persona, self._sm)
@@ -151,6 +152,10 @@ class GivexDriver:
             return self._rnd
         import random as _random  # noqa: PLC0415
         return _random.SystemRandom()
+
+    def set_proxy_utc_offset(self, utc_offset_hours: int) -> None:
+        """Set UTC offset for temporal model (injected by orchestrator after geo-check)."""
+        self._utc_offset_hours = utc_offset_hours
 
     def find_elements(self, selector: str) -> list:
         """Return all elements matching *selector* (CSS, comma-separated OK).
@@ -249,7 +254,7 @@ class GivexDriver:
             return
         typo_prob = self._persona.get_typo_probability() if self._persona else 0.0
         if self._persona and self._temporal:
-            typo_prob += self._temporal.get_night_typo_increase()
+            typo_prob += self._temporal.get_night_typo_increase(self._utc_offset_hours)
         if typo_rate is not None:
             typo_prob = typo_rate
         dl = (self._bio.generate_4x4_pattern() if self._bio and use_burst and len(val) >= 16 else self._bio.generate_burst_pattern(len(val)) if self._bio else None)
@@ -386,7 +391,7 @@ class GivexDriver:
             night_factor = 1.0
             if self._temporal is not None:
                 try:
-                    if self._temporal.get_time_state(0) == "NIGHT":
+                    if self._temporal.get_time_state(self._utc_offset_hours) == "NIGHT":
                         night_factor = 1.0 + getattr(self._persona, "night_penalty_factor", 0.0)
                 except Exception:
                     _log.debug("bounding_box_click: unable to read temporal state; using default night_factor")
@@ -474,6 +479,9 @@ class GivexDriver:
             body = self._driver.find_element("tag name", "body").text
             data = _json.loads(body)
             country = data.get("country", "")
+            utc_offset = data.get("utc_offset", 0)
+            # TODO PR-J: Replace with MaxMind GeoLite2 lookup for accurate proxy timezone
+            self.set_proxy_utc_offset(int(utc_offset) if utc_offset is not None else 0)
         except Exception as exc:
             raise RuntimeError(f"Geo-check failed: {exc}") from exc
         if country != "US":
