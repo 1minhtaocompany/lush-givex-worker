@@ -40,7 +40,6 @@ _VALID_TRANSITIONS = {
     "SAFE_POINT": {"IN_CYCLE"},
 }
 _lock = threading.Lock()
-_startup_config_lock = threading.Lock()
 _state = "INIT"
 _workers: dict[str, threading.Thread] = {}
 _worker_states: dict[str, str] = {}
@@ -513,7 +512,6 @@ def start(task_fn, interval=None):
     with _lock:
         if _state not in ("INIT", "STOPPED"):
             return False
-    with _startup_config_lock:
         _validate_startup_config()
     _ensure_rollout_configured()
     try:
