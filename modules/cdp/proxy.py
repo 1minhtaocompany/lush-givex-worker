@@ -74,7 +74,7 @@ _default_pool_lock = threading.Lock()  # pylint: disable=invalid-name
 
 def get_default_pool() -> ProxyPool:
     """Get or create the default singleton ProxyPool."""
-    global _default_pool  # pylint: disable=global-statement
+    global _default_pool  # pylint: disable=global-statement,invalid-name
     if _default_pool is None:
         with _default_pool_lock:
             if _default_pool is None:
