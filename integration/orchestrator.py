@@ -21,6 +21,13 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
+from modules.common.exceptions import SessionFlaggedError
+# Optional autoscaler integration — module is available once PR-P (SCALE-001) is merged.
+# Import fails gracefully so orchestrator works before that PR lands.
+try:
+    from modules.rollout.autoscaler import get_autoscaler as _get_autoscaler
+except ImportError:
+    _get_autoscaler = None  # type: ignore[assignment]
 from modules.billing import main as billing
 from modules.cdp import main as cdp
 from modules.delay.config import CDP_CALL_TIMEOUT as _CDP_CALL_TIMEOUT_CONFIG
@@ -89,6 +96,34 @@ def _get_trace_id() -> str:
             exc_info=True,
         )
         return "no-trace"
+
+
+def _get_consecutive_failures(worker_id: str) -> int:
+    """Return autoscaler consecutive failure count, or -1 if unavailable."""
+    try:
+        if _get_autoscaler is not None:
+            return _get_autoscaler().get_consecutive_failures(worker_id)
+        return -1
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return -1
+
+
+def _record_autoscaler_success(worker_id: str) -> None:
+    """Record a successful payment cycle in the autoscaler. No-op if unavailable."""
+    try:
+        if _get_autoscaler is not None:
+            _get_autoscaler().record_success(worker_id)
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        _logger.debug("autoscaler.record_success skipped", exc_info=True)
+
+
+def _record_autoscaler_failure(worker_id: str) -> None:
+    """Record a failed payment cycle in the autoscaler. No-op if unavailable."""
+    try:
+        if _get_autoscaler is not None:
+            _get_autoscaler().record_failure(worker_id)
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        _logger.debug("autoscaler.record_failure skipped", exc_info=True)
 
 # TTL-based idempotency cache with in-flight tracking.
 _IDEMPOTENCY_TTL = 3600  # 1 hour
@@ -428,8 +463,6 @@ def _cdp_call_with_timeout(fn: Callable, *args: Any, timeout: float = _CDP_CALL_
             seconds, or if the executor is unavailable (e.g. after shutdown).
     """
     global _cdp_timeout_count, _active_cdp_requests
-    from modules.common.exceptions import SessionFlaggedError
-
     fn_name = getattr(fn, "__name__", repr(fn))
 
     with _cdp_metric_lock:
@@ -740,6 +773,7 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         RuntimeError: if no CDP driver has been registered.
     """
     task_id = getattr(task, "task_id", None)
+    success = False
     if task_id is not None:
         if _get_idempotency_store().is_duplicate(task_id):
             _logger.warning(
@@ -752,10 +786,23 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         initialize_cycle(worker_id)
         state, total = run_payment_step(task, zip_code, worker_id=worker_id)
         action = handle_outcome(state, task.order_queue, worker_id=worker_id)
+        if action == "complete":
+            success = True
+            _record_autoscaler_success(worker_id)
+        else:
+            _record_autoscaler_failure(worker_id)
         if task_id is not None:
             _get_idempotency_store().mark_completed(task_id)
         return action, state, total
+    except SessionFlaggedError as exc:
+        _logger.error(
+            "[trace=%s] worker=%s, task_id=%s SessionFlaggedError: %s",
+            _get_trace_id(), worker_id, task_id, exc
+        )
+        _record_autoscaler_failure(worker_id)
+        raise
     except Exception as exc:
+        _record_autoscaler_failure(worker_id)
         _logger.error(
             "[trace=%s] Cycle failed for worker=%s, task_id=%s: %s",
             _get_trace_id(),
@@ -765,6 +812,11 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         )
         raise
     finally:
+        _logger.info(
+            "[trace=%s] worker=%s cycle_result=%s consecutive_failures=%d",
+            _get_trace_id(), worker_id, "success" if success else "failure",
+            _get_consecutive_failures(worker_id)
+        )
         if task_id is not None:
             _get_idempotency_store().release_inflight(task_id)
         # Clean up CDP driver to prevent registry memory leak (GAP-CDP-01).

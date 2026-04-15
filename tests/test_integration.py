@@ -23,6 +23,7 @@ from modules.watchdog.main import reset as _reset_watchdog
 from integration.orchestrator import (
     _build_idempotency_store,
     _completed_task_ids,
+    _get_consecutive_failures,
     _FileIdempotencyStore,
     _idempotency_lock,
     _in_flight_task_ids,
@@ -319,6 +320,71 @@ class RunCycleTests(unittest.TestCase):
             with self.assertRaises(SessionFlaggedError):
                 run_cycle(_make_task())
 
+    def test_run_cycle_success_records_autoscaler_success_once(self):
+        autoscaler = MagicMock()
+        with (
+            patch("integration.orchestrator._get_autoscaler", return_value=autoscaler),
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm") as mock_fsm,
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.return_value = 99.0
+            mock_fsm.get_current_state_for_worker.return_value = State("success")
+            run_cycle(_make_task())
+        autoscaler.record_success.assert_called_once_with("default")
+
+    def test_run_cycle_failure_records_autoscaler_failure_once(self):
+        autoscaler = MagicMock()
+        with (
+            patch("integration.orchestrator._get_autoscaler", return_value=autoscaler),
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm"),
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.side_effect = RuntimeError("boom")
+            with self.assertRaises(RuntimeError):
+                run_cycle(_make_task())
+        autoscaler.record_failure.assert_called_once_with("default")
+
+    def test_run_cycle_session_flagged_records_failure_and_reraises(self):
+        autoscaler = MagicMock()
+        with (
+            patch("integration.orchestrator._get_autoscaler", return_value=autoscaler),
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp"),
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm"),
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_watchdog.wait_for_total.side_effect = SessionFlaggedError("timeout")
+            with self.assertRaises(SessionFlaggedError):
+                run_cycle(_make_task())
+        autoscaler.record_failure.assert_called_once_with("default")
+
+    def test_run_cycle_non_complete_outcomes_record_autoscaler_failure(self):
+        """Non-exception outcomes that are not 'complete' must record failure, not success."""
+        non_success_states = [None, State("declined"), State("ui_lock"), State("vbv_3ds")]
+        for state in non_success_states:
+            with self.subTest(state=getattr(state, "name", None)):
+                autoscaler = MagicMock()
+                with (
+                    patch("integration.orchestrator._get_autoscaler", return_value=autoscaler),
+                    patch("integration.orchestrator.billing") as mock_billing,
+                    patch("integration.orchestrator.cdp"),
+                    patch("integration.orchestrator.watchdog") as mock_watchdog,
+                    patch("integration.orchestrator.fsm") as mock_fsm,
+                ):
+                    mock_billing.select_profile.return_value = MagicMock()
+                    mock_watchdog.wait_for_total.return_value = 50.0
+                    mock_fsm.get_current_state_for_worker.return_value = state
+                    run_cycle(_make_task())
+                autoscaler.record_failure.assert_called_once_with("default")
+                autoscaler.record_success.assert_not_called()
+
     def test_run_cycle_initializes_fsm_before_payment(self):
         with (
             patch("integration.orchestrator.billing") as mock_billing,
@@ -331,6 +397,12 @@ class RunCycleTests(unittest.TestCase):
             mock_fsm.get_current_state_for_worker.return_value = None
             run_cycle(_make_task())
         mock_fsm.initialize_for_worker.assert_called_once_with("default")
+
+
+class ConsecutiveFailuresHelperTests(unittest.TestCase):
+    def test_get_consecutive_failures_returns_minus_one_when_unavailable(self):
+        with patch("integration.orchestrator._get_autoscaler", None):
+            self.assertEqual(_get_consecutive_failures("default"), -1)
 
 
 class WorkerTaskFrozenTests(unittest.TestCase):
