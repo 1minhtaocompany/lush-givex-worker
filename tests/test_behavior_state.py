@@ -204,9 +204,9 @@ class TestIsCriticalContext(unittest.TestCase):
 
     def test_critical_section_flag_is_critical(self):
         """is_critical_context() returns True when critical-section flag is set."""
-        sm = BehaviorStateMachine(initial_state="FILLING_FORM")
-        sm.set_critical_section(True)
-        self.assertTrue(sm.is_critical_context())
+        state_machine = BehaviorStateMachine(initial_state="FILLING_FORM")
+        state_machine.set_critical_section(True)
+        self.assertTrue(state_machine.is_critical_context())
 
 
 # ── BehaviorStateMachine — is_safe_for_delay ─────────────────────
