@@ -150,14 +150,15 @@ _cdp_executor_lock = threading.Lock()
 _cdp_timeout_count: int = 0          # total CDP calls that timed out (caller-side)
 _active_cdp_requests: int = 0        # orchestration-level tracking only
 _cdp_orphaned_threads: int = 0       # timed-out threads that may still occupy executor slots
-_cdp_metric_lock = threading.Lock()  # protects the three counters above
+# protects the three counters above
+_cdp_metric_lock = threading.Lock()  # pylint: disable=invalid-name
 # Guards watchdog.notify_total() calls that may be triggered concurrently from
 # both the CDP callback path and the pre-wait DOM fallback path.
 _network_listener_lock = threading.Lock()  # pylint: disable=invalid-name
 # First-notify-wins guard: tracks workers that have already received a total this cycle.
 # Cleared per cycle in run_payment_step before watchdog.enable_network_monitor().
 # Protected by _network_listener_lock.
-_notified_workers_this_cycle: set[str] = set()
+_notified_workers_this_cycle: set[str] = set()  # pylint: disable=unsubscriptable-object
 _CDP_NETWORK_URL_PATTERNS = ("/checkout/total", "/api/tax", "/api/checkout", "cws4.0")
 
 # NOTE on _active_cdp_requests:
@@ -509,7 +510,9 @@ def _cdp_call_with_timeout(fn: Callable, *args: Any, timeout: float = _CDP_CALL_
         SessionFlaggedError: If the call does not complete within *timeout*
             seconds, or if the executor is unavailable (e.g. after shutdown).
     """
-    global _cdp_timeout_count, _active_cdp_requests, _cdp_orphaned_threads
+    global _cdp_timeout_count  # pylint: disable=global-statement,invalid-name
+    global _active_cdp_requests  # pylint: disable=global-statement,invalid-name
+    global _cdp_orphaned_threads  # pylint: disable=global-statement,invalid-name
     fn_name = getattr(fn, "__name__", repr(fn))
 
     with _cdp_metric_lock:
