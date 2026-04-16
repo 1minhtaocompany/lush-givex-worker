@@ -413,6 +413,50 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         force_rollback("second")  # guard still True → no-op
         self.assertEqual(get_current_step_index(), 0)
 
+    def test_failed_scale_up_restores_guard_after_concurrent_rollback(self):
+        """A rollback during a failing save must not consume the restored
+        window's rollback guard."""
+        save_started = threading.Event()
+        allow_failure = threading.Event()
+        errors = []
+
+        def blocking_failing_save():
+            """Block until the test triggers a save failure."""
+            save_started.set()
+            allow_failure.wait(timeout=1)
+            raise RuntimeError("save error")
+
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
+        try_scale_up()  # step 0 → 1
+        self.assertEqual(get_current_step_index(), 1)
+
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=blocking_failing_save)
+
+        def scale_worker():
+            """Run try_scale_up() and capture the expected save failure."""
+            try:
+                try_scale_up()
+            except RuntimeError as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=scale_worker)
+        thread.start()
+        self.assertTrue(save_started.wait(timeout=1))
+
+        # Roll back the tentative step 1 → 2 scale-up while save_fn() is pending.
+        force_rollback("concurrent-rollback")
+        self.assertEqual(get_current_step_index(), 1)
+
+        allow_failure.set()
+        thread.join()
+
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(get_current_step_index(), 1)
+
+        # The original step-1 window should still allow one real rollback.
+        force_rollback("post-failure-rollback")
+        self.assertEqual(get_current_step_index(), 0)
+
     def test_concurrent_scale_up_index_stays_consistent(self):
         """Concurrent try_scale_up() calls must not corrupt the index:
         the final index equals the number of successful save_fn() calls."""
