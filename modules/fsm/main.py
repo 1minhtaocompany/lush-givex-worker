@@ -22,6 +22,10 @@ _VALID_PAYMENT_TRANSITIONS: dict[str, set[str]] = {
     "declined": set(),
 }
 
+# States from which no further transitions are permitted.  Workers that have
+# reached a terminal state must not be advanced by late callbacks or retries.
+TERMINAL_STATES: frozenset = frozenset({"success", "declined"})
+
 # Per-worker registry: worker_id → {"states": {}, "current": None}
 _registry: dict[str, dict] = {}
 _registry_lock = threading.Lock()
@@ -69,11 +73,18 @@ def transition_for_worker(worker_id: str, target_state: str) -> State:
         raise InvalidStateError(f"state '{target_state}' is not in ALLOWED_STATES")
     with _registry_lock:
         entry = _registry.get(worker_id)
-        if entry is None or target_state not in entry["states"]:
+        if entry is None:
+            raise ValueError(f"worker '{worker_id}' not initialized")
+        if target_state not in entry["states"]:
             raise InvalidTransitionError(f"state '{target_state}' not registered for worker '{worker_id}'")
         current = entry["current"]
         if current is not None:
             current_name = current.name
+            if current_name in TERMINAL_STATES:
+                raise ValueError(
+                    f"Invalid transition from {current_name} to {target_state}: "
+                    f"'{current_name}' is a terminal state"
+                )
             allowed_targets = _VALID_PAYMENT_TRANSITIONS.get(current_name, set())
             if target_state not in allowed_targets:
                 raise ValueError(f"Invalid transition from {current_name} to {target_state}")
