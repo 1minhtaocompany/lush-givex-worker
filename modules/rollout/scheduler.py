@@ -120,7 +120,11 @@ def _do_advance() -> None:
     elif action == "at_max":
         _logger.info("rollout complete: at max workers")
         return
-    # Reset stable window after any scaling event (scaled_up or rollback).
+    else:
+        # Unknown action returned by try_scale_up — do not reset the stable
+        # window; no scaling event has occurred.
+        return
+    # Reset stable window after a known scaling event (scaled_up or rollback).
     with _lock:
         _reset_stable_locked()
 
@@ -154,6 +158,11 @@ def _scheduler_loop(interval: float) -> None:
                         _stable_since = now
                     snap = _stable_since
                     eligible = (now - snap) >= STABLE_DURATION_SECONDS
+                # can_scale_up() is a cheap pre-check: it avoids calling
+                # try_scale_up() when the rollout is already at max.  A
+                # concurrent advance_step() could change the step between
+                # this check and the call to _do_advance(); try_scale_up()
+                # handles that case gracefully (returning "at_max").
                 if eligible and rollout.can_scale_up():
                     _do_advance()
         except Exception:
