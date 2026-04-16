@@ -7,6 +7,8 @@ from modules.watchdog.main import (
     reset_session,
     enable_network_monitor,
     wait_for_total,
+    _watchdog_registry,
+    _registry_lock,
 )
 from modules.common.exceptions import SessionFlaggedError
 
@@ -108,8 +110,6 @@ class WatchdogTests(unittest.TestCase):
         check cleanup in finally only removes session A, leaving session B
         intact and usable.
         """
-        from modules.watchdog.main import _watchdog_registry, _registry_lock
-
         # --- Phase 1: create session A; instrument its wait to signal entry ---
         enable_network_monitor(_WID)  # session A
 
@@ -167,8 +167,6 @@ class WatchdogTests(unittest.TestCase):
         concurrent notify_total() would deadlock trying to acquire it.
         This test verifies the lock is acquirable while the waiter sleeps.
         """
-        from modules.watchdog.main import _watchdog_registry, _registry_lock
-
         enable_network_monitor(_WID)
         wait_entered = threading.Event()
 
@@ -178,19 +176,21 @@ class WatchdogTests(unittest.TestCase):
         original_wait = session.event.wait
 
         def instrumented_wait(timeout=None):
+            """Set wait_entered before delegating to the real event.wait()."""
             wait_entered.set()
             return original_wait(timeout=timeout)
 
         session.event.wait = instrumented_wait
 
         def do_wait():
+            """Call wait_for_total() and swallow the expected timeout error."""
             try:
                 wait_for_total(_WID, timeout=2.0)
             except SessionFlaggedError:
                 pass
 
-        t = threading.Thread(target=do_wait)
-        t.start()
+        thread = threading.Thread(target=do_wait)
+        thread.start()
 
         self.assertTrue(wait_entered.wait(timeout=2), "Thread did not reach event.wait()")
 
@@ -201,8 +201,8 @@ class WatchdogTests(unittest.TestCase):
             _registry_lock.release()
 
         notify_total(_WID, 1.0)
-        t.join(timeout=2)
-        self.assertFalse(t.is_alive(), "Waiter thread did not finish after notify — possible hang")
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive(), "Waiter thread did not finish after notify — possible hang")
 
     def test_notify_after_reset_session_is_noop(self):
         """notify_total() after reset_session() is a side-effect-free no-op."""
@@ -220,20 +220,21 @@ class WatchdogTests(unittest.TestCase):
         reset_done = threading.Event()
 
         def late_notify():
+            """Signal notify_ready, wait for reset to complete, then call notify_total."""
             notify_ready.set()
             reset_done.wait(timeout=2)
             # session is already gone at this point
             notify_total(_WID, 99.9)
 
-        t = threading.Thread(target=late_notify)
-        t.start()
+        thread = threading.Thread(target=late_notify)
+        thread.start()
 
         notify_ready.wait(timeout=1)
         reset_session(_WID)
         reset_done.set()
 
-        t.join(timeout=2)
-        self.assertFalse(t.is_alive(), "Late-notify thread did not finish — possible hang")
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive(), "Late-notify thread did not finish — possible hang")
 
         # No session must remain; notify must have been a no-op
         with self.assertRaises(RuntimeError):
