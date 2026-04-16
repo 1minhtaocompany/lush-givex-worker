@@ -176,7 +176,7 @@ def _lookup_maxmind_utc_offset(ip_addr: str) -> int | None:
                 if offset is None:
                     return None
                 return int(offset.total_seconds() // 3600)
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-except
         _log.debug("MaxMind lookup failed for %s: %s", ip_addr, exc)
     return None
 
@@ -518,16 +518,19 @@ class GivexDriver:
             try:
                 if self._temporal.get_time_state(self._utc_offset_hours) == "NIGHT":
                     night_factor = 1.0 + getattr(self._persona, "night_penalty_factor", 0.0)
-            except Exception:
-                _log.debug("bounding_box_click: unable to read temporal state; using default night_factor")
-        ox = rnd.uniform(-15, 15) * night_factor
-        oy = rnd.uniform(-5, 5) * night_factor
-        ox = max(-15.0, min(15.0, ox))
-        oy = max(-5.0, min(5.0, oy))
+            except Exception:  # pylint: disable=broad-except
+                _log.debug(
+                    "bounding_box_click: unable to read temporal state;"
+                    " using default night_factor",
+                )
+        offset_x = rnd.uniform(-15, 15) * night_factor
+        offset_y = rnd.uniform(-5, 5) * night_factor
+        offset_x = max(-15.0, min(15.0, offset_x))
+        offset_y = max(-5.0, min(5.0, offset_y))
         center_x = rect["left"] + rect["width"] / 2
         center_y = rect["top"] + rect["height"] / 2
-        abs_x = max(rect["left"], min(center_x + ox, rect["left"] + rect["width"]))
-        abs_y = max(rect["top"], min(center_y + oy, rect["top"] + rect["height"]))
+        abs_x = max(rect["left"], min(center_x + offset_x, rect["left"] + rect["width"]))
+        abs_y = max(rect["top"], min(center_y + offset_y, rect["top"] + rect["height"]))
         try:
             for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
                 self._driver.execute_cdp_cmd(
@@ -570,7 +573,7 @@ class GivexDriver:
                     "var r=arguments[0].getBoundingClientRect();"
                     "return {left:r.left,top:r.top,width:r.width,height:r.height};",
                     elements[0])
-            except Exception:
+            except Exception:  # pylint: disable=broad-except
                 _log.debug("_hesitate_before_submit: rect skipped")
         if not rect:
             time.sleep(delay)
@@ -584,7 +587,7 @@ class GivexDriver:
                 elif self._cursor:
                     cx = rect["left"] + rect["width"] / 2 + rnd.uniform(-20, 20)
                     self._cursor.move_to(cx, rect["top"] + rect["height"] / 2 + rnd.uniform(-8, 8))
-            except Exception:
+            except Exception:  # pylint: disable=broad-except
                 _log.debug("_hesitate_before_submit: phase %d skipped", i, exc_info=True)
             r = max(0.0, slot - (time.monotonic() - t0))
             if r > 0:
@@ -637,7 +640,7 @@ class GivexDriver:
                         "preflight_geo_check: unable to detect "
                         "public IP; using UTC offset 0",
                     )
-            except Exception as fallback_exc:
+            except Exception as fallback_exc:  # pylint: disable=broad-except
                 _log.warning(
                     "preflight_geo_check: MaxMind fallback raised unexpectedly: %s;"
                     " using UTC offset 0",
