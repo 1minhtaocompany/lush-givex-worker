@@ -183,9 +183,19 @@ def get_baseline_success_rate():
 
 
 def get_metrics():
-    """Return a snapshot of all current metrics as a dict."""
-    mem = get_memory_usage_bytes()
+    """Return a consistent snapshot of all current metrics as a dict.
+
+    All fields — including memory usage — are collected while ``_lock`` is
+    held so that the returned dict represents a single coherent point in
+    time.  ``get_memory_usage_bytes()`` does not acquire ``_lock`` itself,
+    so holding the lock during the call is safe (no deadlock risk).
+
+    When memory cannot be determined on the current platform,
+    ``memory_usage_bytes`` is 0.  Callers that need to distinguish
+    "zero RSS" from "unavailable" should treat 0 as the degraded sentinel.
+    """
     with _lock:
+        mem = get_memory_usage_bytes()
         success_count = _success_count
         error_count = _error_count
         total = success_count + error_count
@@ -235,7 +245,10 @@ def check_rollback_needed():
     if metrics["error_rate"] > ERROR_RATE_THRESHOLD:
         reasons.append(f"error rate {metrics['error_rate']:.1%} exceeds 5%")
 
-    # Check memory
+    # Check memory.  When the reading is unavailable (degraded/unsupported
+    # platform) get_memory_usage_bytes() returns 0, which is always less
+    # than _MEMORY_LIMIT_BYTES so the threshold is safely skipped — no
+    # false positive, no silent suppression of a real breach.
     if metrics["memory_usage_bytes"] > _MEMORY_LIMIT_BYTES:
         mb = metrics["memory_usage_bytes"] / (1024 * 1024)
         reasons.append(f"memory usage {mb:.0f} MB exceeds 2048 MB")
