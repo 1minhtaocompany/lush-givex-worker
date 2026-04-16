@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from modules.rollout import main as rollout
 from modules.rollout import scheduler
 
-_BUFFER_SECONDS = 1.0
+BUFFER_SECONDS = 1.0
 
 
 class SchedulerModuleResetMixin:
@@ -45,7 +45,10 @@ class TestLifecycle(SchedulerModuleResetMixin, unittest.TestCase):
 
         self.assertTrue(started)
         mock_thread.assert_called_once()
-        self.assertEqual(mock_thread.call_args.kwargs["args"], (1.0,))
+        self.assertEqual(
+            mock_thread.call_args.kwargs["args"],
+            (scheduler._MIN_INTERVAL,),
+        )
         thread.start.assert_called_once()
 
     @patch("modules.rollout.scheduler.threading.Thread")
@@ -93,7 +96,7 @@ class TestSchedulerLoop(SchedulerModuleResetMixin, unittest.TestCase):
     ):
         scheduler.configure(lambda: True)
         scheduler._stable_since = (
-            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - _BUFFER_SECONDS
+            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - BUFFER_SECONDS
         )
         mock_try_scale_up.return_value = (3, "scaled_up", [])
 
@@ -118,7 +121,7 @@ class TestAdvanceStep(SchedulerModuleResetMixin, unittest.TestCase):
 class TestGetStatus(SchedulerModuleResetMixin, unittest.TestCase):
     def test_get_status_reports_eligible_window(self):
         scheduler._stable_since = (
-            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - _BUFFER_SECONDS
+            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - BUFFER_SECONDS
         )
 
         status = scheduler.get_status()
