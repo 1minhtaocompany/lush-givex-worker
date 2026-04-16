@@ -149,7 +149,7 @@ _cdp_executor_lock = threading.Lock()
 
 _cdp_timeout_count: int = 0          # total CDP calls that timed out (caller-side)
 _active_cdp_requests: int = 0        # orchestration-level tracking only
-_cdp_orphaned_threads: int = 0       # best-estimate: timed-out threads that may still occupy executor slots
+_cdp_orphaned_threads: int = 0       # timed-out threads that may still occupy executor slots
 _cdp_metric_lock = threading.Lock()  # protects the three counters above
 # Guards watchdog.notify_total() calls that may be triggered concurrently from
 # both the CDP callback path and the pre-wait DOM fallback path.
@@ -361,7 +361,7 @@ class _RedisIdempotencyStore(_IdempotencyStore):
         try:
             result = self._redis.set(self._key(task_id), "inflight", nx=True, ex=_IDEMPOTENCY_TTL)
             return result is None or result is False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
             _logger.error(
                 "RedisIdempotencyStore.is_duplicate failed for task_id=%s: %s; "
                 "treating as duplicate (fail-safe) to prevent double-charge.", task_id, exc,
@@ -371,7 +371,7 @@ class _RedisIdempotencyStore(_IdempotencyStore):
     def mark_submitted(self, task_id: str) -> None:
         try:
             self._redis.set(self._key(task_id), "submitted", ex=_IDEMPOTENCY_TTL)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
             _logger.error(
                 "RedisIdempotencyStore.mark_submitted failed for task_id=%s: %s", task_id, exc,
             )
@@ -380,7 +380,7 @@ class _RedisIdempotencyStore(_IdempotencyStore):
     def mark_completed(self, task_id: str) -> None:
         try:
             self._redis.set(self._key(task_id), "completed", ex=_IDEMPOTENCY_TTL)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
             _logger.warning(
                 "RedisIdempotencyStore.mark_completed failed for task_id=%s: %s", task_id, exc,
             )
@@ -805,7 +805,8 @@ def run_payment_step(task, zip_code=None, worker_id: str = "default"):
             )
         else:
             _logger.error(
-                "[trace=%s] Watchdog timeout BEFORE payment submission for worker=%s, task_id=%s: %s",
+                "[trace=%s] Watchdog timeout BEFORE payment submission "
+                "for worker=%s, task_id=%s: %s",
                 _get_trace_id(), worker_id, _task_id_log, exc,
             )
         watchdog.reset_session(worker_id)
