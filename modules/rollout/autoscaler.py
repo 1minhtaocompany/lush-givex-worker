@@ -53,9 +53,11 @@ class AutoScaler:
             for worker_id, count in self._consecutive_failures.items():
                 if count >= self._CONSECUTIVE_FAILURE_THRESHOLD:
                     workers_to_scale.append((worker_id, count))
-                    self._consecutive_failures[worker_id] = 0
-        for worker_id, _ in workers_to_scale:
+        for worker_id, count in workers_to_scale:
             self._scale_down_worker(worker_id)
+            with self._lock:
+                if self._consecutive_failures.get(worker_id, 0) == count:
+                    self._consecutive_failures[worker_id] = 0
 
     def record_failure(self, worker_id: str) -> None:
         """Record a consecutive failure for worker. Auto-triggers scale-down check."""

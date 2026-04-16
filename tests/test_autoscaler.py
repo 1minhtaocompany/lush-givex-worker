@@ -79,6 +79,16 @@ class TestConsecutiveFailures(AutoScalerResetMixin, unittest.TestCase):
             mock_scale_down_worker.assert_any_call("w1")
             mock_scale_down_worker.assert_any_call("w3")
 
+    def test_evaluate_scale_down_failure_preserves_counter(self):
+        scaler = autoscaler_module.AutoScaler()
+        scaler._consecutive_failures = {"w1": 5}  # pylint: disable=protected-access
+        with patch.object(
+            scaler, "_scale_down_worker", side_effect=RuntimeError("scale-down failed")
+        ):
+            with self.assertRaises(RuntimeError):
+                scaler._evaluate_scale_down(0.0)  # pylint: disable=protected-access
+        self.assertEqual(scaler.get_consecutive_failures("w1"), 5)
+
     def test_scale_down_failure_preserves_counter(self):
         """If _scale_down_worker raises, failure count must not be reset."""
         scaler = autoscaler_module.AutoScaler()
