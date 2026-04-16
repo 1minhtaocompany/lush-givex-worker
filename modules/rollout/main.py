@@ -21,6 +21,10 @@ _save_baseline_fn = None
 _rollback_history = []
 _ROLLBACK_HISTORY_LIMIT = 200
 
+# Guard: at most one forced rollback per scale-up window.
+# Reset to False each time try_scale_up() successfully increments the step.
+_rollback_applied = False
+
 
 def configure(check_rollback_fn=None, save_baseline_fn=None):
     """Inject monitor callbacks.  Called by the orchestration layer at init.
@@ -72,12 +76,16 @@ def try_scale_up():
     health check and both scale up (or one scales up while the other
     rolls back).
 
+    If ``save_fn()`` raises, ``_current_step_index`` is restored to its
+    pre-increment value so in-memory state stays consistent with persisted
+    state.
+
     Returns:
         ``(worker_count, action, reasons)`` where *action* is one of
         ``"scaled_up"``, ``"rollback"``, or ``"at_max"``, and *reasons*
         is the list of triggered rollback conditions (empty when healthy).
     """
-    global _current_step_index
+    global _current_step_index, _rollback_applied
 
     with _lock:
         if _current_step_index >= len(SCALE_STEPS) - 1:
@@ -110,13 +118,31 @@ def try_scale_up():
             )
             return SCALE_STEPS[_current_step_index], "rollback", reasons
 
+        prev_step = _current_step_index
+        prev_rollback_applied = _rollback_applied
         _current_step_index += 1
+        _rollback_applied = False  # new scale-up window: allow next forced rollback
         new_count = SCALE_STEPS[_current_step_index]
         new_step = _current_step_index
 
-    # Save baseline outside the lock (I/O-safe)
-    if save_fn is not None:
-        save_fn()
+    # Save baseline outside the lock (I/O-safe).
+    # If save_fn() raises, revert _current_step_index so in-memory state
+    # does not drift from persisted state.
+    try:
+        if save_fn is not None:
+            save_fn()
+    except Exception:
+        with _lock:
+            # Only revert our own increment: if a concurrent caller has already
+            # moved the index past new_step we leave it in place (that caller
+            # owns those steps).  This handles the common case of a single
+            # failing save; for deeper concurrent consistency a generation
+            # counter would be required, but that complexity is out of scope
+            # for this PR's minimal-locking mandate.
+            if _current_step_index == new_step:
+                _current_step_index = prev_step
+                _rollback_applied = prev_rollback_applied
+        raise
 
     _logger.info(
         "Scaled up to %d workers (step %d/%d)",
@@ -144,17 +170,30 @@ def check_health():
 def force_rollback(reason="manual"):
     """Force an immediate rollback by one step.
 
+    At most one forced rollback is applied per scale-up window.  If another
+    caller already applied a forced rollback in the current window,
+    subsequent calls are treated as idempotent and return the current worker
+    count without decrementing ``_current_step_index`` again.  The window
+    resets each time ``try_scale_up()`` successfully increments the step.
+
     Args:
         reason: Description of why the rollback was forced.
 
     Returns:
         The new target worker count after rollback.
     """
-    global _current_step_index
+    global _current_step_index, _rollback_applied
     with _lock:
+        if _rollback_applied:
+            _logger.debug(
+                "force_rollback skipped: rollback already applied in current window (step %d)",
+                _current_step_index,
+            )
+            return SCALE_STEPS[_current_step_index]
         old_index = _current_step_index
         if _current_step_index > 0:
             _current_step_index -= 1
+        _rollback_applied = True
         _rollback_history.append({
             "from_step": old_index,
             "to_step": _current_step_index,
@@ -199,9 +238,10 @@ def get_status():
 def reset():
     """Reset all rollout state.  Intended for testing."""
     global _current_step_index, _check_rollback_fn, _save_baseline_fn
-    global _rollback_history
+    global _rollback_history, _rollback_applied
     with _lock:
         _current_step_index = 0
         _check_rollback_fn = None
         _save_baseline_fn = None
         _rollback_history = []
+        _rollback_applied = False

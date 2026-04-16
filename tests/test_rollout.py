@@ -318,5 +318,132 @@ class TestTOCTOURacePrevention(RolloutResetMixin, unittest.TestCase):
         self.assertEqual(n_scaled + n_at_max, thread_count)
 
 
+class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
+    """Verify rollback idempotency and try_scale_up() save-failure recovery."""
+
+    def test_rollback_is_idempotent_within_scale_window(self):
+        """Sequential force_rollback() calls within the same scale-up window
+        must only decrement once (second call is a no-op)."""
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
+        try_scale_up()  # step 0 → 1
+        try_scale_up()  # step 1 → 2
+        self.assertEqual(get_current_step_index(), 2)
+
+        force_rollback("first")   # step 2 → 1 (applied)
+        force_rollback("second")  # skipped – same window
+        self.assertEqual(get_current_step_index(), 1)
+
+    def test_rollback_window_resets_after_scale_up(self):
+        """After a successful scale-up, a new window opens so force_rollback()
+        can decrement again."""
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
+        try_scale_up()  # step 0 → 1
+        force_rollback("first")  # step 1 → 0
+        # scale back up to open a fresh window
+        try_scale_up()           # step 0 → 1
+        force_rollback("second") # step 1 → 0 (allowed, new window)
+        self.assertEqual(get_current_step_index(), 0)
+
+    def test_concurrent_rollback_does_not_double_decrement(self):
+        """Two near-simultaneous force_rollback() calls must only decrement
+        once; the second caller is idempotent."""
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
+        try_scale_up()  # step 0 → 1
+        try_scale_up()  # step 1 → 2 (5 workers)
+        self.assertEqual(get_current_step_index(), 2)
+
+        barrier = threading.Barrier(2)
+        results = []
+        errors = []
+
+        def do_rollback():
+            barrier.wait()
+            try:
+                results.append(force_rollback("concurrent-event"))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=do_rollback) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+        # Only one decrement must have happened: step 2 → 1, NOT 2 → 1 → 0.
+        self.assertEqual(get_current_step_index(), 1)
+
+    def test_scale_up_reverts_index_on_save_failure(self):
+        """If save_fn() raises, _current_step_index is restored to its
+        pre-increment value."""
+        def failing_save():
+            raise RuntimeError("persistence unavailable")
+
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=failing_save)
+
+        with self.assertRaises(RuntimeError):
+            try_scale_up()
+
+        self.assertEqual(get_current_step_index(), 0)
+        self.assertEqual(get_current_workers(), SCALE_STEPS[0])
+
+    def test_scale_up_save_failure_does_not_block_rollback_guard(self):
+        """When save_fn() fails and the index is reverted, the rollback guard
+        is also restored so force_rollback() can still fire."""
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
+        try_scale_up()  # step 0 → 1
+        force_rollback("first")  # step 1 → 0, guard = True
+
+        # Now try a scale-up that fails its save; guard should be restored
+        # to True (we're back in the old window).
+        def failing_save():
+            raise RuntimeError("save error")
+
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=failing_save)
+        with self.assertRaises(RuntimeError):
+            try_scale_up()
+
+        # Index reverted; we're still at 0
+        self.assertEqual(get_current_step_index(), 0)
+        # A second force_rollback() call should also be idempotent (guard restored)
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
+        force_rollback("second")  # guard still True → no-op
+        self.assertEqual(get_current_step_index(), 0)
+
+    def test_concurrent_scale_up_index_stays_consistent(self):
+        """Concurrent try_scale_up() calls must not corrupt the index:
+        the final index equals the number of successful save_fn() calls."""
+        save_lock = threading.Lock()
+        save_count = [0]
+
+        def counting_save():
+            with save_lock:
+                save_count[0] += 1
+
+        configure(check_rollback_fn=lambda: [], save_baseline_fn=counting_save)
+
+        errors = []
+        thread_count = 5  # more threads than steps to exercise at_max path
+
+        def scale_worker():
+            try:
+                try_scale_up()
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=scale_worker) for _ in range(thread_count)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+        idx = get_current_step_index()
+        self.assertGreaterEqual(idx, 0)
+        self.assertLess(idx, len(SCALE_STEPS))
+        # Every increment must be matched by exactly one successful save.
+        self.assertEqual(idx, save_count[0])
+
+
 if __name__ == "__main__":
     unittest.main()
