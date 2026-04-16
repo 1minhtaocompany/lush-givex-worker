@@ -228,7 +228,11 @@ def _find_matching_index(zip_code: str) -> int | None:
     .. warning::
         This function reads module-level ``_profiles`` without acquiring
         ``_lock``.  It **MUST** only be called while the caller already holds
-        ``_lock``.  A runtime check enforces this contract.
+        ``_lock``.  The runtime check below is a best-effort programming-error
+        detector; it is not an atomic safety guarantee because another thread
+        could release the lock between the ``locked()`` test and the function
+        body executing.  The check exists to catch accidental direct calls in
+        tests and development, not to substitute for correct lock discipline.
     """
     if not _lock.locked():  # pylint: disable=no-member
         raise RuntimeError("_find_matching_index() must be called while holding _lock")
