@@ -544,7 +544,7 @@ class GivexDriver:
                     },
                 )
             return
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             if self._strict:
                 _log.warning("bounding_box_click: CDP failed (strict mode)")
                 return
