@@ -100,7 +100,7 @@ def _log_event(worker_id, state, action, metrics=None) -> None:
             "event": action,
             "data": metrics if isinstance(metrics, dict) else {},
         })
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # pylint: disable=broad-except  # prevent runtime crash on sink failure
         with _lock:
             _log_sink_error_count += 1
             sink_fail_count = _log_sink_error_count
@@ -281,7 +281,7 @@ def start_worker(task_fn):
             _worker_states.pop(wid, None)
         try:
             get_default_pool().release(wid)
-        except Exception:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except  # proxy release must not suppress original exception
             _logger.warning("Failed to release proxy for worker %s after thread start failure", wid, exc_info=True)
         raise
     return wid
