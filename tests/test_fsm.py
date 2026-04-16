@@ -149,14 +149,22 @@ class FSMTransitionGraphTests(unittest.TestCase):
     def test_invalid_success_to_declined(self):
         """success -> declined is not valid."""
         transition_for_worker(_WID, "success")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             transition_for_worker(_WID, "declined")
+        self.assertEqual(
+            str(ctx.exception),
+            "Invalid transition from success to declined: 'success' is a terminal state",
+        )
 
     def test_invalid_declined_to_ui_lock(self):
         """declined -> ui_lock is not valid."""
         transition_for_worker(_WID, "declined")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             transition_for_worker(_WID, "ui_lock")
+        self.assertEqual(
+            str(ctx.exception),
+            "Invalid transition from declined to ui_lock: 'declined' is a terminal state",
+        )
 
 
 class FSMConcurrentInitializationTests(unittest.TestCase):
