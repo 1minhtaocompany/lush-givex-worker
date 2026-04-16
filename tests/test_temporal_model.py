@@ -35,6 +35,7 @@ class TestTimeState(_TemporalSetup):
 
 class TestTemporalModifier(_TemporalSetup):
     def test_non_positive_base_returns_zero(self):
+        """apply_temporal_modifier() returns 0.0 for zero or negative base delay."""
         with patch.object(TemporalModel, "get_time_state", return_value="NIGHT"):
             self.assertEqual(self.tm.apply_temporal_modifier(0.0, "typing"), 0.0)
             self.assertEqual(self.tm.apply_temporal_modifier(-1.0, "thinking"), 0.0)
@@ -101,6 +102,7 @@ class TestMicroVariation(_TemporalSetup):
         self.assertEqual(a, b)
 
     def test_negative_base_is_clamped_to_zero(self):
+        """apply_micro_variation() clamps negative base delay to 0.0."""
         self.assertEqual(self.tm.apply_micro_variation(-1.0), 0.0)
 
 

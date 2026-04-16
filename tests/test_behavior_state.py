@@ -203,6 +203,7 @@ class TestIsCriticalContext(unittest.TestCase):
         self.assertTrue(sm.is_critical_context())
 
     def test_critical_section_flag_is_critical(self):
+        """is_critical_context() returns True when critical-section flag is set."""
         sm = BehaviorStateMachine(initial_state="FILLING_FORM")
         sm.set_critical_section(True)
         self.assertTrue(sm.is_critical_context())
