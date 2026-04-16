@@ -106,6 +106,7 @@ class TestConsecutiveFailures(AutoScalerResetMixin, unittest.TestCase):
         call_count = {"n": 0}
 
         def flaky_scale_down(_):
+            """Fail on the first call; succeed on subsequent calls."""
             call_count["n"] += 1
             if call_count["n"] == 1:
                 raise RuntimeError("transient failure")
