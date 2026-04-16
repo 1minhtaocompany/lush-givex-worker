@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 from modules.rollout import main as rollout
 from modules.rollout import scheduler
 
+_BUFFER_SECONDS = 1.0
+
 
 class SchedulerModuleResetMixin:
     def setUp(self):
@@ -21,12 +23,15 @@ class SchedulerModuleResetMixin:
 
 class TestClampInterval(SchedulerModuleResetMixin, unittest.TestCase):
     def test_clamp_interval_falls_back_to_default_for_non_numeric(self):
-        self.assertEqual(scheduler._clamp_interval("bad"), 300.0)
+        self.assertEqual(
+            scheduler._clamp_interval("bad"),
+            scheduler._DEFAULT_INTERVAL,
+        )
 
     def test_clamp_interval_clamps_out_of_range_values(self):
-        self.assertEqual(scheduler._clamp_interval(0), 1.0)
-        self.assertEqual(scheduler._clamp_interval(999999), 86400.0)
-        self.assertEqual(scheduler._clamp_interval(-math.inf), 1.0)
+        self.assertEqual(scheduler._clamp_interval(0), scheduler._MIN_INTERVAL)
+        self.assertEqual(scheduler._clamp_interval(999999), scheduler._MAX_INTERVAL)
+        self.assertEqual(scheduler._clamp_interval(-math.inf), scheduler._MIN_INTERVAL)
 
 
 class TestLifecycle(SchedulerModuleResetMixin, unittest.TestCase):
@@ -88,7 +93,7 @@ class TestSchedulerLoop(SchedulerModuleResetMixin, unittest.TestCase):
     ):
         scheduler.configure(lambda: True)
         scheduler._stable_since = (
-            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - 1.0
+            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - _BUFFER_SECONDS
         )
         mock_try_scale_up.return_value = (3, "scaled_up", [])
 
@@ -113,7 +118,7 @@ class TestAdvanceStep(SchedulerModuleResetMixin, unittest.TestCase):
 class TestGetStatus(SchedulerModuleResetMixin, unittest.TestCase):
     def test_get_status_reports_eligible_window(self):
         scheduler._stable_since = (
-            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - 1.0
+            time.monotonic() - scheduler.STABLE_DURATION_SECONDS - _BUFFER_SECONDS
         )
 
         status = scheduler.get_status()
