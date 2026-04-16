@@ -10,6 +10,7 @@ Validates:
   - _ensure_rollout_configured() triggers rollout.configure when not configured
   - is_safe_to_control() returns True for zero workers (vacuous truth)
 """
+# pylint: disable=protected-access  # white-box tests require internal state access
 import threading
 import time
 import unittest
@@ -21,9 +22,7 @@ from integration.runtime import (
     get_all_worker_states,
     is_safe_to_control,
     reset,
-    set_behavior_delay_enabled,
     start_worker,
-    stop,
 )
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
@@ -67,7 +66,7 @@ class TestStartWorkerProxyLeak(RuntimeSafetyResetMixin, unittest.TestCase):
         mock_proxy = MagicMock()
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = mock_proxy
-        mock_pool.release.side_effect = lambda wid: released.append(wid)
+        mock_pool.release.side_effect = released.append
 
         with patch("integration.runtime.get_default_pool", return_value=mock_pool):
             with patch("threading.Thread.start", side_effect=RuntimeError("cannot start")):
@@ -83,7 +82,7 @@ class TestStartWorkerProxyLeak(RuntimeSafetyResetMixin, unittest.TestCase):
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = MagicMock()
-        mock_pool.release.side_effect = lambda wid: released.append(wid)
+        mock_pool.release.side_effect = released.append
 
         with patch("integration.runtime.get_default_pool", return_value=mock_pool):
             with patch("threading.Thread.start", side_effect=OSError("thread limit")):
@@ -120,7 +119,7 @@ class TestPendingRestartsCap(RuntimeSafetyResetMixin, unittest.TestCase):
             failure_events.append(ev)
             done_events.append(done_ev)
 
-        def failing_task(wid, ev=None, done=None):
+        def failing_task(_wid, ev=None, done=None):
             if ev:
                 ev.set()
             time.sleep(0.05)

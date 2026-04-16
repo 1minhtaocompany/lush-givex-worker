@@ -136,7 +136,7 @@ def _increment_pending_restarts_locked(worker_id):
     if worker_id in _workers and worker_id not in _stop_requests:
         _pending_restarts = min(_pending_restarts + 1, max(1, len(_workers)))
 def _worker_fn(worker_id, task_fn, persona):
-    global _pending_restarts, _restart_delay, _consecutive_billing_failures, _billing_throttled_until
+    global _restart_delay, _consecutive_billing_failures, _billing_throttled_until
     with _lock:
         delay_enabled = _behavior_delay_enabled
     if delay_enabled and persona is not None:
