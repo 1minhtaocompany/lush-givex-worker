@@ -19,12 +19,12 @@ spec-version: 1.0
 ## Transitions (Runtime — Phase 3+)
 - ui_lock  → success | vbv_3ds | declined
 - vbv_3ds  → declined | success
-- success  → [terminal — no outgoing transitions]
-- declined → [terminal — no outgoing transitions; card swap handled at orchestration level]
+- success  → terminal — no outgoing transitions
+- declined → terminal — no outgoing transitions; card swap handled at orchestration level
 
 ## Worker Initialization Rule
 - `transition_for_worker()` requires the worker to be initialized via `initialize_for_worker()` first.
-- Calling `transition_for_worker()` for an uninitialized worker raises `ValueError("worker '<id>' not initialized")`.
+- Calling `transition_for_worker()` for an uninitialized worker raises `InvalidTransitionError("worker '<id>' not initialized")`.
 - This rule applies regardless of the target state.
 
 ## Terminal-State Integrity
