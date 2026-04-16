@@ -652,6 +652,31 @@ def _emit_billing_audit_event(
         )
 
 
+def _validated_notify_total(worker_id: str, value: float) -> bool:
+    """Validate *value* is finite and do a first-notify-wins call to watchdog.
+
+    Acquires ``_network_listener_lock`` internally. Must NOT be called while
+    the caller already holds that lock.
+
+    Returns:
+        ``True`` if ``watchdog.notify_total()`` was called, ``False`` if the
+        value was rejected (non-finite) or a notification was already sent for
+        this worker in the current cycle.
+    """
+    if not math.isfinite(value):
+        _logger.warning(
+            "[trace=%s] DOM total for worker=%s is non-finite (%s); skipping.",
+            _get_trace_id(), worker_id, value,
+        )
+        return False
+    with _network_listener_lock:
+        if worker_id in _notified_workers_this_cycle:
+            return False
+        watchdog.notify_total(worker_id, value)
+        _notified_workers_this_cycle.add(worker_id)
+    return True
+
+
 def _notify_total_from_dom(driver_obj, worker_id: str) -> None:
     """Fallback: read total from DOM and notify watchdog.
 
@@ -665,38 +690,17 @@ def _notify_total_from_dom(driver_obj, worker_id: str) -> None:
             "return el ? el.innerText : null;"
         )
         if isinstance(result, (int, float)):
-            value = float(result)
-            if not math.isfinite(value):
-                _logger.warning(
-                    "[trace=%s] DOM total for worker=%s is non-finite (%s); skipping.",
-                    _get_trace_id(), worker_id, value,
-                )
-                return
-            with _network_listener_lock:
-                if worker_id in _notified_workers_this_cycle:
-                    return
-                watchdog.notify_total(worker_id, value)
-                _notified_workers_this_cycle.add(worker_id)
+            _validated_notify_total(worker_id, float(result))
             return
         if isinstance(result, str) and result:
             cleaned = result.replace(',', '')
             match = re.search(r"[-+]?\d+(?:\.\d+)?", cleaned)
             if match:
                 value = float(match.group())
-                if not math.isfinite(value):
-                    _logger.warning(
-                        "[trace=%s] DOM total string for worker=%s parsed to non-finite (%s); skipping.",
-                        _get_trace_id(), worker_id, value,
-                    )
-                    return
                 # Handle accounting-style negative numbers, e.g. "(49.99)".
                 if "(" in cleaned and ")" in cleaned and value > 0:
                     value = -value
-                with _network_listener_lock:
-                    if worker_id in _notified_workers_this_cycle:
-                        return
-                    watchdog.notify_total(worker_id, value)
-                    _notified_workers_this_cycle.add(worker_id)
+                _validated_notify_total(worker_id, value)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         _logger.warning("[trace=%s] DOM total read failed: %s", _get_trace_id(), exc)
 

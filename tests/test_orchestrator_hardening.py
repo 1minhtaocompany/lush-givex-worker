@@ -44,6 +44,7 @@ from integration.orchestrator import (
     _save_idempotency_store,
     _setup_network_total_listener,
     _submitted_task_ids,
+    _validated_notify_total,
     get_cdp_metrics,
     handle_outcome,
     run_cycle,
@@ -871,6 +872,44 @@ class PostSubmissionTimeoutObservabilityTests(unittest.TestCase):
             len(post_sub_msgs) >= 1,
             f"Expected 'AFTER payment submission' log, got: {log_messages}",
         )
+        # Verify mark_submitted was actually called before the timeout fired,
+        # confirming the submitted checkpoint was reached (idempotency protection is active).
+        store_mock.mark_submitted.assert_called_once_with(task.task_id)
+
+    def test_pre_submission_timeout_logs_before_submission_message(self):
+        """SessionFlaggedError from CDP fill (before mark_submitted) must log 'BEFORE'."""
+        task = _make_task()
+        log_messages = []
+
+        def capture_error(fmt, *args, **kwargs):
+            log_messages.append(fmt % args if args else fmt)
+
+        with (
+            patch("integration.orchestrator.billing") as mock_billing,
+            patch("integration.orchestrator.cdp") as mock_cdp,
+            patch("integration.orchestrator.watchdog") as mock_watchdog,
+            patch("integration.orchestrator.fsm"),
+            patch("integration.orchestrator._logger") as mock_logger,
+        ):
+            mock_billing.select_profile.return_value = MagicMock()
+            mock_cdp._get_driver.return_value = MagicMock()
+            # Raise timeout from fill (before mark_submitted is reached)
+            mock_cdp.fill_payment_and_billing.side_effect = SessionFlaggedError("fill timeout")
+
+            store_mock = MagicMock()
+            store_mock.is_duplicate.return_value = False
+            with patch("integration.orchestrator._get_idempotency_store", return_value=store_mock):
+                mock_logger.error.side_effect = capture_error
+                with self.assertRaises(SessionFlaggedError):
+                    run_payment_step(task, worker_id="post-sub-worker")
+
+        pre_sub_msgs = [m for m in log_messages if "BEFORE payment submission" in m]
+        self.assertTrue(
+            len(pre_sub_msgs) >= 1,
+            f"Expected 'BEFORE payment submission' log, got: {log_messages}",
+        )
+        # mark_submitted must NOT have been called (fill failed before reaching that point)
+        store_mock.mark_submitted.assert_not_called()
 
 
 if __name__ == "__main__":
