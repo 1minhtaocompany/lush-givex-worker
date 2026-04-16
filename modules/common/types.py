@@ -60,7 +60,8 @@ class WorkerTask:
             )
         if not isinstance(self.order_queue, tuple):
             raise TypeError(
-                f"order_queue must be a tuple to preserve immutability, got {type(self.order_queue)!r}"
+                "order_queue must be a tuple to preserve immutability, "
+                f"got {type(self.order_queue)!r}"
             )
         for i, card in enumerate(self.order_queue):
             if not isinstance(card, CardInfo):
