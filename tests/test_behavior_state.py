@@ -6,7 +6,7 @@ Validates:
   - BehaviorStateMachine(initial_state) defaults to IDLE
   - transition() returns True for valid, False for invalid
   - get_state() returns current state under lock
-  - is_critical_context() True for VBV/POST_ACTION, False otherwise
+  - is_critical_context() True for VBV/POST_ACTION or critical-section flag
   - is_safe_for_delay() True for IDLE/FILLING_FORM/PAYMENT
   - is_safe_for_delay() False for VBV/POST_ACTION
   - reset() restores IDLE
@@ -180,7 +180,7 @@ class TestTransition(unittest.TestCase):
 
 
 class TestIsCriticalContext(unittest.TestCase):
-    """is_critical_context() True for VBV and POST_ACTION only."""
+    """is_critical_context() reflects FSM critical states and flag state."""
 
     def test_idle_not_critical(self):
         sm = BehaviorStateMachine()
@@ -200,6 +200,11 @@ class TestIsCriticalContext(unittest.TestCase):
 
     def test_post_action_is_critical(self):
         sm = BehaviorStateMachine(initial_state="POST_ACTION")
+        self.assertTrue(sm.is_critical_context())
+
+    def test_critical_section_flag_is_critical(self):
+        sm = BehaviorStateMachine(initial_state="FILLING_FORM")
+        sm.set_critical_section(True)
         self.assertTrue(sm.is_critical_context())
 
 
