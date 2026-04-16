@@ -22,6 +22,7 @@ import logging
 import math
 import threading
 import time
+from typing import Optional, Tuple
 
 from modules.rollout import main as rollout
 
@@ -45,15 +46,15 @@ _DEFAULT_INTERVAL: float = 300.0
 
 _lock = threading.Lock()
 _stop_event = threading.Event()
-_scheduler_thread: threading.Thread | None = None
+_scheduler_thread: Optional[threading.Thread] = None  # pylint: disable=invalid-name
 
 # Stable-window anchor.  Set to ``time.monotonic()`` when health is first
 # confirmed; reset to ``None`` on any scaling event or instability.
 # ALL reads and writes MUST be performed while holding ``_lock``.
-_stable_since: float | None = None
+_stable_since: Optional[float] = None  # pylint: disable=invalid-name
 
 # Injected callback: ``() -> bool`` — returns True when the system is stable.
-_is_stable_fn = None
+_is_stable_fn = None  # pylint: disable=invalid-name
 
 
 # ── Interval clamping ─────────────────────────────────────────────────────────
@@ -73,12 +74,12 @@ def _clamp_interval(interval) -> float:
         A finite float in ``[_MIN_INTERVAL, _MAX_INTERVAL]``.
     """
     try:
-        v = float(interval)
+        interval_val = float(interval)
     except (TypeError, ValueError):
         return _DEFAULT_INTERVAL
-    if not math.isfinite(v) or v < _MIN_INTERVAL:
+    if not math.isfinite(interval_val) or interval_val < _MIN_INTERVAL:
         return _MIN_INTERVAL
-    return min(v, _MAX_INTERVAL)
+    return min(interval_val, _MAX_INTERVAL)
 
 
 # ── Dependency injection ──────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ def configure(is_stable_fn=None) -> None:
             disable proactive advance (the scheduler runs but never marks
             the window as stable).
     """
-    global _is_stable_fn
+    global _is_stable_fn  # pylint: disable=global-statement,invalid-name
     with _lock:
         _is_stable_fn = is_stable_fn
 
@@ -101,13 +102,13 @@ def configure(is_stable_fn=None) -> None:
 
 def _reset_stable_locked() -> None:
     """Reset the stable-window anchor.  Caller **must** hold ``_lock``."""
-    global _stable_since
+    global _stable_since  # pylint: disable=global-statement,invalid-name
     _stable_since = None
 
 
 def _do_advance() -> None:
     """Attempt to advance to the next rollout step and reset stable window."""
-    global _stable_since
+    global _stable_since  # pylint: disable=global-statement,invalid-name
     workers, action, reasons = rollout.try_scale_up()
     if action == "scaled_up":
         _logger.info(
@@ -139,7 +140,7 @@ def _scheduler_loop(interval: float) -> None:
     TOCTOU window that would exist if the lock were released between reading
     the anchor and deciding to advance.
     """
-    global _stable_since
+    global _stable_since  # pylint: disable=global-statement,invalid-name
     while not _stop_event.is_set():
         try:
             now = time.monotonic()
@@ -165,7 +166,7 @@ def _scheduler_loop(interval: float) -> None:
                 # handles that case gracefully (returning "at_max").
                 if eligible and rollout.can_scale_up():
                     _do_advance()
-        except Exception:
+        except Exception:  # noqa: BLE001  # pylint: disable=broad-except
             _logger.exception("scheduler loop error")
         _stop_event.wait(timeout=interval)
 
@@ -183,7 +184,7 @@ def start(interval: float = _DEFAULT_INTERVAL) -> bool:
     Returns:
         ``True`` if started; ``False`` if already running.
     """
-    global _scheduler_thread
+    global _scheduler_thread  # pylint: disable=global-statement,invalid-name
     safe_interval = _clamp_interval(interval)
     with _lock:
         if _scheduler_thread is not None and _scheduler_thread.is_alive():
@@ -243,7 +244,7 @@ def get_status() -> dict:
     }
 
 
-def advance_step() -> tuple[bool, str]:
+def advance_step() -> Tuple[bool, str]:
     """Manually trigger advance to the next rollout step.
 
     The stable-window anchor is reset under ``_lock`` immediately after any
@@ -252,7 +253,7 @@ def advance_step() -> tuple[bool, str]:
     Returns:
         ``(success, reason)`` pair.
     """
-    global _stable_since
+    global _stable_since  # pylint: disable=global-statement,invalid-name
     if not rollout.can_scale_up():
         return False, "at max step"
     workers, action, reasons = rollout.try_scale_up()
@@ -269,7 +270,7 @@ def advance_step() -> tuple[bool, str]:
 
 def reset() -> None:
     """Reset all scheduler state.  Intended for testing."""
-    global _scheduler_thread, _stable_since
+    global _scheduler_thread, _stable_since  # pylint: disable=global-statement,invalid-name
     _stop_event.set()
     with _lock:
         thread = _scheduler_thread
