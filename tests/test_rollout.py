@@ -357,17 +357,18 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         errors = []
 
         def do_rollback():
+            """Run force_rollback after the barrier and capture any error."""
             barrier.wait()
             try:
                 results.append(force_rollback("concurrent-event"))
-            except Exception as e:
-                errors.append(e)
+            except Exception as exc:  # pylint: disable=broad-except
+                errors.append(exc)
 
         threads = [threading.Thread(target=do_rollback) for _ in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
         self.assertEqual(errors, [])
         # Only one decrement must have happened: step 2 → 1, NOT 2 → 1 → 0.
@@ -377,6 +378,7 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         """If save_fn() raises, _current_step_index is restored to its
         pre-increment value."""
         def failing_save():
+            """Simulate a persistence failure."""
             raise RuntimeError("persistence unavailable")
 
         configure(check_rollback_fn=lambda: [], save_baseline_fn=failing_save)
@@ -397,6 +399,7 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         # Now try a scale-up that fails its save; guard should be restored
         # to True (we're back in the old window).
         def failing_save():
+            """Simulate a persistence failure."""
             raise RuntimeError("save error")
 
         configure(check_rollback_fn=lambda: [], save_baseline_fn=failing_save)
@@ -417,6 +420,7 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         save_count = [0]
 
         def counting_save():
+            """Increment save_count under a lock."""
             with save_lock:
                 save_count[0] += 1
 
@@ -426,16 +430,17 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         thread_count = 5  # more threads than steps to exercise at_max path
 
         def scale_worker():
+            """Call try_scale_up() and capture any unexpected exception."""
             try:
                 try_scale_up()
-            except Exception as e:
-                errors.append(e)
+            except Exception as exc:  # pylint: disable=broad-except
+                errors.append(exc)
 
         threads = [threading.Thread(target=scale_worker) for _ in range(thread_count)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
         self.assertEqual(errors, [])
         idx = get_current_step_index()
