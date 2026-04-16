@@ -423,7 +423,8 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         def blocking_failing_save():
             """Block until the test triggers a save failure."""
             save_started.set()
-            allow_failure.wait(timeout=1)
+            if not allow_failure.wait(timeout=1):
+                raise RuntimeError("timed out waiting to trigger save failure")
             raise RuntimeError("save error")
 
         configure(check_rollback_fn=lambda: [], save_baseline_fn=lambda: None)
@@ -451,6 +452,7 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         thread.join()
 
         self.assertEqual(len(errors), 1)
+        self.assertEqual(str(errors[0]), "save error")
         self.assertEqual(get_current_step_index(), 1)
 
         # The original step-1 window should still allow one real rollback.
