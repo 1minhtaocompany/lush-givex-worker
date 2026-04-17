@@ -16,8 +16,8 @@ _LOAD_LOCK = threading.Lock()  # serializes cold-start pool loading; exactly one
 _local_fill_rng = threading.local()  # pylint: disable=invalid-name
 _profiles: "collections.deque[BillingProfile]" = collections.deque()
 _logger = logging.getLogger(__name__)
-_reload_requested: bool = False
-_reload_flag_lock = threading.Lock()
+_reload_requested: bool = False  # pylint: disable=invalid-name
+_RELOAD_FLAG_LOCK = threading.Lock()
 
 _EMAIL_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "icloud.com")
 _PHONE_FIRST_DIGITS = "23456789"
@@ -98,7 +98,7 @@ def _reset_state() -> None:
     with _LOAD_LOCK:
         with _lock:
             _profiles = collections.deque()
-    with _reload_flag_lock:
+    with _RELOAD_FLAG_LOCK:
         _reload_requested = False
 
 
@@ -110,7 +110,7 @@ def request_pool_reload() -> None:
     workers pick up the new files after a circuit-breaker pause expires.
     """
     global _reload_requested
-    with _reload_flag_lock:
+    with _RELOAD_FLAG_LOCK:
         _reload_requested = True
 
 
@@ -291,7 +291,7 @@ def select_profile(zip_code: str | int | None = None) -> BillingProfile:
     normalized_zip = _normalize_zip(zip_code)
 
     # Hot-reload: if a reload was requested (e.g., after CB pause), invalidate cache.
-    with _reload_flag_lock:
+    with _RELOAD_FLAG_LOCK:
         do_reload = _reload_requested
         if do_reload:
             _reload_requested = False
