@@ -88,6 +88,11 @@ def try_scale_up():
     global _current_step_index, _rollback_applied
 
     with _lock:
+        # Re-arm the rollback guard at the start of every scale-up attempt so
+        # that a persistent save_fn failure can never permanently block
+        # force_rollback() (Bug fix: _rollback_applied permanent block).
+        _rollback_applied = False
+
         if _current_step_index >= len(SCALE_STEPS) - 1:
             return SCALE_STEPS[_current_step_index], "at_max", []
 
@@ -119,43 +124,45 @@ def try_scale_up():
             return SCALE_STEPS[_current_step_index], "rollback", reasons
 
         prev_step = _current_step_index
-        prev_rollback_applied = _rollback_applied
         _current_step_index += 1
-        _rollback_applied = False  # new scale-up window: allow next forced rollback
+        # Capture intended_step inside the lock before releasing it for
+        # save_fn().  The except block uses this to detect whether a concurrent
+        # force_rollback() changed _current_step_index while save_fn() ran
+        # (TOCTOU guard: only revert if _current_step_index == intended_step).
+        intended_step = _current_step_index
         new_count = SCALE_STEPS[_current_step_index]
-        new_step = _current_step_index
 
-    # Save baseline outside the lock (I/O-safe).
-    # If save_fn() raises, revert _current_step_index so in-memory state
-    # does not drift from persisted state.
+    # save_fn() is intentionally called outside the lock to avoid blocking
+    # other callers during I/O.  If it raises, revert _current_step_index —
+    # but only when no concurrent force_rollback() has already changed it
+    # (TOCTOU guard: compare against intended_step before reverting).
     try:
         if save_fn is not None:
             save_fn()
     except Exception:
         with _lock:
-            # Only revert our own increment: if a concurrent caller has already
-            # moved the index past new_step we leave it in place (that caller
-            # owns those steps).  This handles the common case of a single
-            # failing save; for deeper concurrent consistency a generation
-            # counter would be required, but that complexity is out of scope
-            # for this PR's minimal-locking mandate.
-            if _current_step_index == new_step:
+            if _current_step_index == intended_step:
+                # No concurrent change: revert our own increment.
+                # _rollback_applied is already False (reset at call start) so
+                # force_rollback() remains armed for the restored window.
                 _current_step_index = prev_step
-                # Save failed before any other state change; fully restore the
-                # pre-scale window.
-                _rollback_applied = prev_rollback_applied
             elif _current_step_index == prev_step:
-                # A concurrent force_rollback() may have already returned the
-                # tentative scale-up to the previous step while save_fn() was
-                # running. Restore the guard for the reverted window so the
-                # prior persisted step retains its original rollback budget.
-                _rollback_applied = prev_rollback_applied
+                # A concurrent force_rollback() has already decremented back to
+                # prev_step while save_fn() was running.  Re-arm the rollback
+                # guard for the restored window so it retains its rollback budget.
+                _rollback_applied = False
+        _logger.error(
+            "save_fn failed in try_scale_up (prev_step=%d, intended_step=%d); step reverted.",
+            prev_step,
+            intended_step,
+            exc_info=True,
+        )
         raise
 
     _logger.info(
         "Scaled up to %d workers (step %d/%d)",
         new_count,
-        new_step + 1,
+        intended_step + 1,
         len(SCALE_STEPS),
     )
     return new_count, "scaled_up", []
