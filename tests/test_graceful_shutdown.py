@@ -326,11 +326,12 @@ class TestStopHardTimeout(GracefulShutdownResetMixin, unittest.TestCase):
         so their threads can still call set_worker_state() safely."""
         runtime._state = "RUNNING"
         cs_entered = threading.Event()
+        release_worker = threading.Event()
 
         def stuck_task(wid):
             set_worker_state(wid, "CRITICAL_SECTION")
             cs_entered.set()
-            time.sleep(10)  # stuck for a long time
+            release_worker.wait()
 
         wid = start_worker(stuck_task)
         self.assertTrue(
@@ -338,10 +339,22 @@ class TestStopHardTimeout(GracefulShutdownResetMixin, unittest.TestCase):
             "Worker did not enter CRITICAL_SECTION before stop() was invoked",
         )
 
-        result = runtime.stop(timeout=0.5)
-        # Incomplete shutdown — stragglers still running
-        self.assertFalse(result)
-        self.assertEqual(runtime.get_state(), "STOPPED")
+        try:
+            result = runtime.stop(timeout=0.5)
+            # Incomplete shutdown — stragglers still running
+            self.assertFalse(result)
+            self.assertEqual(runtime.get_state(), "STOPPED")
+            self.assertEqual(get_worker_state(wid), "CRITICAL_SECTION")
+        finally:
+            release_worker.set()
+            self.assertTrue(
+                _wait_until(
+                    lambda: wid not in runtime.get_active_workers()
+                    and wid not in get_all_worker_states(),
+                    timeout=CLEANUP_TIMEOUT,
+                ),
+                "Straggler worker did not exit after release",
+            )
 
 
 # ── stop_worker: edge cases ──────────────────────────────────────
