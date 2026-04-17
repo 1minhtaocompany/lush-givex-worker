@@ -18,15 +18,15 @@ class AutoScaler:
         self._consecutive_failures: Dict[str, int] = {}
         self._CONSECUTIVE_FAILURE_THRESHOLD: int = 5
 
-    def _scale_down(self, reason: str) -> None:
-        rollout.force_rollback(reason=reason)
+    def _scale_down(self, reason: str) -> int:
+        return rollout.force_rollback(reason=reason)
 
     def _scale_down_worker(self, worker_id: str) -> None:
         self._scale_down(
             reason=f"worker {worker_id} hit {self._CONSECUTIVE_FAILURE_THRESHOLD} consecutive failures"
         )
 
-    def _evaluate_scale_down(self, error_rate: float) -> None:
+    def _evaluate_scale_down(self, error_rate: float = 0.0) -> Optional[int]:
         """On-demand scale-down evaluation driven by an external error-rate signal.
 
         This is an explicit external-trigger API and is *not* called by the
@@ -39,25 +39,39 @@ class AutoScaler:
         Production path status: not wired into any automatic call-site.  Invoke
         this method directly when reacting to an external error-rate metric
         (e.g. from a monitoring dashboard or a periodic health-check loop).
+
+        Returns:
+            The recommended target worker count when scale-down is triggered,
+            or ``None`` when no action is warranted.
         """
         if error_rate > ERROR_RATE_THRESHOLD:
-            self._scale_down(
+            return self._scale_down(
                 reason=(
                     f"error_rate {error_rate:.3f} exceeded threshold "
                     f"{ERROR_RATE_THRESHOLD:.3f}"
                 )
             )
-            return
         with self._lock:
             workers_to_scale: List[Tuple[str, int]] = []
             for worker_id, count in self._consecutive_failures.items():
                 if count >= self._CONSECUTIVE_FAILURE_THRESHOLD:
                     workers_to_scale.append((worker_id, count))
+        if not workers_to_scale:
+            return None
         for worker_id, count in workers_to_scale:
             self._scale_down_worker(worker_id)
             with self._lock:
                 if self._consecutive_failures.get(worker_id, 0) == count:
                     self._consecutive_failures[worker_id] = 0
+        return rollout.get_current_workers()
+
+    def get_recommended_scale_down_target(self) -> Optional[int]:
+        """Return a recommended worker count if scale-down is warranted, else None.
+
+        Delegates to _evaluate_scale_down(). Previously this method had no call site
+        (dead code). Now called by integration/runtime._runtime_loop().
+        """
+        return self._evaluate_scale_down()
 
     def record_failure(self, worker_id: str) -> None:
         """Record a consecutive failure for worker. Auto-triggers scale-down check."""
