@@ -25,8 +25,9 @@ import tempfile
 import threading
 import time
 import unittest
-from pathlib import Path
 from unittest.mock import patch
+
+from pathlib import Path
 
 from integration import runtime
 from integration.runtime import start, stop
@@ -54,7 +55,8 @@ def _wait_until(condition_fn, timeout=2.0, interval=0.01):
 class _ResetMixin:
     """Reset all cross-module state before and after each test."""
 
-    def setUp(self):
+    def setUp(self):  # pylint: disable=invalid-name
+        """Reset all cross-module state before each test."""
         runtime.reset()
         rollout.reset()
         monitor.reset()
@@ -62,14 +64,15 @@ class _ResetMixin:
         autoscaler_module.reset()
         self._billing_dir = tempfile.mkdtemp()
         profiles_path = os.path.join(self._billing_dir, "profiles.txt")
-        with open(profiles_path, "w", encoding="utf-8") as fh:
-            fh.write("Alice|Smith|1 Main St|City|NY|10001|2125550001|a@e.com\n")
+        with open(profiles_path, "w", encoding="utf-8") as handle:
+            handle.write("Alice|Smith|1 Main St|City|NY|10001|2125550001|a@e.com\n")
         self._billing_patcher = patch.object(
             billing, "_pool_dir", return_value=Path(self._billing_dir)
         )
         self._billing_patcher.start()
 
-    def tearDown(self):
+    def tearDown(self):  # pylint: disable=invalid-name
+        """Tear down billing patch and reset all cross-module state."""
         self._billing_patcher.stop()
         shutil.rmtree(self._billing_dir, ignore_errors=True)
         runtime.reset()
@@ -121,12 +124,12 @@ class TestConcurrentRollbackPreventsDoubleDecrement(_ResetMixin, unittest.TestCa
             except Exception as exc:  # pylint: disable=broad-except
                 errors.append(exc)
 
-        t1 = threading.Thread(target=behavior_path)
-        t2 = threading.Thread(target=autoscaler_path)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+        thread_behavior = threading.Thread(target=behavior_path)
+        thread_autoscaler = threading.Thread(target=autoscaler_path)
+        thread_behavior.start()
+        thread_autoscaler.start()
+        thread_behavior.join()
+        thread_autoscaler.join()
 
         self.assertEqual(errors, [])
         # Exactly one decrement: step 2 → 1.  The second caller was blocked
@@ -146,6 +149,7 @@ class TestConcurrentRollbackPreventsDoubleDecrement(_ResetMixin, unittest.TestCa
         errors = []
 
         def do_rollback(reason):
+            """Execute force_rollback after barrier synchronization."""
             barrier.wait()
             try:
                 rollout.force_rollback(reason)
@@ -156,10 +160,10 @@ class TestConcurrentRollbackPreventsDoubleDecrement(_ResetMixin, unittest.TestCa
             threading.Thread(target=do_rollback, args=(f"caller-{i}",))
             for i in range(3)
         ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
         self.assertEqual(errors, [])
         # Exactly one decrement: step 3 → 2
@@ -237,6 +241,7 @@ class TestFullIntegrationChainConsistency(_ResetMixin, unittest.TestCase):
         applied_targets = []
 
         def spy_apply(target_count, task_fn):  # pylint: disable=unused-argument
+            """Capture target_count passed to _apply_scale."""
             applied_targets.append(target_count)
 
         tick = threading.Event()
@@ -262,6 +267,7 @@ class TestFullIntegrationChainConsistency(_ResetMixin, unittest.TestCase):
         errors = []
 
         def tick():
+            """Execute one monitor→behavior→rollout decision cycle."""
             try:
                 metrics = monitor.get_metrics()
                 step = rollout.get_current_step_index()
@@ -275,10 +281,10 @@ class TestFullIntegrationChainConsistency(_ResetMixin, unittest.TestCase):
                 errors.append(exc)
 
         threads = [threading.Thread(target=tick) for _ in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
         self.assertEqual(errors, [],
                          f"Concurrent chain ticks raised unexpected errors: {errors}")
