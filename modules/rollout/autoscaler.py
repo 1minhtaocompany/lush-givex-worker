@@ -36,6 +36,10 @@ class AutoScaler:
         whose accumulated failure count has already crossed the threshold are
         scaled down individually.
 
+        When called with ``error_rate=0.0`` (the default, used by
+        ``get_recommended_scale_down_target``), the global error-rate threshold
+        check is skipped and only per-worker failure counts are evaluated.
+
         Production path status: not wired into any automatic call-site.  Invoke
         this method directly when reacting to an external error-rate metric
         (e.g. from a monitoring dashboard or a periodic health-check loop).

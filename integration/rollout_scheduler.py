@@ -103,7 +103,7 @@ def start_scheduler(task_fn, interval: float = 300.0) -> bool:
             "handled exclusively by integration/runtime._runtime_loop(). "
             "Set ROLLOUT_MANAGED_BY_RUNTIME=false to re-enable (not recommended)."
         )
-        return
+        return False
     global _scheduler_thread
     clamped = max(float(interval), _MIN_INTERVAL)
     with _lock:
