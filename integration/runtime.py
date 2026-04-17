@@ -641,10 +641,7 @@ def stop(timeout=None):
                     "stop(): FSM cleanup_worker skipped for straggler %s",
                     wid, exc_info=True,
                 )
-            # Mark worker state as STOPPING so the thread exits at its next safe-point check
-            with _lock:
-                if wid in _worker_states:
-                    _worker_states[wid] = "STOPPING"
+            # stop_worker() already left a stop request in place for stragglers.
     # Second join: give the loop thread remaining budget to finish its
     # current tick.  _state is STOPPING and _stop_event is set, so the
     # loop will break at the top of the next iteration or at the
