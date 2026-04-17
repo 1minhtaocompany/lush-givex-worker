@@ -353,7 +353,7 @@ class TestStopHardTimeout(GracefulShutdownResetMixin, unittest.TestCase):
                     and wid not in get_all_worker_states(),
                     timeout=CLEANUP_TIMEOUT,
                 ),
-                "straggler worker did not exit after release",
+                "Straggler worker did not exit after release",
             )
 
 
