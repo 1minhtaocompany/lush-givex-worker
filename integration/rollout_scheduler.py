@@ -13,7 +13,9 @@ _ROLLOUT_MANAGED_BY_RUNTIME: bool = (
 )
 
 _logger = logging.getLogger(__name__)
-ROLLOUT_STEPS = (1, 3, 5, 10)
+# Single source of truth: re-export rollout.SCALE_STEPS so this legacy module
+# cannot drift from the canonical scaling steps defined in modules/rollout/main.py.
+ROLLOUT_STEPS = rollout.SCALE_STEPS
 STABLE_DURATION_SECONDS = 43200
 MIN_SUCCESS_RATE = 0.70
 MAX_ERROR_RATE = 0.05

@@ -84,7 +84,14 @@ class AutoScaler:
         return self._evaluate_scale_down()
 
     def record_failure(self, worker_id: str) -> None:
-        """Record a consecutive failure for worker. Auto-triggers scale-down check."""
+        """Record a consecutive failure for worker. Auto-triggers scale-down check.
+
+        Note (Blueprint §14.1): when the per-worker failure threshold is reached
+        this path calls ``rollout.force_rollback()`` directly without going
+        through the runtime ``_is_safe_locked()`` safety gate. This is the
+        intentional emergency scale-down behaviour — repeated worker failures
+        must shrink the pool immediately, even when other workers are mid-cycle.
+        """
         with self._lock:
             self._consecutive_failures[worker_id] = self._consecutive_failures.get(worker_id, 0) + 1
             current_count = self._consecutive_failures[worker_id]

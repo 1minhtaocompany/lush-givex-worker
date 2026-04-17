@@ -20,7 +20,7 @@ _pid_registry: dict[str, int] = {}
 _bitbrowser_registry: Dict[str, str] = {}
 
 _CARD_PATTERN = re.compile(r"\b\d{16}\b")
-_CVV_PATTERN = re.compile(r"\bcvv\s*=\s*\d{3,4}\b", re.IGNORECASE)
+_CVV_PATTERN = re.compile(r"\bcvv\b[\s:=_-]*\d{3,4}\b", re.IGNORECASE)
 _EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
 
