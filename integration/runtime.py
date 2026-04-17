@@ -490,6 +490,9 @@ def _runtime_loop(task_fn, interval):
                     with _lock:
                         _current_count = len(_workers)
                     if _scale_down_target < _current_count:
+                        # Only apply if strictly less: this path is scale-DOWN
+                        # only; scale-up remains the sole responsibility of the
+                        # rollout decision block above.
                         _logger.info(
                             "Autoscaler recommends scale-down to %d workers "
                             "(current: %d)",

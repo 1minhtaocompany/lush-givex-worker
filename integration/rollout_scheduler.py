@@ -96,7 +96,9 @@ def start_scheduler(task_fn, interval: float = 300.0) -> bool:
 
     Returns True if started, False if already running.
     """
-    if _ROLLOUT_MANAGED_BY_RUNTIME:
+    with _lock:
+        managed = _ROLLOUT_MANAGED_BY_RUNTIME
+    if managed:
         _logger.warning(
             "rollout_scheduler: ROLLOUT_MANAGED_BY_RUNTIME=true — "
             "this legacy scheduler is disabled. All rollout decisions are "

@@ -64,6 +64,10 @@ class AutoScaler:
                     workers_to_scale.append((worker_id, count))
             if not workers_to_scale:
                 return None
+        # Lock is released before calling _scale_down_worker() to avoid
+        # deadlocking inside rollout.force_rollback().  workers_to_scale is a
+        # stable snapshot; the counter re-check inside the loop (line below)
+        # ensures we only reset counts that have not changed since the snapshot.
         for worker_id, count in workers_to_scale:
             self._scale_down_worker(worker_id)
             with self._lock:
