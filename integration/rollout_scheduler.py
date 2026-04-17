@@ -1,9 +1,16 @@
+# DEPRECATED: This scheduler is superseded by integration/runtime._runtime_loop().
+# Controlled by the ROLLOUT_MANAGED_BY_RUNTIME environment variable (default: true = disabled).
 """Automatic rollout scheduler — manages production rollout via ROLLOUT_STEPS."""
 import logging
+import os as _os
 import threading
 import time
 from modules.monitor import main as monitor
 from modules.rollout import main as rollout
+
+_ROLLOUT_MANAGED_BY_RUNTIME: bool = (
+    _os.environ.get("ROLLOUT_MANAGED_BY_RUNTIME", "true").lower() == "true"
+)
 
 _logger = logging.getLogger(__name__)
 ROLLOUT_STEPS = (1, 3, 5, 10)
@@ -89,6 +96,16 @@ def start_scheduler(task_fn, interval: float = 300.0) -> bool:
 
     Returns True if started, False if already running.
     """
+    with _lock:
+        managed = _ROLLOUT_MANAGED_BY_RUNTIME
+    if managed:
+        _logger.warning(
+            "rollout_scheduler: ROLLOUT_MANAGED_BY_RUNTIME=true — "
+            "this legacy scheduler is disabled. All rollout decisions are "
+            "handled exclusively by integration/runtime._runtime_loop(). "
+            "Set ROLLOUT_MANAGED_BY_RUNTIME=false to re-enable (not recommended)."
+        )
+        return False
     global _scheduler_thread
     clamped = max(float(interval), _MIN_INTERVAL)
     with _lock:
@@ -164,7 +181,7 @@ def advance_step() -> tuple[bool, str]:
 
 def reset() -> None:
     """Reset scheduler state. Intended for testing."""
-    global _scheduler_thread, _stable_since
+    global _scheduler_thread, _stable_since, _ROLLOUT_MANAGED_BY_RUNTIME  # pylint: disable=global-statement,invalid-name
     _stop_event.set()
     with _lock:
         thread = _scheduler_thread
@@ -174,3 +191,4 @@ def reset() -> None:
         _scheduler_thread = None
         _stable_since = None
     _stop_event.clear()
+    _ROLLOUT_MANAGED_BY_RUNTIME = False

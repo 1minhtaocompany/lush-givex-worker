@@ -482,6 +482,27 @@ def _runtime_loop(task_fn, interval):
             if _stop_event.is_set():
                 break
             _apply_scale(target, task_fn)
+            # Autoscaler-driven scale-down (previously unwired dead code — now active).
+            # Runs after rollout decisions so rollout always takes precedence.
+            try:
+                _scale_down_target = get_autoscaler().get_recommended_scale_down_target()
+                if _scale_down_target is not None:
+                    with _lock:
+                        _current_count = len(_workers)
+                    if _scale_down_target < _current_count:
+                        # Only apply if strictly less: this path is scale-DOWN
+                        # only; scale-up remains the sole responsibility of the
+                        # rollout decision block above.
+                        _logger.info(
+                            "Autoscaler recommends scale-down to %d workers "
+                            "(current: %d)",
+                            _scale_down_target, _current_count,
+                        )
+                        _apply_scale(_scale_down_target, task_fn)
+            except Exception:
+                _logger.warning(
+                    "Autoscaler scale-down evaluation failed.", exc_info=True
+                )
             _log_event("runtime", action, "loop_tick", {"target": target, "metrics": metrics, "decision": decision})
             _loop_error_count = 0
             if cb_pause > 0:
