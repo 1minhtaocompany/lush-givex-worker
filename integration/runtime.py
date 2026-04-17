@@ -240,6 +240,16 @@ def _worker_fn(worker_id, task_fn, persona):
                 _stop_requests.discard(worker_id)
                 _workers.pop(worker_id, None)
                 _worker_states.pop(worker_id, None)
+        # Release proxy regardless of how this thread exits.
+        # ProxyPool.release() is idempotent via pop(default=None) — safe to call
+        # even if stop_worker() already released it.
+        try:
+            get_default_pool().release(worker_id)
+        except Exception:  # pylint: disable=broad-except
+            _logger.warning(
+                "Failed to release proxy for worker %s during thread exit cleanup",
+                worker_id, exc_info=True,
+            )
         _log_event(worker_id, "stopped", "stop")
 def start_worker(task_fn):
     """Start a new worker thread running *task_fn*. Returns the worker id."""
@@ -613,6 +623,25 @@ def stop(timeout=None):
         for wid in stragglers:
             _log_event(wid, "stopping", "hard_timeout")
         all_stopped = False
+        # Resource cleanup for straggler threads that exceeded shutdown timeout.
+        # Proxy release is idempotent — safe even if the thread eventually
+        # self-exits and triggers _worker_fn.finally release as well.
+        for wid in stragglers:
+            try:
+                get_default_pool().release(wid)
+            except Exception:  # pylint: disable=broad-except
+                _logger.warning(
+                    "stop(): failed to release proxy for straggler %s", wid, exc_info=True
+                )
+            # Clean up FSM state to prevent stale per-worker registry entries
+            try:
+                fsm.cleanup_worker(wid)
+            except Exception:  # pylint: disable=broad-except
+                _logger.debug("stop(): FSM cleanup_worker skipped for straggler %s", wid, exc_info=True)
+            # Mark worker state as STOPPING so the thread exits at its next safe-point check
+            with _lock:
+                if wid in _worker_states:
+                    _worker_states[wid] = "STOPPING"
     # Second join: give the loop thread remaining budget to finish its
     # current tick.  _state is STOPPING and _stop_event is set, so the
     # loop will break at the top of the next iteration or at the
