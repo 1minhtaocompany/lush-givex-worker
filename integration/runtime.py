@@ -637,7 +637,10 @@ def stop(timeout=None):
             try:
                 fsm.cleanup_worker(wid)
             except Exception:  # pylint: disable=broad-except
-                _logger.debug("stop(): FSM cleanup_worker skipped for straggler %s", wid, exc_info=True)
+                _logger.debug(
+                    "stop(): FSM cleanup_worker skipped for straggler %s",
+                    wid, exc_info=True,
+                )
             # Mark worker state as STOPPING so the thread exits at its next safe-point check
             with _lock:
                 if wid in _worker_states:
