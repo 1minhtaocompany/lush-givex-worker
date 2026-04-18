@@ -456,7 +456,6 @@ class L3IntegrationStubTests(unittest.TestCase):
         stub = MagicMock()
         stub.execute_script.return_value = "50.00"
         stub.execute_cdp_cmd.return_value = None
-        stub.add_cdp_listener = None  # no network listener
         return stub
 
     def test_full_sequence_methods_invoked_on_driver(self):

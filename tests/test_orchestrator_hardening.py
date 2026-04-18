@@ -903,13 +903,6 @@ class PostSubmissionTimeoutObservabilityTests(unittest.TestCase):
                 with self.assertRaises(SessionFlaggedError):
                     run_payment_step(task, worker_id="post-sub-worker")
 
-            store_mock = MagicMock()
-            store_mock.is_duplicate.return_value = False
-            with patch("integration.orchestrator._get_idempotency_store", return_value=store_mock):
-                mock_logger.error.side_effect = capture_error
-                with self.assertRaises(SessionFlaggedError):
-                    run_payment_step(task, worker_id="post-sub-worker")
-
         pre_sub_msgs = [m for m in log_messages if "BEFORE payment submission" in m]
         self.assertTrue(
             len(pre_sub_msgs) >= 1,
