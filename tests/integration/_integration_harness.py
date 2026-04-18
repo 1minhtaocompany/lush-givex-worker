@@ -24,12 +24,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from unittest.mock import MagicMock
 
-from modules.common.exceptions import InvalidStateError, InvalidTransitionError
-
-from modules.common.exceptions import SessionFlaggedError
+from modules.common.exceptions import (
+    InvalidStateError,
+    InvalidTransitionError,
+    SessionFlaggedError,
+)
 from modules.common.types import BillingProfile, CardInfo, WorkerTask
 import modules.cdp.main as _cdp_main
 from modules.fsm.main import cleanup_worker, transition_for_worker
+from integration.orchestrator import (
+    _completed_task_ids,
+    _idempotency_lock,
+    _in_flight_task_ids,
+    _network_listener_lock,
+    _notified_workers_this_cycle,
+    _submitted_task_ids,
+)
 from modules.watchdog.main import reset as _reset_watchdog
 
 
@@ -81,7 +91,12 @@ class _StubGivexDriver:
     - Error injection at a named method via ``error_at``.
     - Configurable DOM total for watchdog notification (``dom_total``).
     - Optional ``add_cdp_listener`` for CDP body path tests (``enable_cdp_listener``).
+
+    Method signatures intentionally mirror the real ``GivexDriver`` interface;
+    parameters that the stub does not consume are kept under their canonical
+    names for documentation value (hence the unused-argument disable below).
     """
+    # pylint: disable=unused-argument
 
     def __init__(
         self,
@@ -189,14 +204,6 @@ class _IntegrationBase:
     worker_id: str = "l3-worker"
 
     def setUp(self):  # pylint: disable=invalid-name
-        from integration.orchestrator import (
-            _completed_task_ids,
-            _idempotency_lock,
-            _in_flight_task_ids,
-            _network_listener_lock,
-            _notified_workers_this_cycle,
-            _submitted_task_ids,
-        )
         with _idempotency_lock:
             _completed_task_ids.clear()
             _in_flight_task_ids.clear()

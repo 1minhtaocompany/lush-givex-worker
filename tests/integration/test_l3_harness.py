@@ -35,37 +35,42 @@ from __future__ import annotations
 
 import os
 import sys
-import threading
-import time
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 # Ensure the helpers in this directory are importable regardless of how
 # unittest discovers this file (with or without __init__.py).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import modules.cdp.main as _cdp_main
-from integration.orchestrator import (
+import modules.cdp.main as _cdp_main  # noqa: E402  pylint: disable=wrong-import-position
+from integration.orchestrator import (  # noqa: E402  pylint: disable=wrong-import-position
     _completed_task_ids,
     _idempotency_lock,
     _in_flight_task_ids,
     _network_listener_lock,
     _notified_workers_this_cycle,
     _submitted_task_ids,
-    handle_outcome,
     run_cycle,
     run_payment_step,
 )
-from modules.common.exceptions import SessionFlaggedError
-from modules.common.types import State
-from modules.fsm.main import cleanup_worker, reset_registry
-from modules.watchdog.main import reset as _reset_watchdog
+from modules.common.exceptions import (  # noqa: E402  pylint: disable=wrong-import-position
+    InvalidStateError,
+    InvalidTransitionError,
+    SessionFlaggedError,
+)
+from modules.fsm.main import (  # noqa: E402  pylint: disable=wrong-import-position
+    cleanup_worker,
+    get_current_state_for_worker,
+    initialize_for_worker,
+    reset_registry,
+    transition_for_worker,
+)
+from modules.watchdog.main import reset as _reset_watchdog  # noqa: E402  pylint: disable=wrong-import-position
 
-from _integration_harness import (
-    FakeBitBrowserServer,
+from integration.worker_task import make_task_fn  # noqa: E402  pylint: disable=wrong-import-position
+from _integration_harness import (  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
     _IntegrationBase,
     _StubGivexDriver,
-    _make_billing_profile,
     _make_task,
     make_mock_billing,
 )
@@ -119,7 +124,7 @@ class TestL3FullSequenceCallOrder(_IntegrationBase, unittest.TestCase):
         )
 
     def test_full_purchase_step_sequence(self):
-        """Complete step sequence must be: preflight → navigate → fill_egift → cart → guest → pay → submit."""
+        """Complete step sequence: preflight→navigate→fill→cart→guest→pay→submit."""
         stub = _StubGivexDriver(self.worker_id, final_state="success")
         self._run_payment(stub)
         expected_order = [
@@ -147,20 +152,15 @@ class TestL3FullSequenceCallOrder(_IntegrationBase, unittest.TestCase):
         call_order = []
         store_mock = MagicMock()
 
-        def record_prefill(*a, **kw):
-            call_order.append("prefill")
-
         def record_submit():
             call_order.append("submit")
             stub.calls.append("submit_purchase")
-            from modules.fsm.main import transition_for_worker
-            from modules.common.exceptions import InvalidStateError, InvalidTransitionError
             try:
                 transition_for_worker(self.worker_id, "success")
             except (InvalidStateError, InvalidTransitionError, ValueError):
                 pass
 
-        def record_mark(task_id):
+        def record_mark(_task_id):
             call_order.append("mark_submitted")
 
         stub.submit_purchase = record_submit
@@ -174,7 +174,7 @@ class TestL3FullSequenceCallOrder(_IntegrationBase, unittest.TestCase):
             patch("integration.orchestrator.billing", make_mock_billing()),
             patch("integration.orchestrator._get_idempotency_store", return_value=store_mock),
             patch("integration.orchestrator.cdp.run_preflight_and_fill",
-                  side_effect=lambda *a, **kw: (call_order.append("prefill"), None)[-1]),
+                  side_effect=lambda *_a, **_kw: (call_order.append("prefill"), None)[-1]),
         ):
             run_payment_step(task, worker_id=self.worker_id)
 
@@ -204,7 +204,7 @@ class TestL3FullSequenceCallOrder(_IntegrationBase, unittest.TestCase):
             call_counts[m] = 0
 
         def count_method(name):
-            def _counter(*a, **kw):
+            def _counter(*_a, **_kw):
                 call_counts[name] += 1
             return _counter
 
@@ -214,8 +214,6 @@ class TestL3FullSequenceCallOrder(_IntegrationBase, unittest.TestCase):
         # submit_purchase must still transition FSM
         def submit():
             stub.calls.append("submit_purchase")
-            from modules.fsm.main import transition_for_worker
-            from modules.common.exceptions import InvalidStateError, InvalidTransitionError
             try:
                 transition_for_worker(self.worker_id, "success")
             except (InvalidStateError, InvalidTransitionError, ValueError):
@@ -262,14 +260,14 @@ class TestL3OrchestratorScenarios(_IntegrationBase, unittest.TestCase):
 
     def test_declined_state_returns_retry_or_retry_new_card(self):
         """Stub in 'declined' final state → run_cycle returns 'retry' or 'retry_new_card'."""
-        action, state, total = self._run_cycle("declined")
+        action, state, _total = self._run_cycle("declined")
         self.assertIn(action, ("retry", "retry_new_card"))
         self.assertIsNotNone(state)
         self.assertEqual(state.name, "declined")
 
     def test_vbv_3ds_state_returns_await_3ds(self):
         """Stub in 'vbv_3ds' final state → run_cycle returns 'await_3ds'."""
-        action, state, total = self._run_cycle("vbv_3ds")
+        action, state, _total = self._run_cycle("vbv_3ds")
         self.assertEqual(action, "await_3ds")
         self.assertIsNotNone(state)
         self.assertEqual(state.name, "vbv_3ds")
@@ -300,7 +298,7 @@ class TestL3OrchestratorScenarios(_IntegrationBase, unittest.TestCase):
         _cdp_main.register_driver(self.worker_id, stub)
         audit_events = []
 
-        def capture_audit(fmt, *args, **kwargs):
+        def capture_audit(fmt, *args, **_kwargs):
             if args:
                 msg = fmt % args
             else:
@@ -378,7 +376,7 @@ class TestL3WatchdogTimeout(_IntegrationBase, unittest.TestCase):
         _cdp_main.register_driver(self.worker_id, stub)
         log_messages = []
 
-        def capture_error(fmt, *args, **kwargs):
+        def capture_error(fmt, *args, **_kwargs):
             msg = fmt % args if args else fmt
             log_messages.append(msg)
 
@@ -407,7 +405,9 @@ class TestL3WatchdogTimeout(_IntegrationBase, unittest.TestCase):
 
     def test_watchdog_notify_once_per_cycle(self):
         """notify_total must be called at most once per cycle (first-notify-wins)."""
-        from modules.watchdog.main import notify_total as _notify_total
+        # Local import: avoids importing notify_total at module scope where it would
+        # be patched globally for all tests via the import binding.
+        from modules.watchdog.main import notify_total as _notify_total  # pylint: disable=import-outside-toplevel
         notify_calls: list = []
         original_notify = _notify_total
 
@@ -476,11 +476,14 @@ class TestL3IdempotencyContracts(_IntegrationBase, unittest.TestCase):
             patch("integration.orchestrator._get_idempotency_store",
                   return_value=store_mock),
         ):
-            action, state, total = run_cycle(task, worker_id=self.worker_id)
+            action, _state, _total = run_cycle(task, worker_id=self.worker_id)
 
         self.assertEqual(action, "complete")
         # stub2 must have no calls (cycle was skipped)
-        self.assertEqual(stub2.calls, [], f"Duplicate cycle must not call driver, got: {stub2.calls}")
+        self.assertEqual(
+            stub2.calls, [],
+            f"Duplicate cycle must not call driver, got: {stub2.calls}",
+        )
 
     def test_mark_submitted_precedes_submit_purchase(self):
         """mark_submitted must be persisted before submit_purchase is called."""
@@ -520,14 +523,10 @@ class TestL3IdempotencyContracts(_IntegrationBase, unittest.TestCase):
         task = _make_task(task_id="l3-in-mem-dup")
         stub = _StubGivexDriver(self.worker_id, final_state="success")
 
-        first_calls: list[str] = []
-        second_calls: list[str] = []
-
         # First cycle
         _cdp_main.register_driver(self.worker_id, stub)
         with patch("integration.orchestrator.billing", make_mock_billing()):
             run_cycle(task, worker_id=self.worker_id)
-        first_calls = list(stub.calls)
 
         # Reset worker state but NOT idempotency store (task_id already completed)
         cleanup_worker(self.worker_id)
@@ -579,7 +578,7 @@ class TestL3ErrorInjection(_IntegrationBase, unittest.TestCase):
         store_mock.is_duplicate.return_value = False
         log_messages: list[str] = []
 
-        def capture(fmt, *args, **kwargs):
+        def capture(fmt, *args, **_kwargs):
             log_messages.append(fmt % args if args else fmt)
 
         with (
@@ -683,14 +682,12 @@ class TestL3DriverCleanup(_IntegrationBase, unittest.TestCase):
 
     def test_fsm_cleanup_after_successful_cycle(self):
         """FSM state for worker must be cleaned up after run_cycle."""
-        from modules.fsm.main import get_current_state_for_worker
         task = _make_task(task_id="l3-clean-fsm")
         stub = _StubGivexDriver(self.worker_id, final_state="success")
         _cdp_main.register_driver(self.worker_id, stub)
         with patch("integration.orchestrator.billing", make_mock_billing()):
             run_cycle(task, worker_id=self.worker_id)
         # FSM cleanup_worker must have been called; re-init should start clean.
-        from modules.fsm.main import initialize_for_worker, get_current_state_for_worker
         initialize_for_worker(self.worker_id)
         state = get_current_state_for_worker(self.worker_id)
         self.assertIsNone(state, "FSM must start in None state after cleanup + reinit")
@@ -704,14 +701,6 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
     worker_id = "l3-taskfn-worker"
 
     def setUp(self):
-        from integration.orchestrator import (
-            _completed_task_ids,
-            _idempotency_lock,
-            _in_flight_task_ids,
-            _network_listener_lock,
-            _notified_workers_this_cycle,
-            _submitted_task_ids,
-        )
         with _idempotency_lock:
             _completed_task_ids.clear()
             _in_flight_task_ids.clear()
@@ -744,8 +733,10 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
         event_log: list[str] = []
 
         class _TrackingCdp:
+            """Stub of modules.cdp.main mirroring its public/protected interface."""
+
             @staticmethod
-            def register_driver(wid, drv):
+            def register_driver(wid, _drv):
                 event_log.append(f"register:{wid}")
 
             @staticmethod
@@ -753,10 +744,12 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
                 event_log.append(f"unregister:{wid}")
 
             @staticmethod
-            def _register_pid(wid, pid): pass
+            def _register_pid(wid, pid):  # pylint: disable=unused-argument
+                """No-op stub for cdp._register_pid."""
 
             @staticmethod
-            def register_browser_profile(wid, pid): pass
+            def register_browser_profile(wid, pid):  # pylint: disable=unused-argument
+                """No-op stub for cdp.register_browser_profile."""
 
         with (
             patch("integration.worker_task.get_bitbrowser_client",
@@ -767,7 +760,6 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
             patch("integration.worker_task.cdp", _TrackingCdp()),
             patch("integration.runtime.probe_cdp_listener_support"),
         ):
-            from integration.worker_task import make_task_fn
             make_task_fn()(self.worker_id)
 
         register_key = f"register:{self.worker_id}"
@@ -786,21 +778,23 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
         unregister_calls: list[str] = []
 
         class _TrackingCdp:
+            """Stub of modules.cdp.main capturing unregister calls."""
+
             @staticmethod
-            def register_driver(wid, drv): pass
+            def register_driver(wid, drv):  # pylint: disable=unused-argument
+                """No-op stub for cdp.register_driver."""
 
             @staticmethod
             def unregister_driver(wid):
                 unregister_calls.append(wid)
 
             @staticmethod
-            def _register_pid(wid, pid): pass
+            def _register_pid(wid, pid):  # pylint: disable=unused-argument
+                """No-op stub for cdp._register_pid."""
 
             @staticmethod
-            def register_browser_profile(wid, pid): pass
-
-        def boom(_wid):
-            raise SessionFlaggedError("injected run_cycle failure")
+            def register_browser_profile(wid, pid):  # pylint: disable=unused-argument
+                """No-op stub for cdp.register_browser_profile."""
 
         with (
             patch("integration.worker_task.get_bitbrowser_client",
@@ -813,7 +807,6 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
             patch("integration.worker_task._get_current_ip_best_effort",
                   return_value=None),
         ):
-            from integration.worker_task import make_task_fn
             task_source = MagicMock(return_value=_make_task())
             # Patch run_cycle in the dynamically-imported orchestrator module.
             with patch("integration.orchestrator.run_cycle",
@@ -827,7 +820,6 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
     def test_bitbrowser_unavailable_raises_runtime_error(self):
         """make_task_fn raises RuntimeError when BitBrowser client is None."""
         with patch("integration.worker_task.get_bitbrowser_client", return_value=None):
-            from integration.worker_task import make_task_fn
             with self.assertRaises(RuntimeError):
                 make_task_fn()(self.worker_id)
 
@@ -836,7 +828,7 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
         bb_client, selenium_drv, givex_drv = self._make_mocks()
         run_cycle_kwargs: list[dict] = []
 
-        def capture_run_cycle(task, zip_code=None, worker_id="default"):
+        def capture_run_cycle(_task, zip_code=None, worker_id="default"):
             run_cycle_kwargs.append({"zip_code": zip_code, "worker_id": worker_id})
 
         with (
@@ -853,7 +845,6 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
             patch("integration.orchestrator.run_cycle",
                   side_effect=capture_run_cycle),
         ):
-            from integration.worker_task import make_task_fn
             task_source = MagicMock(return_value=_make_task())
             make_task_fn(task_source=task_source)(self.worker_id)
 
@@ -876,7 +867,6 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
             patch("integration.worker_task.cdp"),
             patch("integration.runtime.probe_cdp_listener_support"),
         ):
-            from integration.worker_task import make_task_fn
             make_task_fn()(self.worker_id)
 
         bb_client.create_profile.assert_called_once()
@@ -885,14 +875,7 @@ class TestL3TaskFnLifecycle(unittest.TestCase):
         bb_client.close_profile.assert_called()
         bb_client.delete_profile.assert_called()
 
-        # Verify creation precedes launch
-        create_idx = [
-            c for c in bb_client.mock_calls
-            if c == call.create_profile(user_agent=unittest.mock.ANY)
-            or (hasattr(c, '__name__') and c.__name__ == 'create_profile')
-        ]
-        # As long as create and launch were called, ordering is verified
-        # by checking call order in bb_client.method_calls
+        # Verify creation precedes launch by checking call order in mock_calls.
         method_calls = [str(c) for c in bb_client.mock_calls]
         create_pos = next(
             (i for i, m in enumerate(method_calls) if "create_profile" in m), -1

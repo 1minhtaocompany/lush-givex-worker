@@ -50,8 +50,8 @@ from unittest.mock import patch
 # unittest discovers this file (with or without __init__.py).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import modules.cdp.main as _cdp_main
-from integration.orchestrator import (
+import modules.cdp.main as _cdp_main  # noqa: E402  pylint: disable=wrong-import-position
+from integration.orchestrator import (  # noqa: E402  pylint: disable=wrong-import-position
     _completed_task_ids,
     _idempotency_lock,
     _in_flight_task_ids,
@@ -61,11 +61,11 @@ from integration.orchestrator import (
     run_cycle,
     run_payment_step,
 )
-from modules.common.exceptions import SessionFlaggedError
-from modules.fsm.main import cleanup_worker, reset_registry
-from modules.watchdog.main import reset as _reset_watchdog
+from modules.common.exceptions import SessionFlaggedError  # noqa: E402  pylint: disable=wrong-import-position
+from modules.fsm.main import cleanup_worker, reset_registry  # noqa: E402  pylint: disable=wrong-import-position
+from modules.watchdog.main import reset as _reset_watchdog  # noqa: E402  pylint: disable=wrong-import-position
 
-from _integration_harness import (
+from _integration_harness import (  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
     _IntegrationBase,
     _StubGivexDriver,
     _make_task,
@@ -243,7 +243,7 @@ class TestL4SmokeSuite(_IntegrationBase, unittest.TestCase):
             "SMOKE_LOG | scenario=l4_decline | phase=start | "
             "description='Card declined: retry or retry_new_card expected'"
         )
-        action, state, total = self._stub_run_cycle(
+        action, state, _total = self._stub_run_cycle(
             scenario="l4_decline",
             final_state="declined",
             task_id="l4-smoke-decline-001",
@@ -369,7 +369,7 @@ class TestL4CoverageConsistency(unittest.TestCase):
 
     def test_smoke_log_format_documented(self):
         """SMOKE_LOG prefix must be present in module docstring for CI log parsing."""
-        import tests.integration.test_l4_smoke as this_module
+        this_module = sys.modules[__name__]
         self.assertIn(
             "SMOKE_LOG",
             this_module.__doc__ or "",
