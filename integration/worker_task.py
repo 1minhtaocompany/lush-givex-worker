@@ -18,6 +18,7 @@ Feature flag: ``ENABLE_PRODUCTION_TASK_FN`` (default OFF) — the gate is
 enforced by the caller (``app/__main__.py``).  This module does **not** read
 the flag itself so that tests can import and exercise it freely.
 """
+import importlib
 import logging
 from typing import Any, Callable, Optional
 
@@ -107,7 +108,9 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
                 if task_source is not None:
                     task = task_source(worker_id)
                     if task is not None:
-                        from integration.orchestrator import run_cycle  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+                        run_cycle = importlib.import_module(
+                            "integration.orchestrator"
+                        ).run_cycle
                         run_cycle(task, zip_code=zip_code, worker_id=worker_id)
                 else:
                     _log.debug(
@@ -130,11 +133,12 @@ def _build_remote_driver(webdriver_url: str):
         RuntimeError: if selenium is not installed.
     """
     try:
-        # pylint: disable=import-outside-toplevel  # keep selenium optional
-        from selenium.webdriver import Remote  # type: ignore[import]
-        from selenium.webdriver.common.desired_capabilities import (  # type: ignore[import]
-            DesiredCapabilities,
+        remote_module = importlib.import_module("selenium.webdriver")
+        capabilities_module = importlib.import_module(
+            "selenium.webdriver.common.desired_capabilities"
         )
+        Remote = remote_module.Remote
+        DesiredCapabilities = capabilities_module.DesiredCapabilities
         capabilities = dict(DesiredCapabilities.CHROME)
         return Remote(
             command_executor=webdriver_url,

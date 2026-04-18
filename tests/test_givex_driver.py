@@ -892,15 +892,13 @@ class TestMaxMindGeoLookup(unittest.TestCase):
 
     def test_lookup_maxmind_utc_offset_returns_none_when_geoip2_missing(self):
         """geoip2 not installed returns None via ImportError guard."""
-        real_import = __import__
-
-        def _fake_import(name, *args, **kwargs):
+        def _fake_import(name):
             if name == "geoip2.database":
                 raise ImportError("geoip2 missing")
-            return real_import(name, *args, **kwargs)
+            return unittest.mock.DEFAULT
 
         with patch("modules.cdp.driver.os.path.exists", return_value=True), \
-             patch("builtins.__import__", side_effect=_fake_import):
+             patch("modules.cdp.driver.importlib.import_module", side_effect=_fake_import):
             result = drv._lookup_maxmind_utc_offset("8.8.8.8")  # pylint: disable=protected-access
             self.assertIsNone(result)
 
@@ -954,15 +952,13 @@ class TestMaxMindZipLookup(unittest.TestCase):
 
     def test_returns_none_when_geoip2_not_installed(self):
         """Returns None via ImportError guard when geoip2 is not installed."""
-        real_import = __import__
-
-        def _fake_import(name, *args, **kwargs):
+        def _fake_import(name):
             if name == "geoip2.database":
                 raise ImportError("geoip2 missing")
-            return real_import(name, *args, **kwargs)
+            return unittest.mock.DEFAULT
 
         with patch("modules.cdp.driver.os.path.exists", return_value=True), \
-             patch("builtins.__import__", side_effect=_fake_import):
+             patch("modules.cdp.driver.importlib.import_module", side_effect=_fake_import):
             result = drv.maxmind_lookup_zip("8.8.8.8")
             self.assertIsNone(result)
 

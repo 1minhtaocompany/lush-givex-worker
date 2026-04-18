@@ -366,15 +366,15 @@ class TestBuildRemoteDriver(unittest.TestCase):
     """_build_remote_driver raises RuntimeError when selenium is absent."""
 
     def test_raises_runtime_error_when_selenium_missing(self):
-        import builtins
-        real_import = builtins.__import__
-
-        def _block_selenium(name, *args, **kwargs):
-            if name == "selenium.webdriver":
+        def _block_selenium(name):
+            if name.startswith("selenium.webdriver"):
                 raise ImportError("no module named selenium")
-            return real_import(name, *args, **kwargs)
+            return unittest.mock.DEFAULT
 
-        with patch("builtins.__import__", side_effect=_block_selenium):
+        with patch(
+            "integration.worker_task.importlib.import_module",
+            side_effect=_block_selenium,
+        ):
             from integration.worker_task import _build_remote_driver
             with self.assertRaises(RuntimeError) as ctx:
                 _build_remote_driver("ws://127.0.0.1:9222/x")

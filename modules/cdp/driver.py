@@ -15,6 +15,7 @@ import re as _re
 import secrets
 import time
 import datetime
+import importlib
 import ipaddress
 import urllib.request
 import urllib.error
@@ -162,11 +163,11 @@ def _lookup_maxmind_utc_offset(ip_addr: str) -> int | None:
     if not os.path.exists(mmdb_path):
         return None
     try:
-        import geoip2.database  # type: ignore  # pylint: disable=import-outside-toplevel
+        geoip2_database = importlib.import_module("geoip2.database")
     except ImportError:
         return None
     try:
-        with geoip2.database.Reader(mmdb_path) as reader:
+        with geoip2_database.Reader(mmdb_path) as reader:
             record = reader.city(ip_addr)
             tz_name = record.location.time_zone
             if tz_name:
@@ -200,11 +201,11 @@ def maxmind_lookup_zip(ip_addr: str) -> str | None:
     if not os.path.exists(mmdb_path):
         return None
     try:
-        import geoip2.database  # type: ignore  # pylint: disable=import-outside-toplevel
+        geoip2_database = importlib.import_module("geoip2.database")
     except ImportError:
         return None
     try:
-        with geoip2.database.Reader(mmdb_path) as reader:
+        with geoip2_database.Reader(mmdb_path) as reader:
             record = reader.city(ip_addr)
             postal_code = record.postal.code
             if postal_code:
