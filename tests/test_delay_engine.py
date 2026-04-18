@@ -6,6 +6,7 @@ from modules.delay.main import (
     BehaviorStateMachine, DelayEngine,
     MAX_HESITATION_DELAY, MAX_STEP_DELAY, WATCHDOG_HEADROOM,
 )
+from modules.delay.config import WATCHDOG_HEADROOM as CONFIG_WATCHDOG_HEADROOM
 
 
 class _EngineSetup(unittest.TestCase):
@@ -170,13 +171,12 @@ class TestEngineModuleImport(unittest.TestCase):
             MAX_HESITATION_DELAY as MHD,
             MAX_STEP_DELAY as MSD,
         )
-        from modules.delay.config import WATCHDOG_HEADROOM as WH
         from modules.delay.persona import PersonaProfile as PP
         from modules.delay.persona import MAX_TYPING_DELAY as MTD
         from modules.delay.state import BehaviorStateMachine as BSM
         self.assertEqual(MHD, 5.0)
         self.assertEqual(MSD, 7.0)
-        self.assertEqual(WH, 3.0)
+        self.assertEqual(CONFIG_WATCHDOG_HEADROOM, 3.0)
         p = PP(99)
         sm = BSM()
         e = DE(p, sm)

@@ -26,11 +26,11 @@ _INJECTABLE_ACTIONS = frozenset(("typing", "thinking"))
 
 
 def inject_step_delay(
-    engine: DelayEngine,
-    temporal: TemporalModel,
-    action_type: str,
-    stop_event=None,
-    cycle_count: int = 0,
+        engine: DelayEngine,
+        temporal: TemporalModel,
+        action_type: str,
+        stop_event=None,
+        cycle_count: int = 0,
 ) -> float:
     """Inject behavioral delay for a single action step.
 
