@@ -1,6 +1,8 @@
 """Phase 6 Operations smoke tests — RUNBOOK, cleanup, and backup scripts."""
 import importlib.util
 import os
+import subprocess  # nosec B404
+import sys
 import tempfile
 import time
 import unittest
@@ -237,8 +239,6 @@ class TestRunbookExists(unittest.TestCase):
 
     def test_backup_via_cli_subprocess_smoke(self):
         """Run backup_billing_pool.py as a subprocess against a temp pool dir."""
-        import subprocess  # nosec B404  # pylint: disable=import-outside-toplevel
-        import sys  # pylint: disable=import-outside-toplevel
         with tempfile.TemporaryDirectory() as tmp_dir:
             pool_dir = Path(tmp_dir) / "pool"
             pool_dir.mkdir()
@@ -261,8 +261,6 @@ class TestRunbookExists(unittest.TestCase):
 
     def test_cleanup_via_cli_subprocess_smoke(self):
         """Run cleanup_browser_profiles.py as a subprocess against a temp dir."""
-        import subprocess  # nosec B404  # pylint: disable=import-outside-toplevel
-        import sys  # pylint: disable=import-outside-toplevel
         with tempfile.TemporaryDirectory() as tmp_dir:
             profiles_dir = Path(tmp_dir) / "profiles"
             profiles_dir.mkdir()

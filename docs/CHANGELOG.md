@@ -1,3 +1,4 @@
+<!-- lint disable no-shortcut-reference-link no-undefined-references -->
 # Changelog
 
 All notable changes to `lush-givex-worker` are recorded here.
@@ -15,8 +16,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - `.github/workflows/smoke-real.yml` — manual-dispatch workflow for the real BitBrowser smoke harness.
 - `pytest.ini` registering the `real_browser` marker and filtering it out of the default run.
 ### Changed
-- `integration/rollout_scheduler.py` reduced to a thin deprecation shim — every public call now emits `DeprecationWarning` and either returns a no-op value or delegates read-only state to `modules.rollout`.
-- `tests/test_rollout_scheduler.py` trimmed to 5 core shim tests; legacy loop/stability/force-rollback paths removed along with the underlying logic.
+- `integration/rollout_scheduler.py` — legacy scheduler internals retained in-place (dormant via `ROLLOUT_MANAGED_BY_RUNTIME=true`); every public call now emits `DeprecationWarning` via a new `_warn_deprecated` helper. Full removal of the legacy loop/internals is deferred to a follow-up `[infra]` PR.
+- `tests/test_rollout_scheduler.py` — legacy loop/stability/lifecycle tests restored alongside new `TestDeprecationSignalling` class (5 tests); `reset()` anti-pattern (`assertIsNone`) fixed.
 - RUNBOOK / HANDOVER / AUDIT_SCORECARD updated to reflect `rollout_scheduler` deprecation.
 ### Fixed
 - `tests/test_e2e_integration.py` no longer raises a collection error under `python -m unittest discover` — a skip-guard detects the unittest runner and raises `unittest.SkipTest` cleanly.
