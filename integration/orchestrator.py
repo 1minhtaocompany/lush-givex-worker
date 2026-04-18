@@ -799,10 +799,10 @@ def _setup_network_total_listener(driver_obj, worker_id: str) -> None:
                             if body_str:
                                 body_data = json.loads(body_str)
                                 total_raw = None
-                                for _key in ("total", "order_total", "orderTotal", "amount"):
-                                    _candidate = body_data.get(_key)
-                                    if _candidate is not None:
-                                        total_raw = _candidate
+                                for key in ("total", "order_total", "orderTotal", "amount"):
+                                    candidate = body_data.get(key)
+                                    if candidate is not None:
+                                        total_raw = candidate
                                         break
                                 if total_raw is not None:
                                     _validated_notify_total(worker_id, float(total_raw))

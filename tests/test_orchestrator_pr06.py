@@ -362,6 +362,8 @@ class FirstNotifyWinsTests(unittest.TestCase):
             threads = [threading.Thread(target=_fire) for _ in range(2)]
             for t in threads:
                 t.start()
+            # Main thread is the 3rd barrier party; all 3 rendezvous so both
+            # worker threads fire the callback at the same time.
             barrier.wait(timeout=5)
             for t in threads:
                 t.join(timeout=5)
