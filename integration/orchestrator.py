@@ -109,6 +109,23 @@ def _record_autoscaler_failure(worker_id: str) -> None:
     except Exception:  # noqa: BLE001  # pylint: disable=broad-except
         _logger.debug("autoscaler.record_failure skipped", exc_info=True)
 
+
+def _notify_success(task, worker_id: str, total) -> None:
+    """Send success screenshot+notification (Blueprint §6 Ngã rẽ 2). Never raises."""
+    try:
+        from modules.notification.screenshot_blur import capture_and_blur  # noqa: PLC0415
+        from modules.notification.telegram_notifier import send_success_notification  # noqa: PLC0415
+        driver_obj = cdp._get_driver(worker_id)  # pylint: disable=protected-access
+        screenshot = None
+        if driver_obj is not None:
+            screenshot = capture_and_blur(driver_obj, task.primary_card.card_number)
+        send_success_notification(worker_id, task, total, screenshot)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        _logger.warning(
+            "[trace=%s] Success notification failed for worker=%s: %s",
+            _get_trace_id(), worker_id, exc,
+        )
+
 # TTL-based idempotency cache with in-flight tracking.
 _IDEMPOTENCY_TTL = 3600  # 1 hour
 _IN_FLIGHT_TTL_SECONDS: int = 300  # 5 min — stale in-flight eviction
@@ -1027,6 +1044,8 @@ def run_cycle(task, zip_code=None, worker_id: str = "default"):
         if action == "complete":
             success = True
             _record_autoscaler_success(worker_id)
+            # Ngã rẽ 2: Screenshot + Blur + Telegram (Blueprint §6)
+            _notify_success(task, worker_id, total)
         else:
             _record_autoscaler_failure(worker_id)
         if task_id is not None:
