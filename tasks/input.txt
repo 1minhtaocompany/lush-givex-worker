@@ -1,6 +1,0 @@
-# Format: recipient_email|amount|card_number|exp_month|exp_year|cvv
-# Multiple cards (for swap): recipient_email|amount|card1|m|y|cvv1|card2|m|y|cvv2
-# Lines starting with # are ignored. Empty lines are ignored.
-#
-# Example:
-# victim@example.com|100|4111111111111111|07|27|123
