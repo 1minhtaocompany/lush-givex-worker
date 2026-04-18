@@ -40,8 +40,8 @@ def _capture_callback(driver):
     """Wire fake_add_listener onto driver; return list whose [0] will hold the callback."""
     captured = [None]
 
-    def fake_add_listener(_event, cb):
-        captured[0] = cb
+    def fake_add_listener(_event, callback):
+        captured[0] = callback
 
     driver.add_cdp_listener = fake_add_listener
     return captured
@@ -68,7 +68,8 @@ class CdpBodyPrimaryTests(unittest.TestCase):
     def tearDown(self):
         _clear_guard()
 
-    def _fire(self, body_dict, request_id="req-001", url="/checkout/total/amounts"):
+    @staticmethod
+    def _fire(body_dict, request_id="req-001", url="/checkout/total/amounts"):
         """Set up listener, fire callback with CDP body, return mock watchdog."""
         driver = _make_driver_with_body(body_dict)
         captured = _capture_callback(driver)
@@ -104,7 +105,8 @@ class CdpBodyPrimaryTests(unittest.TestCase):
         mock_wd = self._fire({"total": 55.00, "amount": 10.00})
         mock_wd.notify_total.assert_called_once_with(_WORKER, 55.00)
 
-    def test_zero_total_is_valid(self):
+    @staticmethod
+    def test_zero_total_is_valid():
         """A body total of 0.0 is finite and must be notified (not skipped as falsy)."""
         driver = _make_driver_with_body({"total": 0.0})
         captured = _capture_callback(driver)
@@ -137,7 +139,8 @@ class CdpBodyFallbackTests(unittest.TestCase):
     def tearDown(self):
         _clear_guard()
 
-    def _fire_and_capture(self, driver, url="/checkout/total/amounts", request_id="req-002"):
+    @staticmethod
+    def _fire_and_capture(driver, url="/checkout/total/amounts", request_id="req-002"):
         """Register listener, fire callback, return mock watchdog."""
         captured = _capture_callback(driver)
         driver.execute_script.return_value = "42.00"
@@ -150,6 +153,7 @@ class CdpBodyFallbackTests(unittest.TestCase):
         """Network.getResponseBody raises → WARNING logged, DOM fallback called."""
         driver = MagicMock()
         # Network.enable succeeds; getResponseBody raises
+
         def cdp_side_effect(cmd, _params=None):
             if cmd == "Network.getResponseBody":
                 raise RuntimeError("CDP body error")
@@ -260,8 +264,8 @@ class CdpBodyFallbackTests(unittest.TestCase):
                 captured[0](params_no_id)
 
         # CDP getResponseBody must NOT have been called (no requestId)
-        for c in driver.execute_cdp_cmd.call_args_list:
-            self.assertNotEqual(c[0][0], "Network.getResponseBody")
+        for call_args in driver.execute_cdp_cmd.call_args_list:
+            self.assertNotEqual(call_args[0][0], "Network.getResponseBody")
 
         driver.execute_script.assert_called_once()
         mock_wd.notify_total.assert_called_once_with(_WORKER, 33.33)
@@ -269,7 +273,8 @@ class CdpBodyFallbackTests(unittest.TestCase):
             any("DOM fallback" in m for m in log_ctx.output),
         )
 
-    def test_dom_fallback_not_called_for_non_matching_url(self):
+    @staticmethod
+    def test_dom_fallback_not_called_for_non_matching_url():
         """Non-matching URL → neither CDP nor DOM reads are triggered."""
         driver = MagicMock()
         driver.execute_script.return_value = "99.99"
@@ -292,7 +297,8 @@ class FirstNotifyWinsTests(unittest.TestCase):
     def tearDown(self):
         _clear_guard()
 
-    def test_cdp_body_wins_over_subsequent_dom_fallback(self):
+    @staticmethod
+    def test_cdp_body_wins_over_subsequent_dom_fallback():
         """CDP body notifies first; a subsequent DOM-fallback call for same worker is a no-op."""
         driver = _make_driver_with_body({"total": 50.00})
         driver.execute_script.return_value = "99.99"  # DOM would give different value
@@ -359,12 +365,12 @@ class FirstNotifyWinsTests(unittest.TestCase):
                 captured[0](_matching_params())
 
             threads = [threading.Thread(target=_fire) for _ in range(2)]
-            for t in threads:
-                t.start()
+            for thread in threads:
+                thread.start()
             # Main thread is the 3rd barrier party; all 3 rendezvous so both
             # worker threads fire the callback at the same time.
             barrier.wait(timeout=5)
-            for t in threads:
-                t.join(timeout=5)
+            for thread in threads:
+                thread.join(timeout=5)
 
         self.assertEqual(notify_count[0], 1, "notify_total must be called exactly once")
