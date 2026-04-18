@@ -10,12 +10,11 @@ Test categories:
   CdpBodyFallbackTests     — body fails/empty/no recognised key → DOM fallback + WARNING log.
   FirstNotifyWinsTests     — first-notify-wins is strictly maintained across both paths.
 """
+# pylint: disable=not-callable  # captured[0] is dynamically assigned a callable
 import json
-import logging
 import threading
-import time
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from integration.orchestrator import (
     _network_listener_lock,
@@ -41,7 +40,7 @@ def _capture_callback(driver):
     """Wire fake_add_listener onto driver; return list whose [0] will hold the callback."""
     captured = [None]
 
-    def fake_add_listener(event, cb):
+    def fake_add_listener(_event, cb):
         captured[0] = cb
 
     driver.add_cdp_listener = fake_add_listener
@@ -90,7 +89,7 @@ class CdpBodyPrimaryTests(unittest.TestCase):
         mock_wd = self._fire({"order_total": 25.50})
         mock_wd.notify_total.assert_called_once_with(_WORKER, 25.50)
 
-    def test_orderTotal_camel_key_notifies_correct_value(self):
+    def test_order_total_camelcase_key_notifies_correct_value(self):
         """'orderTotal' camelCase key in CDP body → notify_total with that value."""
         mock_wd = self._fire({"orderTotal": 30.00})
         mock_wd.notify_total.assert_called_once_with(_WORKER, 30.00)
@@ -151,7 +150,7 @@ class CdpBodyFallbackTests(unittest.TestCase):
         """Network.getResponseBody raises → WARNING logged, DOM fallback called."""
         driver = MagicMock()
         # Network.enable succeeds; getResponseBody raises
-        def cdp_side_effect(cmd, params=None):
+        def cdp_side_effect(cmd, _params=None):
             if cmd == "Network.getResponseBody":
                 raise RuntimeError("CDP body error")
             return MagicMock()
@@ -174,7 +173,7 @@ class CdpBodyFallbackTests(unittest.TestCase):
         """Network.getResponseBody returns empty body → DOM fallback."""
         driver = MagicMock()
 
-        def cdp_side_effect(cmd, params=None):
+        def cdp_side_effect(cmd, _params=None):
             if cmd == "Network.getResponseBody":
                 return {"body": "", "base64Encoded": False}
             return MagicMock()
@@ -195,24 +194,24 @@ class CdpBodyFallbackTests(unittest.TestCase):
         """Network.getResponseBody returns non-dict → DOM fallback."""
         driver = MagicMock()
 
-        def cdp_side_effect(cmd, params=None):
+        def cdp_side_effect(cmd, _params=None):
             if cmd == "Network.getResponseBody":
                 return "not-a-dict"
             return MagicMock()
 
         driver.execute_cdp_cmd.side_effect = cdp_side_effect
 
-        with self.assertLogs("integration.orchestrator", level="WARNING") as log_ctx:
+        with self.assertLogs("integration.orchestrator", level="WARNING"):
             mock_wd, _ = self._fire_and_capture(driver)
 
         driver.execute_script.assert_called_once()
         mock_wd.notify_total.assert_called_once_with(_WORKER, 42.0)
 
     def test_cdp_body_no_recognised_key_falls_back_to_dom(self):
-        """Body parsed successfully but has no total/order_total/orderTotal/amount → DOM fallback."""
+        """No recognised total key in body -> DOM fallback."""
         driver = MagicMock()
 
-        def cdp_side_effect(cmd, params=None):
+        def cdp_side_effect(cmd, _params=None):
             if cmd == "Network.getResponseBody":
                 return {"body": json.dumps({"subtotal": 99.0, "tax": 5.0})}
             return MagicMock()
@@ -232,7 +231,7 @@ class CdpBodyFallbackTests(unittest.TestCase):
         """Body is not valid JSON → parse error → DOM fallback with WARNING."""
         driver = MagicMock()
 
-        def cdp_side_effect(cmd, params=None):
+        def cdp_side_effect(cmd, _params=None):
             if cmd == "Network.getResponseBody":
                 return {"body": "not-json-{{{"}
             return MagicMock()
@@ -314,7 +313,7 @@ class FirstNotifyWinsTests(unittest.TestCase):
         driver = MagicMock()
         driver.execute_script.return_value = "75.00"
 
-        def cdp_side_effect(cmd, params=None):
+        def cdp_side_effect(cmd, _params=None):
             if cmd == "Network.getResponseBody":
                 raise RuntimeError("body unavailable")
             return MagicMock()
@@ -348,7 +347,7 @@ class FirstNotifyWinsTests(unittest.TestCase):
         driver = _make_driver_with_body({"total": 60.00})
         captured = _capture_callback(driver)
 
-        def _fake_notify(wid, val):
+        def _fake_notify(_wid, _val):
             notify_count[0] += 1
 
         with patch("integration.orchestrator.watchdog") as mock_wd:

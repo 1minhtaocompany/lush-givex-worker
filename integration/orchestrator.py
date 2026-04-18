@@ -774,6 +774,7 @@ def _setup_network_total_listener(driver_obj, worker_id: str) -> None:
         add_listener = getattr(driver_obj, "add_cdp_listener", None)
         if callable(add_listener):
             def _on_response(params):
+                # pylint: disable=too-many-nested-blocks
                 try:
                     if not isinstance(params, dict):
                         return
