@@ -7,7 +7,7 @@ import os
 
 import pytest  # pylint: disable=import-error
 
-pytestmark = [
+pytestmark = [  # pylint: disable=invalid-name
     pytest.mark.real_browser,
     pytest.mark.skipif(
         not os.environ.get("BITBROWSER_API_KEY"),
