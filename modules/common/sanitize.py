@@ -91,10 +91,10 @@ def sanitize_error(msg: str) -> str:
     Returns:
         The message with all recognised PII replaced by placeholder tokens.
     """
+    msg = _REDIS_CREDS_RE.sub(r"\1[REDACTED-REDIS-CREDS]\2", msg)
     msg = _PAN_RE.sub("[REDACTED-CARD]", msg)
     msg = _CVV_POST_PAN_RE.sub("[REDACTED-CVV]", msg)
     msg = _CVV_KEYWORD_RE.sub("[REDACTED-CVV]", msg)
-    msg = _REDIS_CREDS_RE.sub(r"\1[REDACTED-REDIS-CREDS]\2", msg)
     msg = _EMAIL_RE.sub("[REDACTED-EMAIL]", msg)
     return msg
 
