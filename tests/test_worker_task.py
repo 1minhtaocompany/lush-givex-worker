@@ -119,10 +119,13 @@ class TestMakeTaskFnSuccess(unittest.TestCase):
         class _TrackingCdp:
             def register_driver(self, w, d):
                 call_order.append("register")
+
             def unregister_driver(self, w):
                 call_order.append("unregister")
+
             def _register_pid(self, w, p):
                 call_order.append("register_pid")
+
             def register_browser_profile(self, w, p):
                 call_order.append("register_profile")
 

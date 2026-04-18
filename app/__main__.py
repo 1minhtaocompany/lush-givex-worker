@@ -12,16 +12,16 @@ existing deployments without forcing an immediate cutover.  Set the flag
 to ``1`` / ``true`` / ``yes`` to activate the production browser lifecycle.
 """
 import logging
-import os
 
 from integration import runtime
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def _make_stub_task_fn():
     """Return a no-op task_fn used when ENABLE_PRODUCTION_TASK_FN is off."""
     def task_fn(worker_id: str) -> None:  # pylint: disable=unused-argument
+        """No-op placeholder invoked for each worker cycle in stub mode."""
         _log.debug(
             "Stub task_fn called for worker %s; "
             "set ENABLE_PRODUCTION_TASK_FN=1 to enable production mode.",

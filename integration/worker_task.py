@@ -16,16 +16,13 @@ Feature flag: ``ENABLE_PRODUCTION_TASK_FN`` (default OFF) — the gate is
 enforced by the caller (``app/__main__.py``).  This module does **not** read
 the flag itself so that tests can import and exercise it freely.
 """
-from __future__ import annotations
-
 import logging
 from typing import Callable, Optional
 
 from modules.cdp import main as cdp
 from modules.cdp.fingerprint import BitBrowserSession, get_bitbrowser_client
-from modules.cdp.proxy import get_default_pool
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def make_task_fn() -> Callable[[str], None]:
@@ -44,6 +41,7 @@ def make_task_fn() -> Callable[[str], None]:
     """
 
     def task_fn(worker_id: str) -> None:
+        """Execute one browser lifecycle cycle for *worker_id*."""
         bb_client = get_bitbrowser_client()
         if bb_client is None:
             raise RuntimeError(
@@ -93,8 +91,9 @@ def _build_remote_driver(webdriver_url: str):
         RuntimeError: if selenium is not installed.
     """
     try:
-        from selenium.webdriver import Remote  # type: ignore[import]  # noqa: PLC0415
-        from selenium.webdriver.common.desired_capabilities import (  # type: ignore[import]  # noqa: PLC0415
+        # pylint: disable=import-outside-toplevel
+        from selenium.webdriver import Remote  # type: ignore[import]
+        from selenium.webdriver.common.desired_capabilities import (  # type: ignore[import]
             DesiredCapabilities,
         )
         capabilities = dict(DesiredCapabilities.CHROME)
