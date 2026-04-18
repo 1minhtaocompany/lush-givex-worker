@@ -895,7 +895,7 @@ class TestMaxMindGeoLookup(unittest.TestCase):
         def _fake_import(name):
             if name == "geoip2.database":
                 raise ImportError("geoip2 missing")
-            return unittest.mock.DEFAULT
+            raise AssertionError(f"unexpected import: {name}")
 
         with patch("modules.cdp.driver.os.path.exists", return_value=True), \
              patch("modules.cdp.driver.importlib.import_module", side_effect=_fake_import):
@@ -955,7 +955,7 @@ class TestMaxMindZipLookup(unittest.TestCase):
         def _fake_import(name):
             if name == "geoip2.database":
                 raise ImportError("geoip2 missing")
-            return unittest.mock.DEFAULT
+            raise AssertionError(f"unexpected import: {name}")
 
         with patch("modules.cdp.driver.os.path.exists", return_value=True), \
              patch("modules.cdp.driver.importlib.import_module", side_effect=_fake_import):

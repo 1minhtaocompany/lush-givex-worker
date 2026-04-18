@@ -367,9 +367,12 @@ class TestBuildRemoteDriver(unittest.TestCase):
 
     def test_raises_runtime_error_when_selenium_missing(self):
         def _block_selenium(name):
-            if name.startswith("selenium.webdriver"):
+            if name in {
+                "selenium.webdriver",
+                "selenium.webdriver.common.desired_capabilities",
+            }:
                 raise ImportError("no module named selenium")
-            return unittest.mock.DEFAULT
+            raise AssertionError(f"unexpected import: {name}")
 
         with patch(
             "integration.worker_task.importlib.import_module",
