@@ -108,9 +108,10 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
                 if task_source is not None:
                     task = task_source(worker_id)
                     if task is not None:
-                        run_cycle = importlib.import_module(
+                        orchestrator_module = importlib.import_module(
                             "integration.orchestrator"
-                        ).run_cycle
+                        )
+                        run_cycle = orchestrator_module.run_cycle
                         run_cycle(task, zip_code=zip_code, worker_id=worker_id)
                 else:
                     _log.debug(
