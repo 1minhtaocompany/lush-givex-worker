@@ -6,25 +6,15 @@
 _CDP_NETWORK_URL_PATTERNS = ("/checkout/total", "/api/tax", "/api/checkout", "cws4.0")
 ```
 
-## Pattern inventory
-
-| Pattern | Rationale | Covers required endpoint? |
+| Pattern | Rationale | Required endpoint coverage |
 |---|---|---|
-| `"/checkout/total"` | Matches any URL containing `/checkout/total`, including `/api/checkout/total` | ✓ `/api/checkout/total` |
-| `"/api/tax"` | Exact substring for the tax calculation endpoint | ✓ `/api/tax` |
-| `"/api/checkout"` | Matches `/api/checkout` and `/api/checkout/total` as prefix | ✓ `/api/checkout/total` (redundant coverage) |
-| `"cws4.0"` | Matches the Givex base domain path `wwws-usa2.givex.com/cws4.0/…` | ✓ all Givex endpoints |
+| `/checkout/total` | substring match for `/api/checkout/total` | ✓ `/api/checkout/total` |
+| `/api/tax` | exact substring for tax endpoint | ✓ `/api/tax` |
+| `/api/checkout` | prefix covering checkout endpoints | ✓ (redundant) |
+| `cws4.0` | Givex base domain path | ✓ all Givex URLs |
 
-## Coverage analysis
+`/api/checkout/total` and `/api/tax` are both covered. No gaps.
 
-- **`/api/checkout/total`** — covered by both `"/checkout/total"` (substring match)
-  and `"/api/checkout"` (prefix match).  **COVERED**.
-- **`/api/tax`** — covered by exact match `"/api/tax"`.  **COVERED**.
+Lock-in test: `tests/verification/test_cdp_url_patterns.py` asserts exact membership.
 
-No gaps identified. The four patterns provide overlapping coverage ensuring the
-Total Watchdog fires on any Givex checkout/tax response.
-
-Lock-in test: `tests/verification/test_cdp_url_patterns.py`.
-
-**U-05 verdict: CLEARED** — all required endpoint patterns present with correct
-substring coverage.
+**Verdict: CLEARED.**
