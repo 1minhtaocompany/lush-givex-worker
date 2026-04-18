@@ -4,6 +4,11 @@ import os
 import unittest
 from unittest.mock import patch
 
+# Tests legitimately access module internals (_pool_dir) and use hardcoded
+# /tmp test paths to validate the production-mode guard. They are not
+# performing any real filesystem operation under /tmp.
+# pylint: disable=protected-access
+
 from modules.billing import main as billing
 from modules.fsm.main import (
     add_new_state,
@@ -21,7 +26,8 @@ from modules.fsm.main import (
 class TestFsmLegacyGateDisabled(unittest.TestCase):
     """Legacy FSM calls raise RuntimeError when FSM_ALLOW_LEGACY is not enabled."""
 
-    def _clear_legacy_flag(self):
+    @staticmethod
+    def _clear_legacy_flag():
         """Return an env dict without FSM_ALLOW_LEGACY set."""
         return {k: v for k, v in os.environ.items() if k != "FSM_ALLOW_LEGACY"}
 
@@ -114,7 +120,7 @@ class TestBillingTmpGuardProduction(unittest.TestCase):
 
     def test_tmp_path_rejected_in_production(self):
         """/tmp/... BILLING_POOL_DIR falls back to default billing_pool in production."""
-        with patch.dict(os.environ, {"BILLING_POOL_DIR": "/tmp/billing"}):
+        with patch.dict(os.environ, {"BILLING_POOL_DIR": "/tmp/billing"}):  # nosec B108
             with self.assertLogs("modules.billing.main", level="WARNING") as log_ctx:
                 result = billing._pool_dir()
         self.assertTrue(str(result).endswith("billing_pool"))
@@ -123,7 +129,7 @@ class TestBillingTmpGuardProduction(unittest.TestCase):
 
     def test_tmp_root_itself_rejected_in_production(self):
         """Bare /tmp as BILLING_POOL_DIR is also rejected in production."""
-        with patch.dict(os.environ, {"BILLING_POOL_DIR": "/tmp"}):
+        with patch.dict(os.environ, {"BILLING_POOL_DIR": "/tmp"}):  # nosec B108
             with self.assertLogs("modules.billing.main", level="WARNING") as log_ctx:
                 result = billing._pool_dir()
         self.assertTrue(str(result).endswith("billing_pool"))
@@ -140,7 +146,7 @@ class TestBillingTmpGuardProduction(unittest.TestCase):
         """ENABLE_PRODUCTION_TASK_FN=true also rejects /tmp."""
         with patch.dict(
             os.environ,
-            {"ENABLE_PRODUCTION_TASK_FN": "true", "BILLING_POOL_DIR": "/tmp/x"},
+            {"ENABLE_PRODUCTION_TASK_FN": "true", "BILLING_POOL_DIR": "/tmp/x"},  # nosec B108
         ):
             with self.assertLogs("modules.billing.main", level="WARNING") as log_ctx:
                 result = billing._pool_dir()
@@ -152,13 +158,14 @@ class TestBillingTmpGuardProduction(unittest.TestCase):
 class TestBillingTmpGuardNonProduction(unittest.TestCase):
     """/tmp BILLING_POOL_DIR remains usable outside production mode (dev/test)."""
 
-    def _clear_prod_flag(self):
+    @staticmethod
+    def _clear_prod_flag():
         return {k: v for k, v in os.environ.items() if k != "ENABLE_PRODUCTION_TASK_FN"}
 
     def test_tmp_path_allowed_in_dev_mode(self):
         """/tmp/... BILLING_POOL_DIR is accepted when ENABLE_PRODUCTION_TASK_FN is off."""
         with patch.dict(os.environ, self._clear_prod_flag(), clear=True):
-            with patch.dict(os.environ, {"BILLING_POOL_DIR": "/tmp/billing_test"}):
+            with patch.dict(os.environ, {"BILLING_POOL_DIR": "/tmp/billing_test"}):  # nosec B108
                 result = billing._pool_dir()
         self.assertEqual(str(result), "/tmp/billing_test")
 
@@ -166,7 +173,7 @@ class TestBillingTmpGuardNonProduction(unittest.TestCase):
         """/tmp/... is accepted when ENABLE_PRODUCTION_TASK_FN=0."""
         with patch.dict(
             os.environ,
-            {"ENABLE_PRODUCTION_TASK_FN": "0", "BILLING_POOL_DIR": "/tmp/billing_dev"},
+            {"ENABLE_PRODUCTION_TASK_FN": "0", "BILLING_POOL_DIR": "/tmp/billing_dev"},  # nosec B108
         ):
             result = billing._pool_dir()
         self.assertEqual(str(result), "/tmp/billing_dev")
