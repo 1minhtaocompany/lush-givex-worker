@@ -1061,9 +1061,9 @@ def handle_outcome(state, order_queue, worker_id: str = "default", ctx=None):
         ctx.record_swap()
         if state.name == "vbv_cancelled":
             try:
-                driver_obj = cdp._get_driver(worker_id)  # pylint: disable=protected-access
-                if is_payment_page_reloaded(driver_obj):
-                    refill_after_vbv_reload(driver_obj, ctx, next_card)
+                driver = cdp._get_driver(worker_id)  # pylint: disable=protected-access
+                if is_payment_page_reloaded(driver):
+                    refill_after_vbv_reload(driver, ctx, next_card)
             except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
                 _logger.warning(
                     "[trace=%s] VBV reload refill failed for worker=%s: %s",
@@ -1076,11 +1076,11 @@ def handle_outcome(state, order_queue, worker_id: str = "default", ctx=None):
         return "retry"
     if state.name == "vbv_3ds":
         try:
-            driver_obj = cdp._get_driver(worker_id)  # pylint: disable=protected-access
-            cancelled = driver_obj.handle_vbv_challenge()
+            driver = cdp._get_driver(worker_id)  # pylint: disable=protected-access
+            cancelled = driver.handle_vbv_challenge()
             if cancelled:
                 try:
-                    driver_obj.detect_page_state()
+                    driver.detect_page_state()
                 except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
                     # Post-cancel page transitions can briefly invalidate selectors;
                     # the swap/refill path is still safe to proceed after a successful

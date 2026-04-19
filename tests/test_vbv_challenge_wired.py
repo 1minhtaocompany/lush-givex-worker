@@ -75,7 +75,7 @@ class TestVbvChallengeWiring(unittest.TestCase):
 
         self.assertEqual(action, "await_3ds")
 
-    def test_vbv_dynamic_wait_happens_before_iframe_click(self):
+    def test_vbv_challenge_enforces_wait_before_click_sequence(self):
         driver = MagicMock()
         gd = GivexDriver(driver)
         order = []
