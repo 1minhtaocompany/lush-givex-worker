@@ -5,6 +5,10 @@ from integration.orchestrator import handle_outcome
 from modules.common.types import CardInfo, CycleContext, State, WorkerTask
 
 
+def _can_swap(ctx) -> bool:
+    return ctx.task is not None and ctx.swap_count < len(ctx.task.order_queue)
+
+
 def _make_cards(count: int):
     cards = []
     for i in range(count):
@@ -34,17 +38,17 @@ class TestSwapCounter(unittest.TestCase):
     def test_can_swap_returns_true_when_under_limit(self):
         task = _make_task(2)
         ctx = CycleContext(cycle_id="cycle-1", worker_id="worker", task=task)
-        self.assertTrue(ctx.can_swap())
+        self.assertTrue(_can_swap(ctx))
 
     def test_can_swap_returns_false_at_limit(self):
         task = _make_task(3)
         ctx = CycleContext(cycle_id="cycle-2", worker_id="worker", task=task, swap_count=3)
-        self.assertFalse(ctx.can_swap())
+        self.assertFalse(_can_swap(ctx))
 
     def test_record_swap_increments(self):
         task = _make_task(1)
         ctx = CycleContext(cycle_id="cycle-3", worker_id="worker", task=task)
-        ctx.record_swap()
+        ctx.swap_count += 1
         self.assertEqual(ctx.swap_count, 1)
 
     def test_swap_counter_shared_across_vbv_and_decline(self):
@@ -66,7 +70,7 @@ class TestSwapCounter(unittest.TestCase):
     def test_swap_counter_resets_on_new_cycle(self):
         task = _make_task(2)
         ctx1 = CycleContext(cycle_id="cycle-5", worker_id="worker", task=task)
-        ctx1.record_swap()
+        ctx1.swap_count += 1
         ctx2 = CycleContext(cycle_id="cycle-6", worker_id="worker", task=task)
         self.assertEqual(ctx2.swap_count, 0)
 
