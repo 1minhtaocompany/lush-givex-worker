@@ -324,7 +324,7 @@ def get_worker_state(worker_id: str) -> "WorkerBillingState":
         # Ensure master pool is available before creating worker state.
         _ensure_master_pool_loaded()
         profiles = list(_MASTER_POOL)
-        rng = random.Random(hash(worker_id) ^ id(worker_id))
+        rng = random.Random(hash(worker_id))
         rng.shuffle(profiles)
         state = WorkerBillingState(profiles=profiles, rng=rng)
         _WORKER_STATES[worker_id] = state

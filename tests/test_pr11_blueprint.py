@@ -389,6 +389,25 @@ class TestPerWorkerBillingState(unittest.TestCase):
 class TestCycleContextBillingLock(unittest.TestCase):
     """CycleContext keeps billing profile constant across card-swap retries."""
 
+    def setUp(self):
+        """Clear idempotency store before each test to prevent cross-test contamination."""
+        try:
+            from integration.orchestrator import (  # noqa: PLC0415
+                _idempotency_lock,
+                _submitted_task_ids,
+                _in_flight_task_ids,
+                _completed_task_ids,
+            )
+            with _idempotency_lock:
+                _submitted_task_ids.clear()
+                _in_flight_task_ids.clear()
+                _completed_task_ids.clear()
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    def tearDown(self):
+        self.setUp()  # clear again after test
+
     @staticmethod
     def _make_task(task_id=None):
         from modules.common.types import CardInfo, WorkerTask  # noqa: PLC0415
@@ -473,13 +492,12 @@ class TestCycleContextBillingLock(unittest.TestCase):
         def capture_preflight_and_fill(_task, profile, **_kwargs):
             profiles_used.append(profile)
 
-        # Use a fresh task for each "retry" (different task_id per attempt to
-        # avoid the idempotency store blocking re-execution in the test).
-        tasks = [self._make_task(task_id=f"retry-task-{i}") for i in range(3)]
+        # Use unique UUID-based task IDs to guarantee no idempotency-store collision.
+        tasks = [self._make_task(task_id=uuid.uuid4().hex) for _ in range(3)]
 
         ctx = CycleContext(
             cycle_id=uuid.uuid4().hex,
-            worker_id="billing-lock-worker",
+            worker_id="billing-lock-worker-" + uuid.uuid4().hex[:8],
             zip_code="90210",
         )
 
@@ -498,7 +516,7 @@ class TestCycleContextBillingLock(unittest.TestCase):
                 type("State", (), {"name": "success"})()
 
             for task in tasks:
-                run_cycle(task, zip_code="90210", worker_id="billing-lock-worker", ctx=ctx)
+                run_cycle(task, zip_code="90210", worker_id=ctx.worker_id, ctx=ctx)
 
         self.assertEqual(len(profiles_used), 3)
         for p in profiles_used:

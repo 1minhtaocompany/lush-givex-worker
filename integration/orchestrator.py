@@ -1084,8 +1084,10 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None):
 
     # Select billing profile once per ctx — reuse on card-swap retries.
     if ctx.billing_profile is None:
+        # Prefer zip_code from ctx if set, otherwise use the argument.
+        effective_zip = ctx.zip_code if ctx.zip_code is not None else zip_code
         ctx.billing_profile = billing.select_profile(
-            ctx.zip_code if ctx.zip_code is not None else zip_code,
+            effective_zip,
             worker_id=worker_id,
         )
 
