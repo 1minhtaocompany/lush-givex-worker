@@ -36,9 +36,7 @@ class TestVbvFullRefill(unittest.TestCase):
         driver = MagicMock()
         new_card = _make_card("4000000000000002")
 
-        with patch("integration.orchestrator.fill_billing_fields"), \
-             patch("integration.orchestrator.fill_card_fields"):
-            refill_after_vbv_reload(driver, ctx, new_card)
+        refill_after_vbv_reload(driver, ctx, new_card)
 
         self.assertIs(ctx.billing_profile, billing)
 
@@ -68,12 +66,10 @@ class TestVbvFullRefill(unittest.TestCase):
         driver = MagicMock()
         new_card = _make_card("4000000000000002")
 
-        with patch("integration.orchestrator.fill_billing_fields") as mock_billing, \
-             patch("integration.orchestrator.fill_card_fields") as mock_card:
-            refill_after_vbv_reload(driver, ctx, new_card)
+        refill_after_vbv_reload(driver, ctx, new_card)
 
-        mock_billing.assert_called_once_with(driver, billing)
-        mock_card.assert_called_once_with(driver, new_card)
+        driver.fill_billing.assert_called_once_with(billing)
+        driver.fill_card_fields.assert_called_once_with(new_card)
 
 
 if __name__ == "__main__":

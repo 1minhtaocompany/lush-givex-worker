@@ -81,7 +81,7 @@ class CycleContext:
     constant while only the card fields change.
 
     ``swap_count`` tracks how many card swaps have occurred in the cycle and is
-    capped by the number of cards in the task's order queue.
+    incremented by the orchestrator on each card swap.
 
     A new :class:`CycleContext` must be created for every fully new cycle (new
     order / new worker run).
@@ -89,25 +89,8 @@ class CycleContext:
 
     cycle_id: str
     worker_id: str
-    task: Optional[WorkerTask] = None
     billing_profile: Optional[BillingProfile] = None
     zip_code: Optional[str] = None
     card_attempts: int = 0
+    task: Optional[WorkerTask] = None
     swap_count: int = 0
-
-    @property
-    def swap_limit(self) -> int:
-        return len(self.task.order_queue) if self.task is not None else 0
-
-    def can_swap(self) -> bool:
-        return self.swap_count < self.swap_limit
-
-    def record_swap(self) -> None:
-        self.swap_count += 1
-
-    def next_swap_card(self) -> CardInfo | None:
-        if self.task is None:
-            return None
-        if self.swap_count >= len(self.task.order_queue):
-            return None
-        return self.task.order_queue[self.swap_count]

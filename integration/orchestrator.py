@@ -984,60 +984,40 @@ def run_payment_step(task, zip_code=None, worker_id: str = "default", _profile=N
     return state, total
 
 
+def _ctx_next_swap_card(ctx):
+    if ctx.task is None or ctx.swap_count >= len(ctx.task.order_queue):
+        return None
+    return ctx.task.order_queue[ctx.swap_count]
+
+
 def is_payment_page_reloaded(driver) -> bool:
-    """Detect if the payment page has been re-rendered after VBV cancel."""
+    """True if billing field is missing/empty after VBV cancel."""
     try:
         from modules.cdp.driver import SEL_BILLING_ADDRESS  # noqa: PLC0415
-        if hasattr(driver, "find_elements"):
-            elements = driver.find_elements(SEL_BILLING_ADDRESS)
-            if not elements:
-                return True
-            addr_value = elements[0].get_attribute("value")
-        else:
-            element = driver.find_element("css selector", SEL_BILLING_ADDRESS)
-            addr_value = element.get_attribute("value")
-        return not addr_value
+        elements = driver.find_elements(SEL_BILLING_ADDRESS)
+        return not elements or not elements[0].get_attribute("value")
     except Exception:
         return True
 
 
-def fill_billing_fields(driver, billing_profile) -> None:
-    """Fill billing fields with the provided billing profile."""
-    try:
-        driver.fill_billing(billing_profile)
-    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
-        _logger.warning("fill_billing_fields failed: %s", _sanitize_error(exc))
-
-
-def fill_card_fields(driver, card_info) -> None:
-    """Fill card fields (card name, number, expiry, CVV) only."""
-    try:
-        driver.fill_card_fields(card_info)
-    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
-        _logger.warning("fill_card_fields failed: %s", _sanitize_error(exc))
-
-
 def refill_after_vbv_reload(driver, ctx, new_card) -> None:
-    """Refill all fields (billing + card) after VBV cancel reload."""
+    """Refill billing + card fields after a VBV cancel reload."""
     if ctx.billing_profile is None:
         _logger.warning("refill_after_vbv_reload skipped: billing_profile missing")
         return
-    fill_billing_fields(driver, ctx.billing_profile)
-    fill_card_fields(driver, new_card)
+    try:
+        driver.fill_billing(ctx.billing_profile)
+        driver.fill_card_fields(new_card)
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
+        _logger.warning("refill_after_vbv_reload failed: %s", _sanitize_error(exc))
 
 
 def handle_outcome(state, order_queue, worker_id: str = "default", ctx=None):
     """Determine the next action based on the current FSM state.
 
-    Args:
-        state: Current State object (or None if FSM was never transitioned).
-        order_queue: Remaining cards available for swap.
-        worker_id: Unique identifier for this worker (used for log context).
-        ctx: Optional CycleContext tracking swap counts across retries.
-
-    Returns:
-        One of: "complete", "retry", "await_3ds", "abort_cycle", or
-        ("retry_new_card", CardInfo) when a swap is available.
+    Returns one of: "complete", "retry", "await_3ds", "abort_cycle", or
+    ("retry_new_card", CardInfo) when a swap is available. ``ctx`` is an
+    optional :class:`CycleContext` tracking swap counts across retries.
     """
     if state is None:
         _logger.warning(
@@ -1053,56 +1033,33 @@ def handle_outcome(state, order_queue, worker_id: str = "default", ctx=None):
     if state.name in ("declined", "vbv_cancelled"):
         if ctx is None:
             return "retry_new_card" if order_queue else "retry"
-        if not ctx.can_swap():
-            return "abort_cycle"
-        next_card = ctx.next_swap_card()
+        next_card = _ctx_next_swap_card(ctx)
         if next_card is None:
             return "abort_cycle"
-        ctx.record_swap()
+        ctx.swap_count += 1
         if state.name == "vbv_cancelled":
             try:
                 driver = cdp._get_driver(worker_id)  # pylint: disable=protected-access
                 if is_payment_page_reloaded(driver):
                     refill_after_vbv_reload(driver, ctx, next_card)
             except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
-                _logger.warning(
-                    "[trace=%s] VBV reload refill failed for worker=%s: %s",
-                    _get_trace_id(),
-                    worker_id,
-                    _sanitize_error(exc),
-                )
+                _logger.warning("VBV reload refill failed: %s", _sanitize_error(exc))
         return ("retry_new_card", next_card)
     if state.name == "ui_lock":
         return "retry"
     if state.name == "vbv_3ds":
         try:
             driver = cdp._get_driver(worker_id)  # pylint: disable=protected-access
-            cancelled = driver.handle_vbv_challenge()
-            if cancelled:
-                try:
-                    driver.detect_page_state()
-                except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
-                    # Post-cancel page transitions can briefly invalidate selectors;
-                    # the swap/refill path is still safe to proceed after a successful
-                    # cancel attempt, so log and continue.
-                    _logger.warning(
-                        "[trace=%s] VBV cancel detect_page_state failed for worker=%s: %s",
-                        _get_trace_id(),
-                        worker_id,
-                        _sanitize_error(exc),
-                    )
+            if driver.handle_vbv_challenge():
+                driver.detect_page_state()
                 return handle_outcome(
-                    State("vbv_cancelled"),
-                    order_queue,
-                    worker_id=worker_id,
-                    ctx=ctx,
+                    State("vbv_cancelled"), order_queue,
+                    worker_id=worker_id, ctx=ctx,
                 )
         except Exception as exc:
             _logger.warning(
                 "[trace=%s] VBV challenge handling failed for worker=%s: %s",
-                _get_trace_id(),
-                worker_id,
-                _sanitize_error(exc),
+                _get_trace_id(), worker_id, _sanitize_error(exc),
             )
         return "await_3ds"
     return "retry"
