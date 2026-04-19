@@ -12,7 +12,7 @@ from modules.common.exceptions import (
     InvalidTransitionError,
     SessionFlaggedError,
 )
-from modules.common.types import CardInfo, State, WorkerTask
+from modules.common.types import CardInfo, CycleContext, State, WorkerTask
 from modules.fsm.main import (
     cleanup_worker,
     get_current_state_for_worker,
@@ -55,6 +55,10 @@ def _make_task(order_queue=None):
         primary_card=card,
         order_queue=tuple(order_queue) if order_queue else (),
     )
+
+
+def _action_name(action):
+    return action[0] if isinstance(action, tuple) else action
 
 
 class InitializeCycleTests(unittest.TestCase):
@@ -102,8 +106,17 @@ class HandleOutcomeTests(unittest.TestCase):
         self.assertEqual(handle_outcome(State("success"), []), "complete")
 
     def test_declined_with_queue_returns_retry_new_card(self):
-        queue = [MagicMock()]
-        self.assertEqual(handle_outcome(State("declined"), queue), "retry_new_card")
+        queue_card = CardInfo(
+            card_number="4000000000000002",
+            exp_month="07",
+            exp_year="27",
+            cvv="123",
+        )
+        task = _make_task(order_queue=[queue_card])
+        ctx = CycleContext(cycle_id="cycle-1", worker_id="default", task=task)
+        action = handle_outcome(State("declined"), task.order_queue, ctx=ctx)
+        self.assertEqual(_action_name(action), "retry_new_card")
+        self.assertIs(action[1], task.order_queue[0])
 
     def test_declined_empty_queue_returns_retry(self):
         self.assertEqual(handle_outcome(State("declined"), []), "retry")

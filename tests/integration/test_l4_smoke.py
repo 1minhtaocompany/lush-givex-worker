@@ -66,6 +66,7 @@ from modules.fsm.main import cleanup_worker, reset_registry  # noqa: E402  pylin
 from _integration_harness import (  # noqa: E402  pylint: disable=wrong-import-position,wrong-import-order
     _IntegrationBase,
     _StubGivexDriver,
+    _action_name,
     _make_task,
     make_mock_billing,
 )
@@ -243,7 +244,7 @@ class TestL4SmokeSuite(_IntegrationBase, unittest.TestCase):
             task_id="l4-smoke-decline-001",
         )
         self.assertIn(
-            action, ("retry", "retry_new_card"),
+            _action_name(action), ("retry", "retry_new_card"),
             f"L4 decline: expected retry action, got '{action}'",
         )
         self.assertIsNotNone(state, "L4 decline: state must not be None")
@@ -289,7 +290,7 @@ class TestL4SmokeSuite(_IntegrationBase, unittest.TestCase):
             driver_calls=stub.calls,
             clear_card_fields_called=("clear_card_fields" in stub.calls),
         )
-        self.assertEqual(action, "await_3ds",
+        self.assertEqual(_action_name(action), "await_3ds",
                          f"L4 VBV/3DS: expected action='await_3ds', got '{action}'")
         self.assertIsNotNone(state, "L4 VBV/3DS: state must not be None")
         self.assertEqual(state.name, "vbv_3ds",

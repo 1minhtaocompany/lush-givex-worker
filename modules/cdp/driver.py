@@ -11,6 +11,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import os
+import random as _random
 import re as _re
 import secrets
 import socket
@@ -32,6 +33,17 @@ try:
     from selenium.webdriver.common.action_chains import ActionChains as _ActionChains  # type: ignore[import]
 except ImportError:  # pragma: no cover - only used as fallback in _ghost_move_to
     _ActionChains = None  # type: ignore[assignment,misc]
+
+try:
+    from selenium.webdriver.common.by import By  # type: ignore[import]
+    from selenium.webdriver.support.ui import WebDriverWait  # type: ignore[import]
+    from selenium.webdriver.support import expected_conditions as EC  # type: ignore[import]
+    from selenium.common.exceptions import TimeoutException  # type: ignore[import]
+except ImportError:  # pragma: no cover - selenium always present in prod
+    By = None  # type: ignore[assignment,misc]
+    WebDriverWait = None  # type: ignore[assignment,misc]
+    EC = None  # type: ignore[assignment,misc]
+    TimeoutException = Exception  # type: ignore[assignment,misc]
 
 try:
     from modules.cdp.mouse import GhostCursor as _GhostCursor
@@ -309,7 +321,11 @@ SEL_UI_LOCK_SPINNER = ".loading-overlay, .spinner, div[aria-busy='true']"
 SEL_VBV_IFRAME      = "iframe[src*='3dsecure'], iframe[src*='adyen'], iframe[id*='threeds']"
 SEL_VBV_CANCEL_BTN  = "button[id*='cancel'], a[id*='cancel'], button[id*='return'], a[id*='return']"
 SEL_POPUP_CLOSE_BTN = "button.modal-close, button[aria-label='Close'], .modal button[type='button']"
+SEL_POPUP_SOMETHING_WRONG = ".modal, .popup, .dialog, .alert, .error-modal"
+SEL_POPUP_CLOSE = SEL_POPUP_CLOSE_BTN
 SEL_NEUTRAL_DIV     = "body"
+
+_VBV_DYNAMIC_WAIT_RANGE = (8.0, 12.0)
 
 _GREETINGS = [
     "Happy gifting!",
@@ -627,6 +643,94 @@ def handle_ui_lock_focus_shift(driver, neutral_xy=(20, 20)) -> bool:
         return True
     except Exception as exc:  # pylint: disable=broad-except
         _log.warning("focus_shift_retry failed: %s", exc)
+        return False
+
+
+def vbv_dynamic_wait(rng: _random.Random | None = None) -> float:
+    """Wait 8–12s for VBV iframe to fully load. Blueprint §6 Ngã rẽ 3.
+
+    Pure sleep with no DOM interaction. Returns the actual sleep duration.
+    """
+    rng = rng or _random
+    duration = rng.uniform(*_VBV_DYNAMIC_WAIT_RANGE)
+    time.sleep(duration)
+    return duration
+
+
+def cdp_click_iframe_element(
+        driver, iframe_selector: str, element_selector: str,
+        rng: _random.Random | None = None,
+) -> tuple[float, float]:
+    """Click element inside iframe via CDP absolute coordinates.
+
+    Blueprint §6 Ngã rẽ 3 — dispatch via Input.dispatchMouseEvent so the event
+    isTrusted=True and bypasses iframe sandbox restrictions.
+    """
+    rng = rng or _random
+    base_driver = getattr(driver, "_driver", driver)
+    selector_by = By.CSS_SELECTOR if By is not None else "css selector"
+    iframe = base_driver.find_element(selector_by, iframe_selector)
+    base_driver.switch_to.frame(iframe)
+    elem = base_driver.find_element(selector_by, element_selector)
+    elem_rect = base_driver.execute_script(
+        "const r = arguments[0].getBoundingClientRect();"
+        "return {left: r.left, top: r.top, width: r.width, height: r.height};",
+        elem,
+    )
+    base_driver.switch_to.default_content()
+    iframe_rect = base_driver.execute_script(
+        "const r = arguments[0].getBoundingClientRect();"
+        "return {left: r.left, top: r.top};",
+        iframe,
+    )
+    offset_x = rng.uniform(-15, 15)
+    offset_y = rng.uniform(-5, 5)
+    abs_x = iframe_rect["left"] + elem_rect["left"] + elem_rect["width"] / 2 + offset_x
+    abs_y = iframe_rect["top"] + elem_rect["top"] + elem_rect["height"] / 2 + offset_y
+    for event_type in ("mousePressed", "mouseReleased"):
+        base_driver.execute_cdp_cmd(
+            "Input.dispatchMouseEvent",
+            {"type": event_type, "x": abs_x, "y": abs_y, "button": "left", "clickCount": 1},
+        )
+    return abs_x, abs_y
+
+
+def handle_something_wrong_popup(driver, timeout: float = 2.0) -> bool:
+    """Click Close on the 'Something went wrong' popup if present.
+
+    Blueprint §6 Ngã rẽ 3: must click Close (no DOM mutation) to allow the
+    UI framework to reset state cleanly.
+    """
+    base_driver = getattr(driver, "_driver", driver)
+    selector_by = By.CSS_SELECTOR if By is not None else "css selector"
+    if WebDriverWait is not None and EC is not None and By is not None:
+        try:
+            WebDriverWait(base_driver, timeout).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, SEL_POPUP_SOMETHING_WRONG))
+            )
+        except TimeoutException:
+            return False
+    else:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                if base_driver.find_elements(selector_by, SEL_POPUP_SOMETHING_WRONG):
+                    break
+            except Exception:
+                pass
+            time.sleep(0.05)
+        else:
+            return False
+    try:
+        close_btn = base_driver.find_element(selector_by, SEL_POPUP_CLOSE)
+        clicker = getattr(driver, "bounding_box_click", None)
+        if callable(clicker):
+            clicker(SEL_POPUP_CLOSE)
+        else:
+            close_btn.click()
+        return True
+    except Exception as exc:  # pylint: disable=broad-except
+        _log.warning("popup close failed: %s", exc)
         return False
 
 
@@ -1213,6 +1317,19 @@ class GivexDriver:
 
     # ── Payment & Billing (Step 4 — same page) ──────────────────────────────
 
+    def fill_card_fields(self, card_info) -> None:
+        """Fill card payment fields only (card name, number, expiry, CVV)."""
+        self._realistic_type_field(SEL_CARD_NAME, card_info.card_name, field_kind="name")
+        self._realistic_type_field(
+            SEL_CARD_NUMBER,
+            card_info.card_number,
+            use_burst=True,
+            field_kind="card_number",
+        )
+        self._cdp_select_option(SEL_CARD_EXPIRY_MONTH, card_info.exp_month)
+        self._cdp_select_option(SEL_CARD_EXPIRY_YEAR, card_info.exp_year)
+        self._realistic_type_field(SEL_CARD_CVV, card_info.cvv, field_kind="cvv")
+
     def fill_payment_and_billing(self, card_info, billing_profile) -> None:
         """Fill both card payment fields and billing address fields.
 
@@ -1225,11 +1342,7 @@ class GivexDriver:
         """
         if self._sm is not None:
             self._sm.transition("PAYMENT")
-        self._realistic_type_field(SEL_CARD_NAME, card_info.card_name, field_kind="name")
-        self._realistic_type_field(SEL_CARD_NUMBER, card_info.card_number, use_burst=True, field_kind="card_number")
-        self._cdp_select_option(SEL_CARD_EXPIRY_MONTH, card_info.exp_month)
-        self._cdp_select_option(SEL_CARD_EXPIRY_YEAR, card_info.exp_year)
-        self._realistic_type_field(SEL_CARD_CVV, card_info.cvv, field_kind="cvv")
+        self.fill_card_fields(card_info)
         # Billing section
         self._cdp_type_field(SEL_BILLING_ADDRESS, billing_profile.address)
         self._cdp_select_option(SEL_BILLING_COUNTRY, billing_profile.country)
@@ -1277,18 +1390,53 @@ class GivexDriver:
         self._hesitate_before_submit()
         self.bounding_box_click(SEL_COMPLETE_PURCHASE)
 
+    def clear_card_fields_cdp(self) -> None:
+        """Clear card number + CVV via CDP Ctrl+A + Backspace."""
+        for selector in (SEL_CARD_NUMBER, SEL_CARD_CVV):
+            try:
+                elements = self.find_elements(selector)
+                if not elements:
+                    continue
+                self.bounding_box_click(selector)
+                for event in (
+                    {
+                        "type": "keyDown",
+                        "modifiers": 2,
+                        "key": "a",
+                        "code": "KeyA",
+                        "windowsVirtualKeyCode": 65,
+                        "nativeVirtualKeyCode": 65,
+                    },
+                    {
+                        "type": "keyUp",
+                        "modifiers": 2,
+                        "key": "a",
+                        "code": "KeyA",
+                        "windowsVirtualKeyCode": 65,
+                        "nativeVirtualKeyCode": 65,
+                    },
+                    {
+                        "type": "keyDown",
+                        "key": "Backspace",
+                        "code": "Backspace",
+                        "windowsVirtualKeyCode": 8,
+                        "nativeVirtualKeyCode": 8,
+                    },
+                    {
+                        "type": "keyUp",
+                        "key": "Backspace",
+                        "code": "Backspace",
+                        "windowsVirtualKeyCode": 8,
+                        "nativeVirtualKeyCode": 8,
+                    },
+                ):
+                    self._driver.execute_cdp_cmd("Input.dispatchKeyEvent", event)
+            except Exception as exc:  # pylint: disable=broad-except
+                _log.warning("clear_card_fields_cdp failed for selector %s: %s", selector, exc)
+
     def clear_card_fields(self) -> None:
         """Clear all card form fields (best-effort)."""
-        for selector in (
-            SEL_CARD_NUMBER,
-            SEL_CARD_CVV,
-        ):
-            elements = self.find_elements(selector)
-            if elements:
-                try:
-                    elements[0].clear()
-                except Exception:  # field clear is best-effort
-                    _log.debug("Element clear() skipped in clear_card_fields")
+        self.clear_card_fields_cdp()
 
     # ── Post-submit state detection (Step 5) ─────────────────────────────────
 
