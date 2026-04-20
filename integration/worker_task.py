@@ -30,28 +30,19 @@ from modules.cdp.fingerprint import BitBrowserSession, get_bitbrowser_client
 
 _log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-# ── P1-5: Task-level abort registry ──────────────────────────────────────────
-# Per-worker abort flags.  Callers invoke abort_task(worker_id) to request a
-# clean stop; task_fn and run_cycle check is_task_aborted() at safe points.
+# P1-5: Task-level abort registry.
 _abort_lock: threading.Lock = threading.Lock()
-_abort_flags: dict[str, threading.Event] = {}
+_abort_flags: "dict[str, threading.Event]" = {}
 
 
 def abort_task(worker_id: str) -> None:
-    """Request an abort for the running task of *worker_id*.
-
-    Idempotent — calling multiple times is safe.  The abort is honoured at
-    the next safe check-point in task_fn or run_cycle (start of each retry
-    iteration).  Exceptions during abort are caught and logged so that callers
-    are never blocked.
-    """
+    """Request an abort for the task of *worker_id*. Idempotent and thread-safe."""
     try:
         with _abort_lock:
             flag = _abort_flags.setdefault(worker_id, threading.Event())
         flag.set()
-        _log.debug("worker=%s abort_task=requested", worker_id)
     except Exception as exc:  # pylint: disable=broad-except
-        _log.warning("worker=%s abort_task=error: %s", worker_id, exc, exc_info=True)
+        _log.warning("worker=%s abort_task=error: %s", worker_id, exc)
 
 
 def is_task_aborted(worker_id: str) -> bool:
@@ -62,19 +53,12 @@ def is_task_aborted(worker_id: str) -> bool:
 
 
 def _register_abort(worker_id: str) -> None:
-    """Register a fresh (cleared) abort flag for *worker_id* at cycle start.
-
-    If an abort flag already exists (e.g. set via ``abort_task()`` before the
-    cycle started), it is preserved so the pre-cycle abort check in task_fn
-    sees the pending abort correctly.
-    """
     with _abort_lock:
         if worker_id not in _abort_flags:
             _abort_flags[worker_id] = threading.Event()
 
 
 def _clear_abort(worker_id: str) -> None:
-    """Remove the abort flag for *worker_id* at cycle end."""
     with _abort_lock:
         _abort_flags.pop(worker_id, None)
 
@@ -105,12 +89,7 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
         """Execute one browser lifecycle cycle for *worker_id*."""
         _register_abort(worker_id)
         try:
-            # P1-5 — Honour pre-cycle abort before any browser work starts.
             if is_task_aborted(worker_id):
-                _log.debug(
-                    "worker=%s abort_task=early_exit reason=pre_cycle_abort",
-                    worker_id,
-                )
                 return
 
             bb_client = get_bitbrowser_client()
@@ -200,7 +179,6 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
                     # Always unregister the driver to prevent registry leaks (GAP-CDP-01)
                     cdp.unregister_driver(worker_id)
         finally:
-            # P1-5 — Always clear abort flag so next cycle starts clean.
             _clear_abort(worker_id)
 
     return task_fn

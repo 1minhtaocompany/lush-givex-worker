@@ -1245,10 +1245,8 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None, abort_c
         worker_id: Unique identifier for this worker.
         ctx: Optional :class:`~modules.common.types.CycleContext` for
             cross-retry billing lock.  If ``None``, a new context is created.
-        abort_check: Optional ``() -> bool`` callable.  When provided, it is
-            called at the start of each retry iteration.  If it returns
-            ``True`` the cycle is aborted immediately and ``"abort_cycle"`` is
-            returned (P1-5).
+        abort_check: Optional ``() -> bool``; when it returns ``True`` the
+            cycle aborts and returns ``"abort_cycle"`` (P1-5).
 
     Returns:
         A (action, state, total) tuple where action is one of:
@@ -1294,12 +1292,7 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None, abort_c
 
     try:
         if not _ENABLE_RETRY_LOOP:
-            # P1-5 — Honour abort before any payment work.
             if abort_check is not None and abort_check():
-                _logger.debug(
-                    "[trace=%s] worker=%s abort_task=abort_cycle reason=abort_check",
-                    _get_trace_id(), worker_id,
-                )
                 return "abort_cycle", None, None
             initialize_cycle(worker_id)
             state, total = run_payment_step(
@@ -1330,13 +1323,7 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None, abort_c
         total = None
 
         for _loop_iter in range(max_iters):
-            # P1-5 — Check abort at the start of every retry iteration.
             if abort_check is not None and abort_check():
-                _logger.debug(
-                    "[trace=%s] worker=%s abort_task=abort_cycle "
-                    "reason=abort_check iter=%d",
-                    _get_trace_id(), worker_id, _loop_iter,
-                )
                 action = "abort_cycle"
                 break
             initialize_cycle(worker_id)
