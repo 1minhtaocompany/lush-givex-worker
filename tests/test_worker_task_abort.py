@@ -393,11 +393,13 @@ class TestRunCycleAbortCheck(unittest.TestCase):
         from integration.orchestrator import run_cycle
         task = self._make_task()
 
-        call_count = {"n": 0}
+        _counter_lock = threading.Lock()
+        _counter = [0]
 
         def abort_after_first():
-            call_count["n"] += 1
-            return call_count["n"] > 1
+            with _counter_lock:
+                _counter[0] += 1
+                return _counter[0] > 1
 
         mock_state = MagicMock()
         mock_state.name = "declined"

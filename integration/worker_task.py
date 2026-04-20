@@ -47,10 +47,7 @@ def abort_task(worker_id: str) -> None:
     """
     try:
         with _abort_lock:
-            flag = _abort_flags.get(worker_id)
-            if flag is None:
-                flag = threading.Event()
-                _abort_flags[worker_id] = flag
+            flag = _abort_flags.setdefault(worker_id, threading.Event())
         flag.set()
         _log.debug("worker=%s abort_task=requested", worker_id)
     except Exception as exc:  # pylint: disable=broad-except
