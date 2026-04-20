@@ -1324,7 +1324,7 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None):
                         _get_trace_id(), worker_id, _sanitize_error(_swap_exc),
                     )
                 current_card = new_card
-                retry_count = 0  # reset retry counter after a card swap
+                retry_count = 0  # reset general retry counter after a card swap
                 ui_lock_retry_count = 0  # P0-4 — reset ui_lock counter after card swap
             elif action == "retry_new_card":
                 # Legacy path (ctx=None): no card info available — abort.

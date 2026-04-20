@@ -203,8 +203,8 @@ class TestUiLockResolvesAfterFocusShift(_P04Base):
             run_cycle(task, worker_id=_WORKER_ID,
                       ctx=CycleContext(cycle_id="c4", worker_id=_WORKER_ID))
 
-        # detect_page_state called once per focus-shift attempt (2 ui_lock iters max)
-        self.assertGreaterEqual(mock_cdp.detect_page_state.call_count, 1)
+        # detect_page_state called exactly once per focus-shift attempt (2 ui_lock iters)
+        self.assertEqual(mock_cdp.detect_page_state.call_count, 2)
 
 
 # ---------------------------------------------------------------------------
