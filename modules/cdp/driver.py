@@ -47,6 +47,7 @@ except ImportError:  # pragma: no cover - defensive; mouse.py/keyboard.py always
     _type_value = None  # type: ignore[assignment,misc]
 
 from modules.common.exceptions import (
+    CDPCommandError,
     PageStateError,
     SelectorTimeoutError,
     SessionFlaggedError,
@@ -482,6 +483,54 @@ def maxmind_lookup_zip(ip_addr: str) -> str | None:
     return None
 
 
+def _safe_cdp_cmd(driver, command: str, params: dict) -> object:
+    """Execute a CDP command with structured exception detection and logging.
+
+    Wraps ``driver.execute_cdp_cmd(command, params)`` with:
+
+    * **PII-safe logging** — error messages are passed through
+      :func:`_sanitize_error` before logging so that card numbers,
+      CVV values, and email addresses are never written to logs.
+    * **Typed exceptions** — connection-level failures
+      (``OSError``, ``ConnectionError``, ``TimeoutError``) are
+      wrapped as :exc:`~modules.common.exceptions.SessionFlaggedError`
+      to signal a broken session; all other failures are wrapped as
+      :exc:`~modules.common.exceptions.CDPCommandError`.
+
+    Args:
+        driver: Raw Selenium WebDriver exposing ``execute_cdp_cmd``.
+        command: CDP method name, e.g. ``"Input.dispatchMouseEvent"``.
+        params: Parameter dict forwarded verbatim to the CDP call.
+
+    Returns:
+        The value returned by ``execute_cdp_cmd`` on success.
+
+    Raises:
+        SessionFlaggedError: On connection / transport failures.
+        CDPCommandError: On non-retryable command-level failures.
+    """
+    try:
+        return driver.execute_cdp_cmd(command, params)
+    except (OSError, ConnectionError, TimeoutError) as exc:
+        detail = _sanitize_error(str(exc))
+        _log.error(
+            "cdp_connect_error cmd=%r detail=%r",
+            command,
+            detail,
+        )
+        raise SessionFlaggedError(
+            f"CDP connection error on '{command}': {detail}"
+        ) from exc
+    except Exception as exc:  # pylint: disable=broad-except
+        detail = _sanitize_error(str(exc))
+        _log.error(
+            "cdp_command_error cmd=%r detail=%r",
+            command,
+            detail,
+        )
+        raise CDPCommandError(command, detail) from exc
+
+
 def _get_proxy_ip(proxy_str: str | None = None) -> str | None:
     """Extract the proxy host IP from a proxy string via local DNS only.
 
@@ -849,11 +898,20 @@ def check_popup_text_match(
     return None
 
 
-def detect_popup_thank_you(driver, *, patterns=None) -> bool:
+def detect_popup_thank_you(
+    driver,
+    *,
+    patterns=None,
+    shadow_root: bool = False,
+    selector: str = SEL_CONFIRMATION_EL,
+) -> bool:
     """Detect whether the current page shows a "Thank you" success confirmation.
 
     Checks both the page URL (for known confirmation URL fragments) and the
     visible body text of the page (for localised success phrases in EN/VN).
+    Optionally traverses shadow-DOM children of a confirmation element when
+    ``shadow_root=True`` (P1-3 coverage).
+
     This function is used as the trigger for the P1-2 clear/refill workflow:
     after a "Thank you" confirmation is detected, the orchestrator clears
     card fields and refills from the next order in the queue.
@@ -862,10 +920,18 @@ def detect_popup_thank_you(driver, *, patterns=None) -> bool:
         driver: GivexDriver wrapper or raw Selenium WebDriver.
         patterns: Tuple of lowercase substrings to match against page text.
             Falls back to :data:`THANK_YOU_TEXT_PATTERNS_DEFAULT` when ``None``.
+        shadow_root: When ``True``, also scan text hidden inside shadow-DOM
+            children of elements matched by ``selector``.  Defaults to
+            ``False`` to preserve existing behaviour.
+        selector: CSS selector used for shadow-DOM traversal when
+            ``shadow_root=True``.  Defaults to
+            :data:`SEL_CONFIRMATION_EL`.
 
     Returns:
-        ``True`` if the page URL contains a confirmation fragment OR the page
-        body text contains a known thank-you pattern; ``False`` otherwise.
+        ``True`` if the page URL contains a confirmation fragment, the page
+        body text contains a known thank-you pattern, or (when
+        ``shadow_root=True``) the shadow-DOM subtree contains a known
+        pattern; ``False`` otherwise.
     """
     if patterns is None:
         patterns = THANK_YOU_TEXT_PATTERNS_DEFAULT
@@ -878,7 +944,10 @@ def detect_popup_thank_you(driver, *, patterns=None) -> bool:
             _log.debug("detect_popup_thank_you: URL match (%r)", current_url)
             return True
     except Exception:  # pylint: disable=broad-except
-        _log.debug("detect_popup_thank_you: current_url access failed; falling through to text check", exc_info=True)
+        _log.debug(
+            "detect_popup_thank_you: current_url access failed; falling through to text check",
+            exc_info=True,
+        )
 
     # 2 — Page body text detection
     try:
@@ -888,8 +957,20 @@ def detect_popup_thank_you(driver, *, patterns=None) -> bool:
 
     for pat in patterns:
         if pat in body_text:
-            _log.debug("detect_popup_thank_you: text MATCH pattern=%r", pat)
+            _log.debug("detect_popup_thank_you: body text MATCH pattern=%r", pat)
             return True
+
+    # 3 — Shadow-DOM traversal (optional, P1-3)
+    if shadow_root:
+        shadow_text = _get_shadow_text(base, selector).lower()
+        for pat in patterns:
+            if pat in shadow_text:
+                _log.debug(
+                    "detect_popup_thank_you: shadow-DOM MATCH pattern=%r selector=%r",
+                    pat,
+                    selector,
+                )
+                return True
 
     _log.debug("detect_popup_thank_you: no thank-you signal found")
     return False
@@ -1261,9 +1342,15 @@ class GivexDriver:
         elements[0].click()
 
     def cdp_click_absolute(self, x: float, y: float) -> None:
-        """Send an absolute-coordinate CDP click."""
+        """Send an absolute-coordinate CDP click.
+
+        Raises:
+            SessionFlaggedError: On CDP connection / transport failure.
+            CDPCommandError: On non-retryable CDP command failure.
+        """
         for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
-            self._driver.execute_cdp_cmd(
+            _safe_cdp_cmd(
+                self._driver,
                 "Input.dispatchMouseEvent",
                 {"type": event_type, "x": x, "y": y, "button": "left", "clickCount": 1},
             )
