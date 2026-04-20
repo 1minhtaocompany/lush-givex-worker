@@ -83,14 +83,40 @@ jobs:
           # This will handover control about PR rejection to the GitHub side
           max-allowed-issues: 2147483647
 
-      # Guarantee a valid SARIF file exists for upload even if the CLI
-      # crashed during SARIF generation (e.g. charset issues).
+      # Guarantee a valid SARIF file exists for upload even if the Codacy
+      # CLI crashed during SARIF generation (e.g. charset issues leaving a
+      # truncated JSON file). Using shell: python avoids bash quoting pitfalls
+      # and reliably regenerates a minimal, schema-valid SARIF document when
+      # the existing file is missing, empty, or not valid JSON.
       - name: Ensure valid SARIF file
         if: always()
+        shell: python
         run: |
-          if [ ! -s results.sarif ] || ! python3 -c "import json,sys; json.load(open('results.sarif'))" 2>/dev/null; then
-            echo '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"CodacySecurityScan","version":"0.0.0"}},"results":[]}]}' > results.sarif
-          fi
+          import json, os, sys
+          MINIMAL = {
+              "version": "2.1.0",
+              "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+              "runs": [{
+                  "tool": {"driver": {"name": "CodacySecurityScan", "version": "0.0.0"}},
+                  "results": [],
+              }],
+          }
+          path = "results.sarif"
+          needs_write = True
+          if os.path.exists(path) and os.path.getsize(path) > 0:
+              try:
+                  with open(path, "r", encoding="utf-8") as f:
+                      json.load(f)
+                  needs_write = False
+                  print(f"results.sarif valid ({os.path.getsize(path)} bytes).", file=sys.stderr)
+              except Exception as exc:
+                  print(f"results.sarif invalid JSON ({exc}); regenerating minimal.", file=sys.stderr)
+          else:
+              print("results.sarif missing or empty; writing minimal.", file=sys.stderr)
+          if needs_write:
+              with open(path, "w", encoding="utf-8") as f:
+                  json.dump(MINIMAL, f)
+              print(f"results.sarif regenerated ({os.path.getsize(path)} bytes).", file=sys.stderr)
 
       # Upload the SARIF file generated in the previous step
       - name: Upload SARIF results file
