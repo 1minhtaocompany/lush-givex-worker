@@ -20,6 +20,7 @@ the flag itself so that tests can import and exercise it freely.
 """
 import importlib
 import logging
+import threading
 import uuid
 from typing import Any, Callable, Optional
 
@@ -28,6 +29,38 @@ from modules.cdp.driver import _get_current_ip_best_effort, maxmind_lookup_zip
 from modules.cdp.fingerprint import BitBrowserSession, get_bitbrowser_client
 
 _log = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+# P1-5: Task-level abort registry.
+_abort_lock: threading.Lock = threading.Lock()
+_abort_flags: "dict[str, threading.Event]" = {}
+
+
+def abort_task(worker_id: str) -> None:
+    """Set abort flag for *worker_id*. Idempotent and thread-safe."""
+    try:
+        with _abort_lock:
+            flag = _abort_flags.setdefault(worker_id, threading.Event())
+        flag.set()
+    except Exception as exc:  # pylint: disable=broad-except
+        _log.warning("worker=%s abort_task=error: %s", worker_id, exc)
+
+
+def is_task_aborted(worker_id: str) -> bool:
+    """Return ``True`` if abort requested for *worker_id*."""
+    with _abort_lock:
+        flag = _abort_flags.get(worker_id)
+    return flag is not None and flag.is_set()
+
+
+def _register_abort(worker_id: str) -> None:
+    with _abort_lock:
+        if worker_id not in _abort_flags:
+            _abort_flags[worker_id] = threading.Event()
+
+
+def _clear_abort(worker_id: str) -> None:
+    with _abort_lock:
+        _abort_flags.pop(worker_id, None)
 
 
 def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable[[str], None]:
@@ -54,8 +87,13 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
 
     def task_fn(worker_id: str) -> None:
         """Execute one browser lifecycle cycle for *worker_id*."""
+        _register_abort(worker_id)
+        if is_task_aborted(worker_id):
+            _clear_abort(worker_id)
+            return
         bb_client = get_bitbrowser_client()
         if bb_client is None:
+            _clear_abort(worker_id)
             raise RuntimeError(
                 f"BitBrowser client unavailable for worker {worker_id}. "
                 "Set BITBROWSER_API_KEY and ensure the endpoint is reachable."
@@ -108,8 +146,6 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
                     )
 
                 # Run purchase cycle when a task source is wired (F-02/F-07).
-                # A CycleContext is created once per cycle so that billing is
-                # locked for the entire cycle (P5: billing fixed across card retries).
                 if task_source is not None:
                     task = task_source(worker_id)
                     if task is not None:
@@ -123,7 +159,11 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
                             "integration.orchestrator"
                         )
                         run_cycle = orchestrator_module.run_cycle
-                        run_cycle(task, zip_code=zip_code, worker_id=worker_id, ctx=ctx)
+                        run_cycle(
+                            task, zip_code=zip_code, worker_id=worker_id,
+                            ctx=ctx,
+                            abort_check=lambda: is_task_aborted(worker_id),
+                        )
                 else:
                     _log.debug(
                         "worker=%s profile=%s driver registered; "
@@ -134,6 +174,7 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
             finally:
                 # Always unregister the driver to prevent registry leaks (GAP-CDP-01)
                 cdp.unregister_driver(worker_id)
+                _clear_abort(worker_id)
 
     return task_fn
 
