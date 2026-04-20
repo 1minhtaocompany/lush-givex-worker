@@ -2,6 +2,7 @@
 import threading
 import time
 import unittest
+import unittest.mock  # noqa: F401
 
 from integration import runtime
 

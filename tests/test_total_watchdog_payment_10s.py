@@ -1,6 +1,7 @@
 """C5 — Payment-step watchdog uses Blueprint §5's 10s timeout."""
 import os
 import unittest
+import unittest.mock  # noqa: F401
 
 from integration import orchestrator
 from modules.common.exceptions import SessionFlaggedError
@@ -78,4 +79,3 @@ class TestPaymentWatchdogTimeout(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

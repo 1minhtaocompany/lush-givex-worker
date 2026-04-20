@@ -1,5 +1,6 @@
 """C13 — BitBrowserSession.release_profile idempotent lifecycle."""
 import unittest
+import unittest.mock  # noqa: F401
 
 from modules.cdp.fingerprint import BitBrowserClient, BitBrowserSession
 
