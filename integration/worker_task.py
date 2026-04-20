@@ -1,23 +1,4 @@
-"""Worker task factory — F-01 (entrypoint), F-03 (CDP registration),
-F-04 (BitBrowser lifecycle), F-07 (MaxMind zip).
-
-Creates a task_fn suitable for ``integration.runtime.start()``.  The
-returned callable wires the full browser lifecycle for one work cycle:
-
-  1. Acquire BitBrowser client (fail fast if unavailable).
-  2. Create/launch a browser profile → obtain the ChromeDriver WebSocket URL.
-  3. Build a Selenium Remote driver against that URL.
-  4. Wrap in ``GivexDriver``.
-  5. Register driver + PID + profile with the CDP registry (F-03).
-  6. Probe ``add_cdp_listener`` availability (U-06 guard).
-  7. Resolve proxy IP → zip code via MaxMind (F-07).
-  8. Execute purchase cycle via ``run_cycle`` when a task_source is wired.
-  9. On **all** exits: ``cdp.unregister_driver()`` (GAP-CDP-01).
-
-Feature flag: ``ENABLE_PRODUCTION_TASK_FN`` (default OFF) — the gate is
-enforced by the caller (``app/__main__.py``).  This module does **not** read
-the flag itself so that tests can import and exercise it freely.
-"""
+"""Worker task factory for BitBrowser lifecycle and purchase cycle."""
 import importlib
 import logging
 import threading
@@ -64,26 +45,7 @@ def _clear_abort(worker_id: str) -> None:
 
 
 def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable[[str], None]:
-    """Return a production task_fn for ``runtime.start()``.
-
-    The returned callable is stateless between calls; all per-cycle
-    resources are created fresh on each invocation.
-
-    Args:
-        task_source: Optional callable ``(worker_id) -> WorkerTask | None``.
-            When provided, the task_fn will call it each cycle to obtain the
-            next task and then invoke ``run_cycle`` with the resolved zip code
-            (F-07).  When ``None``, the browser lifecycle is exercised without
-            running a purchase cycle.
-
-    Returns:
-        A callable that accepts *worker_id* (str) and executes one
-        browser lifecycle cycle.
-
-    Raises:
-        RuntimeError: propagated on startup failure (BitBrowser unavailable,
-            Selenium not installed, or CDP listener probe fails).
-    """
+    """Return a production task_fn for ``runtime.start()``."""
 
     def task_fn(worker_id: str) -> None:
         """Execute one browser lifecycle cycle for *worker_id*."""
