@@ -878,7 +878,7 @@ def detect_popup_thank_you(driver, *, patterns=None) -> bool:
             _log.debug("detect_popup_thank_you: URL match (%r)", current_url)
             return True
     except Exception:  # pylint: disable=broad-except
-        pass
+        _log.debug("detect_popup_thank_you: current_url access failed; falling through to text check", exc_info=True)
 
     # 2 — Page body text detection
     try:

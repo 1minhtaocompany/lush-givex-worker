@@ -144,7 +144,7 @@ class TestDetectPopupThankYou(unittest.TestCase):
 
     def test_url_error_falls_back_gracefully(self):
         """current_url raising should not propagate — falls through to text check."""
-        class _BrokenUrlDriver:
+        class _DriverWithUrlError:
             """Simulates a driver where current_url raises, but body text matches."""
             @property
             def current_url(self):
@@ -155,7 +155,7 @@ class TestDetectPopupThankYou(unittest.TestCase):
                 m.text = "thank you for your order"
                 return m
 
-        result = detect_popup_thank_you(_BrokenUrlDriver())
+        result = detect_popup_thank_you(_DriverWithUrlError())
         self.assertTrue(result)
 
     def test_body_find_element_error_returns_false(self):

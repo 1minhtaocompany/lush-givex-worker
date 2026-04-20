@@ -1372,13 +1372,9 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None):
             # When the payment was successful and more cards remain in the queue,
             # verify the thank-you popup via text/URL match then clear card fields
             # and refill with the next card so the form is ready for the caller.
+            # ctx is always set by this point (created at top of run_cycle when None).
             if _ENABLE_CLEAR_REFILL_AFTER_POPUP and _action_key == "complete":
-                _next_refill_card = None
-                if ctx is not None and ctx.task is not None:
-                    # Use the canonical next-card helper so we respect swap_count.
-                    _next_refill_card = _ctx_next_swap_card(ctx)
-                elif task.order_queue:
-                    _next_refill_card = task.order_queue[0]
+                _next_refill_card = _ctx_next_swap_card(ctx)
 
                 if _next_refill_card is not None:
                     try:
