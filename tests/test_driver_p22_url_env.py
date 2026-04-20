@@ -7,6 +7,9 @@ hardcoded production defaults.
 import importlib
 import os
 import unittest
+import unittest.mock
+
+import modules.cdp.driver as drv
 
 _STAGING_PAYMENT = "https://staging.givex.com/payment.html"
 _STAGING_EGIFT = "https://staging.givex.com/e-gifts/"
@@ -17,7 +20,6 @@ class UrlEnvOverrideTest(unittest.TestCase):
 
     def _reload_driver(self, env_patch: dict):
         """Reload modules.cdp.driver with patched env vars and return the module."""
-        import modules.cdp.driver as drv  # noqa: PLC0415
         # Remove keys with None value from environment; set others to their value
         env = os.environ.copy()
         for k, v in env_patch.items():
@@ -50,9 +52,6 @@ class UrlEnvOverrideTest(unittest.TestCase):
         drv = self._reload_driver({"GIVEX_EGIFT_URL": _STAGING_EGIFT})
         self.assertEqual(drv.URL_EGIFT, _STAGING_EGIFT)
 
-
-# Make mock available in the module scope for _reload_driver
-import unittest.mock  # noqa: E402 (must be after class definition to avoid circular ref issue)
 
 if __name__ == "__main__":
     unittest.main()

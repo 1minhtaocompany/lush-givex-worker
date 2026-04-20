@@ -6,9 +6,8 @@ Verifies that handle_outcome emits a log line containing:
 The log record must also contain the worker_id and swap count.
 """
 # pylint: disable=protected-access
-import logging
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from integration.orchestrator import handle_outcome
 from modules.common.types import CycleContext, State

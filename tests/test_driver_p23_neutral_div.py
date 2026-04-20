@@ -4,12 +4,10 @@ Verifies that handle_ui_lock_focus_shift clicks the element found via
 SEL_NEUTRAL_DIV (css selector "body") rather than using move_by_offset,
 so focus always lands on a known neutral element.
 """
-import time
 import unittest
 from unittest.mock import MagicMock, call, patch
 
 from modules.cdp.driver import (
-    SEL_COMPLETE_PURCHASE,
     SEL_NEUTRAL_DIV,
     handle_ui_lock_focus_shift,
 )
@@ -39,7 +37,7 @@ class NeutralDivClickTest(unittest.TestCase):
     @patch("time.sleep")
     def test_neutral_element_found_by_css_selector(self, _sleep):
         """find_element called with 'css selector' and SEL_NEUTRAL_DIV."""
-        d, neutral_el, _ = _make_driver()
+        d, _neutral_el, _ = _make_driver()
         handle_ui_lock_focus_shift(d)
         self.assertIn(
             call("css selector", SEL_NEUTRAL_DIV),
@@ -73,7 +71,7 @@ class NeutralDivClickTest(unittest.TestCase):
     @patch("time.sleep")
     def test_purchase_btn_also_clicked(self, _sleep):
         """After neutral click, the purchase button is also clicked via ActionChains."""
-        d, _, purchase_btn = _make_driver()
+        d, _, _ = _make_driver()
         handle_ui_lock_focus_shift(d)
         # ActionChains instantiated twice: once for neutral click, once for button click
         self.assertEqual(self.mock_chains_cls.call_count, 2)
