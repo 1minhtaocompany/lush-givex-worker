@@ -1,7 +1,6 @@
 """C5 — Payment-step watchdog uses Blueprint §5's 10s timeout."""
 import os
 import unittest
-from unittest import mock
 
 from integration import orchestrator
 from modules.common.exceptions import SessionFlaggedError
@@ -53,20 +52,20 @@ class TestPaymentWatchdogTimeout(unittest.TestCase):
 
     def test_env_override(self):
         """PAYMENT_WATCHDOG_TIMEOUT_S overrides the default (pure helper)."""
-        with mock.patch.dict(os.environ, {"PAYMENT_WATCHDOG_TIMEOUT_S": "7.5"}):
+        with unittest.mock.patch.dict(os.environ, {"PAYMENT_WATCHDOG_TIMEOUT_S": "7.5"}):
             self.assertEqual(orchestrator._load_payment_watchdog_timeout(), 7.5)
 
     def test_env_override_empty_returns_default(self):
         """Missing or empty override returns the 10s default."""
         os.environ.pop("PAYMENT_WATCHDOG_TIMEOUT_S", None)
         self.assertEqual(orchestrator._load_payment_watchdog_timeout(), 10.0)
-        with mock.patch.dict(os.environ, {"PAYMENT_WATCHDOG_TIMEOUT_S": "   "}):
+        with unittest.mock.patch.dict(os.environ, {"PAYMENT_WATCHDOG_TIMEOUT_S": "   "}):
             self.assertEqual(orchestrator._load_payment_watchdog_timeout(), 10.0)
 
     def test_env_override_invalid_falls_back_to_default(self):
         """Non-numeric or non-positive overrides keep the 10s default."""
         for bad in ("abc", "0", "-5"):
-            with mock.patch.dict(os.environ, {"PAYMENT_WATCHDOG_TIMEOUT_S": bad}):
+            with unittest.mock.patch.dict(os.environ, {"PAYMENT_WATCHDOG_TIMEOUT_S": bad}):
                 self.assertEqual(orchestrator._load_payment_watchdog_timeout(), 10.0)
 
     def test_timeout_raises_SessionFlaggedError(self):
