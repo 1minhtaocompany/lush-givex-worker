@@ -18,7 +18,6 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import integration.orchestrator as _orch
-import modules.cdp.main as cdp_main
 from integration.orchestrator import (
     _completed_task_ids,
     _idempotency_lock,
@@ -26,6 +25,7 @@ from integration.orchestrator import (
     _submitted_task_ids,
     run_cycle,
 )
+import modules.cdp.main as cdp_main
 from modules.common.types import CardInfo, CycleContext, State, WorkerTask
 from modules.fsm.main import cleanup_worker, reset_registry
 
