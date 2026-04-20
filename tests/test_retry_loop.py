@@ -8,16 +8,15 @@ Verifies that run_cycle correctly:
   - Respects the ENABLE_RETRY_LOOP=0 fallback.
   - Calls driver.clear_card_fields_cdp() and driver.fill_card_fields() on each swap.
 """
+# pylint: disable=protected-access
+# Tests intentionally access orchestrator private attributes (`_get_driver`,
+# `_ENABLE_RETRY_LOOP`, idempotency dicts) to mock/override behaviour —
+# matching the convention used by tests/test_idempotency_behavior.py.
 
-import os
-import sys
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-
-from modules.common.types import CardInfo, CycleContext, State, WorkerTask
-from modules.fsm.main import cleanup_worker, reset_registry
+import integration.orchestrator as _orch
 from integration.orchestrator import (
     _completed_task_ids,
     _idempotency_lock,
@@ -25,6 +24,8 @@ from integration.orchestrator import (
     _submitted_task_ids,
     run_cycle,
 )
+from modules.common.types import CardInfo, CycleContext, State, WorkerTask
+from modules.fsm.main import cleanup_worker, reset_registry
 
 
 # ---------------------------------------------------------------------------
@@ -44,9 +45,9 @@ def _make_card(suffix: str) -> CardInfo:
 
 
 def _make_task(
-    primary_card: CardInfo,
-    order_queue: tuple,
-    task_id: str = "task-retry-loop-001",
+        primary_card: CardInfo,
+        order_queue: tuple,
+        task_id: str = "task-retry-loop-001",
 ) -> WorkerTask:
     return WorkerTask(
         task_id=task_id,
@@ -70,6 +71,9 @@ def _make_store_mock() -> MagicMock:
     store = MagicMock()
     store.is_duplicate.return_value = False
     return store
+
+
+_STORE_PATCH = "integration.orchestrator._get_idempotency_store"
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +120,7 @@ class TestRetryLoopHappyPath(_RetryLoopBase):
 
         with patch("integration.orchestrator.run_payment_step", side_effect=_fake_rps), \
              patch("integration.orchestrator.billing", _make_billing_mock()), \
-             patch("integration.orchestrator._get_idempotency_store", return_value=_make_store_mock()), \
+             patch(_STORE_PATCH, return_value=_make_store_mock()), \
              patch("integration.orchestrator._notify_success"), \
              patch("integration.orchestrator.initialize_cycle"), \
              patch("integration.orchestrator._alerting"), \
@@ -144,7 +148,7 @@ class TestRetryLoopHappyPath(_RetryLoopBase):
 
         with patch("integration.orchestrator.run_payment_step", side_effect=_fake_rps), \
              patch("integration.orchestrator.billing", _make_billing_mock()), \
-             patch("integration.orchestrator._get_idempotency_store", return_value=_make_store_mock()), \
+             patch(_STORE_PATCH, return_value=_make_store_mock()), \
              patch("integration.orchestrator._notify_success"), \
              patch("integration.orchestrator.initialize_cycle"), \
              patch("integration.orchestrator._alerting"), \
@@ -184,7 +188,7 @@ class TestRetryLoopAllCardsExhausted(_RetryLoopBase):
 
         with patch("integration.orchestrator.run_payment_step", side_effect=_fake_rps), \
              patch("integration.orchestrator.billing", _make_billing_mock()), \
-             patch("integration.orchestrator._get_idempotency_store", return_value=_make_store_mock()), \
+             patch(_STORE_PATCH, return_value=_make_store_mock()), \
              patch("integration.orchestrator._notify_success"), \
              patch("integration.orchestrator.initialize_cycle"), \
              patch("integration.orchestrator._alerting"), \
@@ -211,7 +215,7 @@ class TestRetryLoopAllCardsExhausted(_RetryLoopBase):
 
         with patch("integration.orchestrator.run_payment_step", side_effect=_fake_rps), \
              patch("integration.orchestrator.billing", _make_billing_mock()), \
-             patch("integration.orchestrator._get_idempotency_store", return_value=_make_store_mock()), \
+             patch(_STORE_PATCH, return_value=_make_store_mock()), \
              patch("integration.orchestrator._notify_success"), \
              patch("integration.orchestrator.initialize_cycle"), \
              patch("integration.orchestrator._alerting"), \
@@ -246,7 +250,7 @@ class TestRetryLoopUiLockCap(_RetryLoopBase):
 
         with patch("integration.orchestrator.run_payment_step", side_effect=_fake_rps), \
              patch("integration.orchestrator.billing", _make_billing_mock()), \
-             patch("integration.orchestrator._get_idempotency_store", return_value=_make_store_mock()), \
+             patch(_STORE_PATCH, return_value=_make_store_mock()), \
              patch("integration.orchestrator._notify_success"), \
              patch("integration.orchestrator.initialize_cycle"), \
              patch("integration.orchestrator._alerting"), \
@@ -318,8 +322,6 @@ class TestRetryLoopFeatureFlag(_RetryLoopBase):
 
     def test_flag_off_returns_retry_directly(self):
         """With ENABLE_RETRY_LOOP=0, run_cycle returns 'retry' without looping."""
-        import integration.orchestrator as _orch
-
         card1 = _make_card("111111")
         task = _make_task(primary_card=card1, order_queue=(card1,))
 
@@ -330,8 +332,7 @@ class TestRetryLoopFeatureFlag(_RetryLoopBase):
             with patch("integration.orchestrator.run_payment_step",
                        return_value=(State("ui_lock"), "0.00")), \
                  patch("integration.orchestrator.billing", _make_billing_mock()), \
-                 patch("integration.orchestrator._get_idempotency_store",
-                       return_value=_make_store_mock()), \
+                 patch(_STORE_PATCH, return_value=_make_store_mock()), \
                  patch("integration.orchestrator._notify_success"), \
                  patch("integration.orchestrator.initialize_cycle"), \
                  patch("integration.orchestrator.cdp"):
