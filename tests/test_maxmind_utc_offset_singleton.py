@@ -1,7 +1,7 @@
 """M11 — _lookup_maxmind_utc_offset uses the module-level singleton reader."""
 import os
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 from modules.cdp import driver as cdp_driver
 
