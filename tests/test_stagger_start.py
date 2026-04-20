@@ -2,7 +2,6 @@
 import threading
 import time
 import unittest
-from unittest import mock
 
 from integration import runtime
 
@@ -45,8 +44,8 @@ class TestStaggerStart(unittest.TestCase):
                 captured.append((lo, hi))
                 return lo  # deterministic lower bound
 
-        with mock.patch.object(runtime._stop_event, "wait",
-                               return_value=False) as m_wait:
+        with unittest.mock.patch.object(runtime._stop_event, "wait",
+                                        return_value=False) as m_wait:
             runtime._stagger_sleep_before_launch(rng=_FakeRng())
             self.assertEqual(captured, [runtime._STAGGER_RANGE])
             # Sleep is > 0 because elapsed was essentially 0s.
