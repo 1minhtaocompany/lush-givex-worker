@@ -53,6 +53,7 @@ def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable
 
     Args:
         task_source: Optional ``(worker_id) -> WorkerTask | None`` callable.
+            When ``None``, only the browser lifecycle is exercised.
     Returns:
         Callable ``(worker_id: str) -> None``.
     """
