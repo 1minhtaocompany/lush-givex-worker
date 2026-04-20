@@ -15,9 +15,10 @@ the correct raw driver (unwrapping GivexDriver._driver when present).
 """
 # pylint: disable=protected-access
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import integration.orchestrator as _orch
+import modules.cdp.main as cdp_main
 from integration.orchestrator import (
     _completed_task_ids,
     _idempotency_lock,
@@ -119,6 +120,7 @@ class TestUiLockFocusShiftCalled(_P04Base):
             run_cycle(task, worker_id=_WORKER_ID,
                       ctx=CycleContext(cycle_id="c1", worker_id=_WORKER_ID))
 
+        self.assertTrue(mock_cdp.handle_ui_lock_focus_shift.called)
         mock_cdp.handle_ui_lock_focus_shift.assert_called_with(_WORKER_ID)
 
     def test_focus_shift_called_with_correct_worker_id(self):
@@ -144,6 +146,7 @@ class TestUiLockFocusShiftCalled(_P04Base):
                       ctx=CycleContext(cycle_id="c2", worker_id=target_worker))
             cleanup_worker(target_worker)
 
+        self.assertTrue(mock_cdp.handle_ui_lock_focus_shift.called)
         mock_cdp.handle_ui_lock_focus_shift.assert_called_with(target_worker)
 
 
@@ -317,7 +320,7 @@ class TestUiLockFeatureFlag(_P04Base):
         finally:
             _orch._ENABLE_RETRY_UI_LOCK = original
 
-        mock_cdp.handle_ui_lock_focus_shift.assert_not_called()
+        self.assertFalse(mock_cdp.handle_ui_lock_focus_shift.called)
 
     def test_feature_flag_disabled_still_aborts_on_ui_lock(self):
         """With flag off, ui_lock path still terminates with abort_cycle (unchanged behaviour)."""
@@ -410,26 +413,21 @@ class TestCdpHandleUiLockFocusShiftWrapper(unittest.TestCase):
     """modules.cdp.main.handle_ui_lock_focus_shift delegates to the driver-level function."""
 
     def setUp(self):
-        import modules.cdp.main as _cdp_main
-        with _cdp_main._registry_lock:
-            _cdp_main._driver_registry.clear()
+        with cdp_main._registry_lock:
+            cdp_main._driver_registry.clear()
 
     def tearDown(self):
-        import modules.cdp.main as _cdp_main
-        with _cdp_main._registry_lock:
-            _cdp_main._driver_registry.clear()
+        with cdp_main._registry_lock:
+            cdp_main._driver_registry.clear()
 
     def test_calls_driver_level_function_with_raw_driver(self):
         """Wrapper unwraps GivexDriver._driver and calls the module-level function."""
-        import modules.cdp.main as cdp_main
-        from modules.cdp.driver import handle_ui_lock_focus_shift as _drv_shift
-
         raw_driver = MagicMock(name="raw_selenium_driver")
         givex_wrapper = MagicMock(name="givex_driver_wrapper")
         givex_wrapper._driver = raw_driver
         cdp_main.register_driver("w-p04", givex_wrapper)
 
-        with patch("modules.cdp.driver.handle_ui_lock_focus_shift",
+        with patch("modules.cdp.main._driver_focus_shift",
                    return_value=True) as mock_shift:
             result = cdp_main.handle_ui_lock_focus_shift("w-p04")
 
@@ -438,12 +436,10 @@ class TestCdpHandleUiLockFocusShiftWrapper(unittest.TestCase):
 
     def test_uses_driver_directly_when_no_inner_driver_attr(self):
         """Wrapper passes driver as-is when it has no _driver attribute."""
-        import modules.cdp.main as cdp_main
-
         plain_driver = MagicMock(name="plain_driver", spec=[])
         cdp_main.register_driver("w-p04b", plain_driver)
 
-        with patch("modules.cdp.driver.handle_ui_lock_focus_shift",
+        with patch("modules.cdp.main._driver_focus_shift",
                    return_value=False) as mock_shift:
             result = cdp_main.handle_ui_lock_focus_shift("w-p04b")
 
@@ -452,8 +448,6 @@ class TestCdpHandleUiLockFocusShiftWrapper(unittest.TestCase):
 
     def test_raises_runtime_error_when_driver_not_registered(self):
         """handle_ui_lock_focus_shift raises RuntimeError for unknown worker_id."""
-        import modules.cdp.main as cdp_main
-
         with self.assertRaises(RuntimeError):
             cdp_main.handle_ui_lock_focus_shift("no-such-worker")
 
@@ -467,21 +461,21 @@ class TestUiLockCounterResetsOnCardSwap(_P04Base):
 
     def test_ui_lock_count_resets_after_card_swap(self):
         """After a card swap, ui_lock retries are fresh (counter reset to 0)."""
-        card1 = _make_card("111111")
         card2 = _make_card("222222")
         task = _make_task(order_queue=(card2,))
 
         # Sequence: ui_lock (card1) × 2 → declined (card1) → swap to card2 → success
         # With the counter reset, card2 also gets a fresh 2 focus-shift attempts.
-        ui_lock_st = State("ui_lock")
-        declined_st = State("declined")
-        success_st = State("success")
-        state_seq = [ui_lock_st, ui_lock_st, declined_st, success_st]
+        state_seq = [
+            State("ui_lock"),
+            State("ui_lock"),
+            State("declined"),
+            State("success"),
+        ]
 
         def _fake_rps(*_a, **_kw):
             return state_seq.pop(0), "50.00"
 
-        mock_driver = MagicMock()
         ctx = CycleContext(cycle_id="c12", worker_id=_WORKER_ID)
 
         with patch("integration.orchestrator.run_payment_step", side_effect=_fake_rps), \
@@ -493,9 +487,10 @@ class TestUiLockCounterResetsOnCardSwap(_P04Base):
              patch("integration.orchestrator.fsm") as mock_fsm, \
              patch("integration.orchestrator.cdp") as mock_cdp:
             mock_cdp.handle_ui_lock_focus_shift.return_value = True
-            mock_cdp.detect_page_state.return_value = "ui_lock"  # focus-shift doesn't help
-            mock_cdp._get_driver.return_value = mock_driver
-            # FSM transitions: ui_lock stays ui_lock on detect retry; declined and success handled by handle_outcome
+            # focus-shift doesn't help — detect still returns ui_lock.
+            mock_cdp.detect_page_state.return_value = "ui_lock"
+            mock_cdp._get_driver.return_value = MagicMock()
+            # declined and success are handled by handle_outcome directly.
             mock_fsm.transition_for_worker.return_value = State("ui_lock")
             action, _state, _total = run_cycle(task, worker_id=_WORKER_ID, ctx=ctx)
 

@@ -12,6 +12,8 @@ import signal
 import threading
 from typing import Dict, Optional
 
+from modules.cdp.driver import handle_ui_lock_focus_shift as _driver_focus_shift
+
 _log = logging.getLogger(__name__)
 
 _registry_lock = threading.Lock()
@@ -348,10 +350,9 @@ def handle_ui_lock_focus_shift(worker_id: str) -> bool:
     Raises:
         RuntimeError: if no driver has been registered for the given worker_id.
     """
-    from modules.cdp.driver import handle_ui_lock_focus_shift as _shift  # noqa: PLC0415
     driver = _get_driver(worker_id)
     raw = getattr(driver, "_driver", driver)
-    return _shift(raw)
+    return _driver_focus_shift(raw)
 
 
 def register_browser_profile(worker_id: str, profile_id: str) -> None:

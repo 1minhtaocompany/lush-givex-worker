@@ -1271,12 +1271,10 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None):
             # When the page is UI-locked, call handle_ui_lock_focus_shift to click a
             # neutral point and re-submit, then re-detect to see if the lock cleared.
             # Cap at _MAX_UI_LOCK_RETRIES (default 2) per card to avoid infinite loops.
-            if (
-                _ENABLE_RETRY_UI_LOCK
-                and state is not None
-                and state.name == "ui_lock"
-                and ui_lock_retry_count < _MAX_UI_LOCK_RETRIES
-            ):
+            if (_ENABLE_RETRY_UI_LOCK
+                    and state is not None
+                    and state.name == "ui_lock"
+                    and ui_lock_retry_count < _MAX_UI_LOCK_RETRIES):
                 ui_lock_retry_count += 1
                 _logger.info(
                     "[trace=%s] UI lock detected for worker=%s — calling "
