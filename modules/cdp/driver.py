@@ -716,7 +716,7 @@ def hard_reset_browser_state(driver) -> None:
         _log.debug("hard_reset_browser_state: delete_all_cookies skipped: %s", exc)
 
 
-def handle_ui_lock_focus_shift(driver, neutral_xy=(20, 20)) -> bool:
+def handle_ui_lock_focus_shift(driver) -> bool:
     """Focus-Shift Retry per Blueprint §6 Ngã rẽ 1.
 
     Steps:
@@ -733,7 +733,6 @@ def handle_ui_lock_focus_shift(driver, neutral_xy=(20, 20)) -> bool:
 
     Args:
         driver: Selenium-compatible driver.
-        neutral_xy: Kept for backward-compatibility; no longer used.
     """
     if _ActionChains is None:  # pragma: no cover - selenium always present in prod
         _log.warning("handle_ui_lock_focus_shift: ActionChains unavailable")
