@@ -46,3 +46,21 @@ class PageStateError(SessionFlaggedError):
         super().__init__(
             f"Cannot map page state '{detected}' to a known FSM state"
         )
+
+
+class CDPCommandError(SessionFlaggedError):
+    """Raised when a CDP command fails in a non-retryable manner.
+
+    Inherits from SessionFlaggedError so the runtime treats it as a
+    flagged session requiring cleanup rather than a transient retry.
+
+    Attributes:
+        command: The CDP method name that failed (e.g. ``"Input.dispatchMouseEvent"``).
+        detail: Sanitized error description (PII already redacted by caller).
+    """
+    def __init__(self, command: str, detail: str):
+        self.command = command
+        self.detail = detail
+        super().__init__(
+            f"CDP command '{command}' failed: {detail}"
+        )
