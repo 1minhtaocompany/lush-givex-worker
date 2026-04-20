@@ -12,9 +12,9 @@ Verifies:
 """
 
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-from modules.common.exceptions import InvalidTransitionError, SessionFlaggedError
+from modules.common.exceptions import InvalidTransitionError
 from modules.common.types import CardInfo, State, WorkerTask
 from modules.fsm.main import cleanup_worker, reset_registry
 from modules.watchdog.main import reset as _reset_watchdog
@@ -34,30 +34,6 @@ def _make_task() -> WorkerTask:
         primary_card=card,
         order_queue=(),
     )
-
-
-def _base_patches(page_state: str, final_state: "State | None" = None):
-    """Return a dict of patch targets and their mock return values.
-
-    Sets up a standard run_payment_step scenario where:
-    - billing.select_profile returns a mock profile
-    - cdp.detect_page_state returns *page_state*
-    - fsm.transition_for_worker returns State(*page_state*)
-    - fsm.get_current_state_for_worker returns *final_state* (default:
-      State(*page_state*) so the fallback path is NOT exercised)
-    - watchdog.wait_for_total returns 49.99
-    """
-    if final_state is None:
-        final_state = State(page_state)
-    return {
-        "billing": {"select_profile.return_value": MagicMock()},
-        "cdp": {"detect_page_state.return_value": page_state},
-        "fsm": {
-            "transition_for_worker.return_value": State(page_state),
-            "get_current_state_for_worker.return_value": final_state,
-        },
-        "watchdog": {"wait_for_total.return_value": 49.99},
-    }
 
 
 class TestFSMPrimaryTransitionPath(unittest.TestCase):
@@ -93,28 +69,28 @@ class TestFSMPrimaryTransitionPath(unittest.TestCase):
 
     def test_success_state_detect_then_transition(self):
         """Mock DOM /confirmation → FSM state becomes success."""
-        state, total = self._run("success")
+        state, _total = self._run("success")
         self.assertEqual(state.name, "success")
         self._mock_cdp.detect_page_state.assert_called_with("default")
         self._mock_fsm.transition_for_worker.assert_called_with("default", "success")
 
     def test_declined_state_detect_then_transition(self):
         """Mock DOM declined → FSM state becomes declined."""
-        state, total = self._run("declined")
+        state, _total = self._run("declined")
         self.assertEqual(state.name, "declined")
         self._mock_cdp.detect_page_state.assert_called_with("default")
         self._mock_fsm.transition_for_worker.assert_called_with("default", "declined")
 
     def test_vbv_3ds_state_detect_then_transition(self):
         """Mock DOM iframe 3dsecure → FSM state becomes vbv_3ds."""
-        state, total = self._run("vbv_3ds")
+        state, _total = self._run("vbv_3ds")
         self.assertEqual(state.name, "vbv_3ds")
         self._mock_cdp.detect_page_state.assert_called_with("default")
         self._mock_fsm.transition_for_worker.assert_called_with("default", "vbv_3ds")
 
     def test_ui_lock_state_detect_then_transition(self):
         """Mock DOM spinner → FSM state becomes ui_lock."""
-        state, total = self._run("ui_lock")
+        state, _total = self._run("ui_lock")
         self.assertEqual(state.name, "ui_lock")
         self._mock_cdp.detect_page_state.assert_called_with("default")
         self._mock_fsm.transition_for_worker.assert_called_with("default", "ui_lock")
@@ -131,7 +107,7 @@ class TestFSMPrimaryTransitionPath(unittest.TestCase):
         ):
             mock_billing.select_profile.return_value = MagicMock()
             mock_cdp.submit_purchase.side_effect = lambda **kw: call_order.append("submit")
-            mock_cdp.detect_page_state.side_effect = lambda w_id: (
+            mock_cdp.detect_page_state.side_effect = lambda _w_id: (
                 call_order.append("detect"), "success"
             )[1]
             mock_fsm.transition_for_worker.return_value = State("success")
@@ -193,7 +169,7 @@ class TestFSMFallbackTransitionPath(unittest.TestCase):
         task = _make_task()
         detect_calls = []
 
-        def _detect_side_effect(w_id):
+        def _detect_side_effect(_w_id):
             detect_calls.append(len(detect_calls))
             if len(detect_calls) == 1:
                 raise RuntimeError("primary detect failed")
@@ -219,28 +195,28 @@ class TestFSMFallbackTransitionPath(unittest.TestCase):
 
     def test_fallback_success_state(self):
         """Fallback: after primary detect fails, second attempt returns success."""
-        state, total = self._run_with_fallback("success")
+        state, _total = self._run_with_fallback("success")
         self.assertEqual(state.name, "success")
         self.assertEqual(len(self._detect_calls), 2)
         self._mock_fsm.transition_for_worker.assert_called_with("default", "success")
 
     def test_fallback_declined_state(self):
         """Fallback: after primary detect fails, second attempt returns declined."""
-        state, total = self._run_with_fallback("declined")
+        state, _total = self._run_with_fallback("declined")
         self.assertEqual(state.name, "declined")
         self.assertEqual(len(self._detect_calls), 2)
         self._mock_fsm.transition_for_worker.assert_called_with("default", "declined")
 
     def test_fallback_vbv_3ds_state(self):
         """Fallback: after primary detect fails, second attempt returns vbv_3ds."""
-        state, total = self._run_with_fallback("vbv_3ds")
+        state, _total = self._run_with_fallback("vbv_3ds")
         self.assertEqual(state.name, "vbv_3ds")
         self.assertEqual(len(self._detect_calls), 2)
         self._mock_fsm.transition_for_worker.assert_called_with("default", "vbv_3ds")
 
     def test_fallback_ui_lock_state(self):
         """Fallback: after primary detect fails, second attempt returns ui_lock."""
-        state, total = self._run_with_fallback("ui_lock")
+        state, _total = self._run_with_fallback("ui_lock")
         self.assertEqual(state.name, "ui_lock")
         self.assertEqual(len(self._detect_calls), 2)
         self._mock_fsm.transition_for_worker.assert_called_with("default", "ui_lock")
@@ -250,7 +226,7 @@ class TestFSMFallbackTransitionPath(unittest.TestCase):
         task = _make_task()
         detect_calls = []
 
-        def _detect_side_effect(w_id):
+        def _detect_side_effect(_w_id):
             detect_calls.append(1)
             if len(detect_calls) == 1:
                 raise RuntimeError("primary detect failed")
@@ -267,7 +243,7 @@ class TestFSMFallbackTransitionPath(unittest.TestCase):
             mock_fsm.transition_for_worker.side_effect = InvalidTransitionError("bad")
             mock_fsm.get_current_state_for_worker.return_value = None
             mock_watchdog.wait_for_total.return_value = 49.99
-            state, total = run_payment_step(task)
+            state, _total = run_payment_step(task)
         self.assertIsNone(state)
 
     def test_fallback_not_called_when_primary_succeeds(self):
@@ -282,7 +258,7 @@ class TestFSMFallbackTransitionPath(unittest.TestCase):
         ):
             mock_billing.select_profile.return_value = MagicMock()
             mock_cdp.detect_page_state.side_effect = (
-                lambda w_id: (detect_call_count.append(1), "success")[1]
+                lambda _w_id: (detect_call_count.append(1), "success")[1]
             )
             mock_fsm.transition_for_worker.return_value = State("success")
             # Primary state is non-None → fallback must NOT run
