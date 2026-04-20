@@ -1,4 +1,8 @@
-"""Worker task factory for BitBrowser lifecycle and purchase cycle."""
+"""Worker task factory for ``integration.runtime.start()``.
+
+Handles BitBrowser lifecycle and runs purchase cycles from ``task_source``.
+``ENABLE_PRODUCTION_TASK_FN`` is enforced by the caller, not this module.
+"""
 import importlib
 import logging
 import threading
@@ -45,7 +49,13 @@ def _clear_abort(worker_id: str) -> None:
 
 
 def make_task_fn(task_source: Optional[Callable[[str], Any]] = None) -> Callable[[str], None]:
-    """Return a production task_fn for ``runtime.start()``."""
+    """Return a task_fn for ``runtime.start()``.
+
+    Args:
+        task_source: Optional ``(worker_id) -> WorkerTask | None`` callable.
+    Returns:
+        Callable ``(worker_id: str) -> None``.
+    """
 
     def task_fn(worker_id: str) -> None:
         """Execute one browser lifecycle cycle for *worker_id*."""
