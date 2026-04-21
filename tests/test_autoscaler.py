@@ -173,6 +173,7 @@ class TestScaleDownSingleStep(AutoScalerResetMixin, unittest.TestCase):
         rollout_module.reset()
 
     def test_scale_down_skips_force_rollback_when_single_step(self):
+        """With N=1, ``_scale_down`` must skip ``force_rollback`` and return 1."""
         scaler = autoscaler_module.AutoScaler()
         with patch.object(rollout_module, "force_rollback") as mock_force_rollback:
             workers = scaler._scale_down(reason="test")  # pylint: disable=protected-access
@@ -180,6 +181,7 @@ class TestScaleDownSingleStep(AutoScalerResetMixin, unittest.TestCase):
         self.assertEqual(workers, 1)
 
     def test_scale_down_reads_status_via_lock_safe_api(self):
+        """``_scale_down`` must read rollout state via the lock-safe ``get_status`` API."""
         scaler = autoscaler_module.AutoScaler()
         with patch.object(
             rollout_module,
