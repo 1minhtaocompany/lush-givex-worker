@@ -352,8 +352,15 @@ def _generate_email(
         _last_name: str | None = None,
         rng: random.Random | None = None,
 ) -> str:
-    # _first_name/_last_name unused intentionally; randomized token prevents PII leakage
     fill_rng = rng or _get_fill_rng()
+    fn = (_first_name or "").strip()
+    ln = (_last_name or "").strip()
+    if fn and ln:
+        def _sanitize(name: str) -> str:
+            return "".join(c for c in name.lower() if c.isalnum() or c in ".-")[:20]
+        local = f"{_sanitize(fn)}.{_sanitize(ln)}"
+        domain = fill_rng.choice(_EMAIL_DOMAINS)
+        return f"{local}@{domain}"
     token = "".join(fill_rng.choice(_HEX_CHARS) for _ in range(8))
     domain = fill_rng.choice(_EMAIL_DOMAINS)
     return f"user{token}@{domain}"
