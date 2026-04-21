@@ -22,24 +22,28 @@ def _make_driver():
 
 
 class TestClearCardFieldsCdpP14(unittest.TestCase):
+    """Regression tests for P1-4 CDP clear failure propagation."""
+
     def test_execute_cdp_cmd_raise_bubbles_as_cdp_error(self):
+        """execute_cdp_cmd failures must surface as CDPError with chaining."""
         driver = _make_driver()
         driver.execute_cdp_cmd.side_effect = RuntimeError("cdp target crashed")
-        gd = GivexDriver(driver)
-        with patch.object(gd, "bounding_box_click"):
+        givex_driver = GivexDriver(driver)
+        with patch.object(givex_driver, "bounding_box_click"):
             with self.assertRaises(CDPError) as ctx:
-                gd.clear_card_fields_cdp()
+                givex_driver.clear_card_fields_cdp()
         # The original CDP exception must be chained (raise ... from exc).
         self.assertIsInstance(ctx.exception.__cause__, RuntimeError)
 
     def test_bounding_box_click_raise_bubbles_as_cdp_error(self):
+        """bounding_box_click failures must also surface as chained CDPError."""
         driver = _make_driver()
-        gd = GivexDriver(driver)
+        givex_driver = GivexDriver(driver)
         with patch.object(
-            gd, "bounding_box_click", side_effect=RuntimeError("click failed")
+            givex_driver, "bounding_box_click", side_effect=RuntimeError("click failed")
         ):
             with self.assertRaises(CDPError) as ctx:
-                gd.clear_card_fields_cdp()
+                givex_driver.clear_card_fields_cdp()
         self.assertIsInstance(ctx.exception.__cause__, RuntimeError)
 
 
