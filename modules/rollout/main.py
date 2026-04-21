@@ -1,14 +1,89 @@
 """Rollout system for progressive worker scaling with automatic rollback."""
 
 import logging
+import os
 import threading
 
 _logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 
-# Scaling steps
-SCALE_STEPS = (1, 3, 5, 10)
+# Default scaling steps (cap at 10 workers).  The tuple is rebuilt at import
+# time — and whenever :func:`reset` is called — based on the ``MAX_WORKER_COUNT``
+# environment variable so operators can configure the exact worker cap.
+_DEFAULT_SCALE_STEPS = (1, 3, 5, 10)
+_DEFAULT_MAX_WORKER_COUNT = 10
+# Canonical progression used to pick intermediate steps between 10 and the cap.
+_DECADE_MULTIPLIERS = (2, 5, 10)
+
+
+def _read_max_worker_count():
+    """Return the target maximum worker count from the environment.
+
+    Falls back to :data:`_DEFAULT_MAX_WORKER_COUNT` (10) when the env var is
+    unset, empty, non-numeric, or less than 1.  A warning is logged on invalid
+    input so the misconfiguration is observable.
+    """
+    raw = os.environ.get("MAX_WORKER_COUNT", "").strip()
+    if not raw:
+        return _DEFAULT_MAX_WORKER_COUNT
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        _logger.warning(
+            "Invalid MAX_WORKER_COUNT=%r; falling back to default %d",
+            raw, _DEFAULT_MAX_WORKER_COUNT,
+        )
+        return _DEFAULT_MAX_WORKER_COUNT
+    if value < 1:
+        _logger.warning(
+            "MAX_WORKER_COUNT=%d is below 1; falling back to default %d",
+            value, _DEFAULT_MAX_WORKER_COUNT,
+        )
+        return _DEFAULT_MAX_WORKER_COUNT
+    return value
+
+
+def _build_scale_steps(max_count):
+    """Build the scaling-step tuple for a given maximum worker count.
+
+    ``max_count`` is the operator-configured true upper bound.  The returned
+    tuple always progresses strictly upward and always ends with exactly
+    ``max_count``.  For ``max_count`` in ``1..10`` the canonical default
+    steps ``(1, 3, 5, 10)`` are filtered to values strictly below
+    ``max_count`` before the cap is appended — so ``1 → (1,)``,
+    ``2 → (1, 2)``, ``4 → (1, 3, 4)``, ``7 → (1, 3, 5, 7)``, and
+    ``10 → (1, 3, 5, 10)``.  For ``max_count > 10`` the canonical
+    ``(1, 3, 5, 10)`` prefix is kept and extended with a 2/5/10 decade
+    progression (``20, 50, 100, 200, 500, …``) up to — but not including —
+    ``max_count``, which is then appended as the final step.
+    """
+    if max_count <= 1:
+        return (1,)
+    steps = [value for value in _DEFAULT_SCALE_STEPS if value < max_count]
+    if max_count > _DEFAULT_MAX_WORKER_COUNT:
+        decade = 10
+        # Guard against pathological inputs: the progression grows by 10× each
+        # outer iteration, so 20 iterations already reaches 10**21.
+        for _ in range(20):
+            appended_any = False
+            reached_cap = False
+            for multiplier in _DECADE_MULTIPLIERS:
+                value = decade * multiplier
+                if value >= max_count:
+                    reached_cap = True
+                    break
+                steps.append(value)
+                appended_any = True
+            if reached_cap or not appended_any:
+                break
+            decade *= 10
+    steps.append(max_count)
+    return tuple(steps)
+
+
+# Scaling steps — evaluated at import time from the current environment.
+SCALE_STEPS = _build_scale_steps(_read_max_worker_count())
 
 # Current step index into SCALE_STEPS
 _current_step_index = 0
@@ -18,15 +93,15 @@ _check_rollback_fn = None
 _save_baseline_fn = None
 
 # History of rollback events
-_rollback_history = []
+_ROLLBACK_HISTORY = []
 _ROLLBACK_HISTORY_LIMIT = 200
 
 # Guard: at most one forced rollback per scale-up window.
 # Reset to False at the start of every try_scale_up() call.
-_rollback_applied = False
+_ROLLBACK_APPLIED = False
 
 
-def configure(check_rollback_fn=None, save_baseline_fn=None):
+def configure(check_rollback_fn=None, save_baseline_fn=None):  # pylint: disable=global-statement
     """Inject monitor callbacks.  Called by the orchestration layer at init.
 
     Args:
@@ -65,7 +140,7 @@ def can_scale_up():
         return _current_step_index < len(SCALE_STEPS) - 1
 
 
-def try_scale_up():
+def try_scale_up():  # pylint: disable=global-statement
     """Attempt to advance to the next scaling step.
 
     Before scaling up, the injected *check_rollback_fn* is called.  If it
@@ -85,13 +160,13 @@ def try_scale_up():
         ``"scaled_up"``, ``"rollback"``, or ``"at_max"``, and *reasons*
         is the list of triggered rollback conditions (empty when healthy).
     """
-    global _current_step_index, _rollback_applied
+    global _current_step_index, _ROLLBACK_APPLIED
 
     with _lock:
         # Re-arm the rollback guard at the start of every scale-up attempt so
         # that a persistent save_fn failure can never permanently block
         # force_rollback() (Bug fix: _rollback_applied permanent block).
-        _rollback_applied = False
+        _ROLLBACK_APPLIED = False
 
         if _current_step_index >= len(SCALE_STEPS) - 1:
             return SCALE_STEPS[_current_step_index], "at_max", []
@@ -108,13 +183,13 @@ def try_scale_up():
             old_index = _current_step_index
             if _current_step_index > 0:
                 _current_step_index -= 1
-            _rollback_history.append({
+            _ROLLBACK_HISTORY.append({
                 "from_step": old_index,
                 "to_step": _current_step_index,
                 "reasons": list(reasons),
             })
-            if len(_rollback_history) > _ROLLBACK_HISTORY_LIMIT:
-                _rollback_history[:] = _rollback_history[-_ROLLBACK_HISTORY_LIMIT:]
+            if len(_ROLLBACK_HISTORY) > _ROLLBACK_HISTORY_LIMIT:
+                _ROLLBACK_HISTORY[:] = _ROLLBACK_HISTORY[-_ROLLBACK_HISTORY_LIMIT:]
             _logger.warning(
                 "Rollback %d → %d workers: %s",
                 SCALE_STEPS[old_index],
@@ -143,14 +218,14 @@ def try_scale_up():
         with _lock:
             if _current_step_index == intended_step:
                 # No concurrent change: revert our own increment.
-                # _rollback_applied is already False (reset at call start) so
+                # _ROLLBACK_APPLIED is already False (reset at call start) so
                 # force_rollback() remains armed for the restored window.
                 _current_step_index = prev_step
             elif _current_step_index == prev_step:
                 # A concurrent force_rollback() has already decremented back to
                 # prev_step while save_fn() was running.  Re-arm the rollback
                 # guard for the restored window so it retains its rollback budget.
-                _rollback_applied = False
+                _ROLLBACK_APPLIED = False
         _logger.error(
             "save_fn failed in try_scale_up (prev_step=%d, intended_step=%d); step reverted.",
             prev_step,
@@ -182,7 +257,7 @@ def check_health():
     return []
 
 
-def force_rollback(reason="manual"):
+def force_rollback(reason="manual"):  # pylint: disable=global-statement
     """Force an immediate rollback by one step.
 
     At most one forced rollback is applied per scale-up window.  If another
@@ -197,9 +272,9 @@ def force_rollback(reason="manual"):
     Returns:
         The new target worker count after rollback.
     """
-    global _current_step_index, _rollback_applied
+    global _current_step_index, _ROLLBACK_APPLIED
     with _lock:
-        if _rollback_applied:
+        if _ROLLBACK_APPLIED:
             _logger.debug(
                 "force_rollback skipped: rollback already applied in current window (step %d)",
                 _current_step_index,
@@ -208,14 +283,14 @@ def force_rollback(reason="manual"):
         old_index = _current_step_index
         if _current_step_index > 0:
             _current_step_index -= 1
-        _rollback_applied = True
-        _rollback_history.append({
+        _ROLLBACK_APPLIED = True
+        _ROLLBACK_HISTORY.append({
             "from_step": old_index,
             "to_step": _current_step_index,
             "reasons": [reason],
         })
-        if len(_rollback_history) > _ROLLBACK_HISTORY_LIMIT:
-            _rollback_history[:] = _rollback_history[-_ROLLBACK_HISTORY_LIMIT:]
+        if len(_ROLLBACK_HISTORY) > _ROLLBACK_HISTORY_LIMIT:
+            _ROLLBACK_HISTORY[:] = _ROLLBACK_HISTORY[-_ROLLBACK_HISTORY_LIMIT:]
         _logger.warning(
             "Forced rollback %d → %d workers: %s",
             SCALE_STEPS[old_index],
@@ -234,7 +309,7 @@ def get_rollback_history():
                 "to_step": entry["to_step"],
                 "reasons": list(entry["reasons"]),
             }
-            for entry in _rollback_history
+            for entry in _ROLLBACK_HISTORY
         ]
 
 
@@ -246,17 +321,22 @@ def get_status():
             "step_index": _current_step_index,
             "max_step_index": len(SCALE_STEPS) - 1,
             "can_scale_up": _current_step_index < len(SCALE_STEPS) - 1,
-            "rollback_count": len(_rollback_history),
+            "rollback_count": len(_ROLLBACK_HISTORY),
         }
 
 
-def reset():
-    """Reset all rollout state.  Intended for testing."""
+def reset():  # pylint: disable=global-statement
+    """Reset all rollout state.  Intended for testing.
+
+    Also re-reads ``MAX_WORKER_COUNT`` from the environment and rebuilds
+    :data:`SCALE_STEPS` so tests can vary the cap between cases.
+    """
     global _current_step_index, _check_rollback_fn, _save_baseline_fn
-    global _rollback_history, _rollback_applied
+    global _ROLLBACK_HISTORY, _ROLLBACK_APPLIED, SCALE_STEPS
     with _lock:
+        SCALE_STEPS = _build_scale_steps(_read_max_worker_count())
         _current_step_index = 0
         _check_rollback_fn = None
         _save_baseline_fn = None
-        _rollback_history = []
-        _rollback_applied = False
+        _ROLLBACK_HISTORY = []
+        _ROLLBACK_APPLIED = False
