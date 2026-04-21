@@ -400,16 +400,16 @@ class TestInjectCardEntryDelays(unittest.TestCase):
         persona = PersonaProfile(seed)
         return BiometricProfile(persona)
 
-    def test_returns_19_delays(self):
-        """generate_4x4_pattern() produces 19 values; all must be slept."""
+    def test_returns_16_delays(self):
+        """generate_4x4_pattern() produces 16 values; all must be slept."""
         from modules.delay.wrapper import inject_card_entry_delays
         bio = self._make_bio()
         with patch("modules.delay.wrapper.time.sleep"):
             result = inject_card_entry_delays(bio)
-        self.assertEqual(len(result), 19)
+        self.assertEqual(len(result), 16)
 
     def test_all_delays_positive(self):
-        """All 19 delays must be positive floats."""
+        """All 16 delays must be positive floats."""
         from modules.delay.wrapper import inject_card_entry_delays
         bio = self._make_bio()
         with patch("modules.delay.wrapper.time.sleep"):
@@ -417,13 +417,13 @@ class TestInjectCardEntryDelays(unittest.TestCase):
         for d in result:
             self.assertGreater(d, 0.0)
 
-    def test_sleep_called_19_times(self):
+    def test_sleep_called_16_times(self):
         """time.sleep must be called once per keystroke delay."""
         from modules.delay.wrapper import inject_card_entry_delays
         bio = self._make_bio()
         with patch("modules.delay.wrapper.time.sleep") as mock_sleep:
             inject_card_entry_delays(bio)
-        self.assertEqual(mock_sleep.call_count, 19)
+        self.assertEqual(mock_sleep.call_count, 16)
 
     def test_stop_event_exits_early(self):
         """When stop_event is pre-set, injection stops after 0 keystrokes."""
@@ -447,7 +447,7 @@ class TestInjectCardEntryDelays(unittest.TestCase):
         ):
             inject_card_entry_delays(bio, stop_event=stop_event)
         mock_sleep.assert_not_called()
-        self.assertEqual(mock_wait.call_count, 19)
+        self.assertEqual(mock_wait.call_count, 16)
         for call in mock_wait.call_args_list:
             timeout = call.kwargs.get("timeout")
             if timeout is None and call.args:
@@ -523,7 +523,7 @@ class TestInjectCardEntryDelays(unittest.TestCase):
         self.assertTrue(engine.is_delay_permitted())
         with patch("modules.delay.wrapper.time.sleep"):
             result = inject_card_entry_delays(bio, engine=engine)
-        self.assertEqual(len(result), 19)
+        self.assertEqual(len(result), 16)
 
     def test_engine_guard_blocks_in_post_action(self):
         """When engine reports POST_ACTION context, no delays are injected."""

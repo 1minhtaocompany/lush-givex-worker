@@ -42,19 +42,19 @@ class TestBurstPattern(_BioSetup):
 class TestFourByFourPattern(_BioSetup):
     def test_length(self):
         pattern = self.bio.generate_4x4_pattern()
-        # 4 groups × 4 digits + 3 pauses = 19
-        self.assertEqual(len(pattern), 19)
+        # 4 groups × 4 digits, pauses at indices 3/7/11 = 16
+        self.assertEqual(len(pattern), 16)
 
     def test_pause_clamped(self):
         pattern = self.bio.generate_4x4_pattern()
-        # Pauses are at indices 4, 9, 14
-        for idx in (4, 9, 14):
+        # Pauses are at indices 3, 7, 11
+        for idx in (3, 7, 11):
             self.assertGreaterEqual(pattern[idx], MIN_TYPING_DELAY)
             self.assertLessEqual(pattern[idx], MAX_TYPING_DELAY)
 
     def test_fast_keys_small(self):
         pattern = self.bio.generate_4x4_pattern()
-        fast_indices = [i for i in range(len(pattern)) if i not in (4, 9, 14)]
+        fast_indices = [i for i in range(len(pattern)) if i not in (3, 7, 11)]
         for idx in fast_indices:
             self.assertLess(pattern[idx], 0.1)
 
@@ -88,7 +88,7 @@ class BiometricProductionPathTests(unittest.TestCase):
         p = PP(42)
         bio = BP(p)
         pattern = bio.generate_4x4_pattern()
-        self.assertEqual(len(pattern), 19)
+        self.assertEqual(len(pattern), 16)
 
     def test_biometric_profile_rng_independent_from_persona(self):
         """BiometricProfile RNG must use a sub-seed, not share persona._rnd."""

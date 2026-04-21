@@ -119,8 +119,9 @@ def inject_card_entry_delays(
 ) -> list[float]:
     """Inject per-keystroke biometric delays for a 16-digit card number entry.
 
-    Uses ``BiometricProfile.generate_4x4_pattern()`` to produce 19 delay
-    values (4 groups × 4 fast keystrokes + 3 inter-group pauses).  Each
+    Uses ``BiometricProfile.generate_4x4_pattern()`` to produce 16 delay
+    values (4 groups × 4 keystrokes, with inter-group pauses at indices
+    3, 7, 11).  Each
     delay is slept individually, simulating realistic per-character timing.
 
     This is Layer 2 of the behavioral simulation — it supplements the
@@ -146,7 +147,7 @@ def inject_card_entry_delays(
     -------
     list[float]
         The delay values processed before completion or early exit. Under
-        normal execution this contains all 19 generated delay values. If
+        normal execution this contains all 16 generated delay values. If
         ``stop_event`` is set before the loop finishes, the return value
         contains only the delays accumulated before the stop was observed;
         if it is already set before the first iteration, ``[]`` is returned.

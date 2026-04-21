@@ -11,7 +11,7 @@ class Test4x4PatternWired(unittest.TestCase):
         driver.find_elements.return_value = [element]
         gd = GivexDriver(driver)
         gd._bio = MagicMock()
-        gd._bio.generate_4x4_pattern.return_value = [0.1] * 19
+        gd._bio.generate_4x4_pattern.return_value = [0.1] * 16
         gd._bio.generate_burst_pattern.return_value = [0.2]
 
         with patch("modules.cdp.driver._type_value") as mock_type:
@@ -24,7 +24,7 @@ class Test4x4PatternWired(unittest.TestCase):
 
         gd._bio.generate_4x4_pattern.assert_called_once()
         gd._bio.generate_burst_pattern.assert_not_called()
-        self.assertEqual(mock_type.call_args.kwargs["delays"], [0.1] * 19)
+        self.assertEqual(mock_type.call_args.kwargs["delays"], [0.1] * 16)
 
 
 if __name__ == "__main__":
