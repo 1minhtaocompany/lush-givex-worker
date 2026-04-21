@@ -504,6 +504,11 @@ class GenerateEmailTests(unittest.TestCase):
         self.assertFalse(any(c in first_part for c in "'! "))
         self.assertFalse(any(c in last_part for c in "@# "))
 
+    def test_names_sanitized_to_empty_fall_back_to_hex(self):
+        """Names that sanitize to empty components fall back to the hex form."""
+        result = billing._generate_email("!!!", "@@@")
+        self.assertRegex(result, r"^user[0-9a-f]{8}@")
+
     def test_names_truncated_to_20_chars(self):
         """Each name component is truncated to 20 characters."""
         long_first = "a" * 30
