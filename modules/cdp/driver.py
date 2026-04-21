@@ -265,10 +265,16 @@ def _sanitize_error(msg: str) -> str:
 # ── URL constants ─────────────────────────────────────────────────────────
 URL_GEO_CHECK = "https://lumtest.com/myip.json"
 URL_BASE      = "https://wwws-usa2.givex.com/cws4.0/lushusa/"
-URL_EGIFT     = "https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/"
+URL_EGIFT     = os.getenv(
+    "GIVEX_EGIFT_URL",
+    "https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/",
+)
 URL_CART      = "https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/shopping-cart.html"
 URL_CHECKOUT  = "https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html"
-URL_PAYMENT   = "https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html"
+URL_PAYMENT   = os.getenv(
+    "GIVEX_PAYMENT_URL",
+    "https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/guest/payment.html",
+)
 
 # ── URL fragments used to detect order confirmation ─────────────────────────
 URL_CONFIRM_FRAGMENTS = ("/confirmation", "/order-confirmation", "order-confirm")
@@ -710,12 +716,12 @@ def hard_reset_browser_state(driver) -> None:
         _log.debug("hard_reset_browser_state: delete_all_cookies skipped: %s", exc)
 
 
-def handle_ui_lock_focus_shift(driver, neutral_xy=(20, 20)) -> bool:
+def handle_ui_lock_focus_shift(driver) -> bool:
     """Focus-Shift Retry per Blueprint §6 Ngã rẽ 1.
 
     Steps:
-      1. Click a neutral point (e.g. ``(20, 20)`` on the page ``body``) to
-         shift focus away from the locked submit button.
+      1. Click ``SEL_NEUTRAL_DIV`` (``body``) to shift focus away from the
+         locked submit button.
       2. Wait 0.5s to let any animation settle.
       3. Re-locate ``SEL_COMPLETE_PURCHASE`` and click it once via
          ``ActionChains.click``.
@@ -727,14 +733,13 @@ def handle_ui_lock_focus_shift(driver, neutral_xy=(20, 20)) -> bool:
 
     Args:
         driver: Selenium-compatible driver.
-        neutral_xy: Pixel offset from the current mouse position for the
-            neutral click.  Defaults to ``(20, 20)``.
     """
     if _ActionChains is None:  # pragma: no cover - selenium always present in prod
         _log.warning("handle_ui_lock_focus_shift: ActionChains unavailable")
         return False
     try:
-        _ActionChains(driver).move_by_offset(*neutral_xy).click().perform()
+        neutral = driver.find_element("css selector", SEL_NEUTRAL_DIV)
+        _ActionChains(driver).move_to_element(neutral).click().perform()
         time.sleep(0.5)
         btn = driver.find_element("css selector", SEL_COMPLETE_PURCHASE)
         _ActionChains(driver).move_to_element(btn).click().perform()

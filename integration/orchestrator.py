@@ -1176,9 +1176,18 @@ def handle_outcome(state, order_queue, worker_id: str = "default", ctx=None):
             worker_id,
         )
         return "retry"
+    _swap = ctx.swap_count if ctx is not None else 0
     if state.name == "success":
+        _logger.info(
+            "[trace=%s] FORK=%s worker=%s swap=%d",
+            _get_trace_id(), state.name, worker_id, _swap,
+        )
         return "complete"
     if state.name in ("declined", "vbv_cancelled"):
+        _logger.info(
+            "[trace=%s] FORK=%s worker=%s swap=%d",
+            _get_trace_id(), state.name, worker_id, _swap,
+        )
         try:
             _alerting.send_alert(
                 f"Card declined: worker={worker_id} state={state.name}"
@@ -1200,8 +1209,16 @@ def handle_outcome(state, order_queue, worker_id: str = "default", ctx=None):
                 _logger.warning("VBV reload refill failed: %s", _sanitize_error(exc))
         return ("retry_new_card", next_card)
     if state.name == "ui_lock":
+        _logger.info(
+            "[trace=%s] FORK=%s worker=%s swap=%d",
+            _get_trace_id(), state.name, worker_id, _swap,
+        )
         return "retry"
     if state.name == "vbv_3ds":
+        _logger.info(
+            "[trace=%s] FORK=%s worker=%s swap=%d",
+            _get_trace_id(), state.name, worker_id, _swap,
+        )
         try:
             driver = cdp._get_driver(worker_id)  # pylint: disable=protected-access
             if driver.handle_vbv_challenge():
@@ -1216,6 +1233,10 @@ def handle_outcome(state, order_queue, worker_id: str = "default", ctx=None):
                 _get_trace_id(), worker_id, _sanitize_error(exc),
             )
         return "await_3ds"
+    _logger.info(
+        "[trace=%s] FORK=%s worker=%s swap=%d",
+        _get_trace_id(), state.name, worker_id, _swap,
+    )
     return "retry"
 
 
