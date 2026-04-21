@@ -90,8 +90,10 @@ SCALE_STEPS = _build_scale_steps(_read_max_worker_count())
 # that values installed via :func:`configure_max_workers` / :func:`set_scale_steps`
 # survive subsequent ``reset()`` calls (e.g. from ``integration/runtime.py``).
 # ``_runtime_scale_steps`` takes precedence over ``_runtime_max_worker_count``.
-_runtime_max_worker_count = None
-_runtime_scale_steps = None
+# These are mutable runtime state, not constants — lowercase naming is
+# intentional; suppress Pylint's constant-naming heuristic.
+_runtime_max_worker_count = None  # pylint: disable=invalid-name
+_runtime_scale_steps = None  # pylint: disable=invalid-name
 
 # Current step index into SCALE_STEPS
 _current_step_index = 0
@@ -388,7 +390,7 @@ def configure_max_workers(count: int) -> None:
             f"MAX_WORKER_COUNT={count} out of range "
             f"[{_MIN_MAX_WORKER_COUNT},{_MAX_MAX_WORKER_COUNT}]"
         )
-    global _runtime_max_worker_count, _runtime_scale_steps  # pylint: disable=global-statement
+    global _runtime_max_worker_count, _runtime_scale_steps  # pylint: disable=global-statement,invalid-name
     with _lock:
         _runtime_max_worker_count = count
         _runtime_scale_steps = None
@@ -447,7 +449,7 @@ def set_scale_steps(steps) -> None:
         raise ValueError(
             f"final step {candidate[-1]} exceeds cap {_MAX_MAX_WORKER_COUNT}"
         )
-    global _runtime_max_worker_count, _runtime_scale_steps  # pylint: disable=global-statement
+    global _runtime_max_worker_count, _runtime_scale_steps  # pylint: disable=global-statement,invalid-name
     with _lock:
         _runtime_scale_steps = candidate
         _runtime_max_worker_count = None

@@ -22,15 +22,25 @@ from modules.rollout.main import (
 TEST_TIMEOUT_SECONDS = 1
 
 
-class RolloutResetMixin:
-    def setUp(self):
+def _clear_rollout_runtime_overrides():
+    """Clear rollout runtime config overrides under the module lock.
+
+    Tests never touch ``_runtime_*`` module-level state directly; all
+    writes go through ``_lock`` to match the concurrency contract of
+    ``modules/rollout/main.py`` (threading.Lock on shared state).
+    """
+    with rollout_module._lock:  # pylint: disable=protected-access
         rollout_module._runtime_max_worker_count = None  # pylint: disable=protected-access
         rollout_module._runtime_scale_steps = None  # pylint: disable=protected-access
+
+
+class RolloutResetMixin:
+    def setUp(self):
+        _clear_rollout_runtime_overrides()
         reset()
 
     def tearDown(self):
-        rollout_module._runtime_max_worker_count = None  # pylint: disable=protected-access
-        rollout_module._runtime_scale_steps = None  # pylint: disable=protected-access
+        _clear_rollout_runtime_overrides()
         reset()
 
 
@@ -418,6 +428,7 @@ class TestSetScaleSteps(RolloutResetMixin, unittest.TestCase):
                     rollout_module.set_scale_steps(bad)
 
     def test_custom_steps_persist_across_reset(self):
+        """Custom steps installed via set_scale_steps() must survive reset()."""
         rollout_module.set_scale_steps((1, 2, 4, 8))
         reset()
         self.assertEqual(rollout_module.SCALE_STEPS, (1, 2, 4, 8))
@@ -426,8 +437,7 @@ class TestSetScaleSteps(RolloutResetMixin, unittest.TestCase):
 class TestResetRereadsEnv(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("MAX_WORKER_COUNT", None)
-        rollout_module._runtime_max_worker_count = None  # pylint: disable=protected-access
-        rollout_module._runtime_scale_steps = None  # pylint: disable=protected-access
+        _clear_rollout_runtime_overrides()
         reset()
 
     def test_reset_rebuilds_scale_steps_from_env(self):
