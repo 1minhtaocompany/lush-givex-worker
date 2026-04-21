@@ -12,6 +12,38 @@ step is attempted. A FAIL at any step triggers the procedure in
 
 ---
 
+## 0. Prerequisite issue traceability
+
+P2-5 is the **final gate** — it depends on every preceding issue being
+closed. The table below maps each prerequisite to its delivery status so
+an operator can confirm the chain is complete before starting Step 1.
+
+| Issue | Title (short) | Category | Status |
+|---|---|---|---|
+| #108 | Master tracking issue | meta | Tracking — closed when all children close |
+| #109 | P0-1 — FSM state machine + preflight | code | Implemented earlier (merged) |
+| #110 | P0-2 — Payment retry loop | code | Implemented earlier (merged) |
+| #111 | P0-3 — Card-swap on decline | code | Implemented earlier (merged) |
+| #112 | P0-4 — UI-lock recovery | code | Implemented earlier (merged) |
+| #113 | P0-5 — VBV/3DS refill after reload | code | Implemented earlier (merged) |
+| #114 | P0-6 — Idempotency store fix | code | Implemented earlier (merged) |
+| #115 | P1-1 — Popup text-match selector | code | Implemented earlier (merged) |
+| #116 | P1-2 — Clear/refill after popup | code | Implemented earlier (merged) |
+| #117 | P1-3 — Thank-you popup shadow DOM | code | Implemented earlier (merged) |
+| #118 | P1-4 — Structured logging + trace | code | Implemented earlier (merged) |
+| #119 | P1-5 — Worker task abort | code | Implemented earlier (merged) |
+| #120 | P2-1 — Production logging / Telegram | code | Implemented earlier (merged) |
+| #121 | P2-2 — Givex URL env override | code | Implemented earlier (merged) |
+| #122 | P2-3 — Preflight geo-check | code | Implemented earlier (merged) |
+| #123 | P2-4 — 14 E2E integration tests | code | Implemented earlier (merged) |
+| #124 | **P2-5 — Canary deploy (this doc)** | docs + ops | **Documented here**; operator execution pending |
+
+> **Scope of this PR:** documentation deliverables only (`docs/rollback.md`,
+> `docs/canary_rollout.md`, RUNBOOK cross-links, CHANGELOG). This PR does
+> **not** claim that the operator-executed acceptance criteria (mini-canary
+> $5 transaction, soak 5 cards, 3-worker parallel, full rollout) have been
+> completed — those are tracked in §5 "Operator checklist" below.
+
 ## 1. The five canary steps
 
 Each step reuses the same production binary; only the scope of traffic
