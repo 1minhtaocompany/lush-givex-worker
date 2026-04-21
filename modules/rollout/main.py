@@ -61,8 +61,6 @@ def _build_scale_steps(max_count):
     if max_count <= 1:
         return (1,)
     steps = [value for value in _DEFAULT_SCALE_STEPS if value < max_count]
-    if not steps or steps[0] != 1:
-        steps.insert(0, 1)
     if max_count > _DEFAULT_MAX_WORKER_COUNT:
         decade = 10
         # Guard against pathological inputs: the progression grows by 10× each
