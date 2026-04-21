@@ -69,15 +69,16 @@ class TestTabJanitorWiredBeforeGeoCheck(unittest.TestCase):
         call_order = []
 
         def tracking_get(url):
+            """Record each browser navigation in call order."""
             call_order.append(("get", url))
 
         selenium.get.side_effect = tracking_get
 
-        gd = GivexDriver(selenium)
+        givex_driver = GivexDriver(selenium)
 
         with patch("modules.cdp.driver.close_extra_tabs", wraps=close_extra_tabs) as mock_janitor, \
              patch("time.sleep"):
-            gd.preflight_geo_check()
+            givex_driver.preflight_geo_check()
 
         mock_janitor.assert_called_once()
         self.assertIn(("get", "about:blank"), call_order)
@@ -99,11 +100,12 @@ class TestTabJanitorWiredBeforeGeoCheck(unittest.TestCase):
         sleep_calls = []
 
         def tracking_sleep(secs):
+            """Record each janitor sleep duration."""
             sleep_calls.append(secs)
 
-        gd = GivexDriver(selenium)
+        givex_driver = GivexDriver(selenium)
         with patch("time.sleep", side_effect=tracking_sleep):
-            gd.preflight_geo_check()
+            givex_driver.preflight_geo_check()
 
         self.assertIn(2, sleep_calls, "time.sleep(2) must be called by _run_tab_janitor")
         get_calls = [c[0][0] for c in selenium.get.call_args_list]
