@@ -340,3 +340,83 @@ def reset():  # pylint: disable=global-statement
         _save_baseline_fn = None
         _ROLLBACK_HISTORY = []
         _ROLLBACK_APPLIED = False
+
+
+# Supported range for the operator-configurable worker cap.
+_MIN_MAX_WORKER_COUNT = 1
+_MAX_MAX_WORKER_COUNT = 50
+
+
+def configure_max_workers(n: int) -> None:
+    """Set the worker cap and re-derive :data:`SCALE_STEPS` at runtime.
+
+    Must be called before the rollout scheduler loop is started.  Validates
+    ``n`` is an ``int`` in ``[1, 50]``, rebuilds the scaling-step tuple, and
+    calls :func:`reset` so any pre-existing state is cleared.
+
+    Args:
+        n: Target maximum worker count.
+
+    Raises:
+        TypeError: If ``n`` is not an ``int`` (``bool`` is rejected too).
+        ValueError: If ``n`` is outside ``[1, 50]``.
+    """
+    if isinstance(n, bool) or not isinstance(n, int):
+        raise TypeError(f"MAX_WORKER_COUNT must be int, got {type(n).__name__}")
+    if not _MIN_MAX_WORKER_COUNT <= n <= _MAX_MAX_WORKER_COUNT:
+        raise ValueError(
+            f"MAX_WORKER_COUNT={n} out of range "
+            f"[{_MIN_MAX_WORKER_COUNT},{_MAX_MAX_WORKER_COUNT}]"
+        )
+    new_steps = _build_scale_steps(n)
+    reset()
+    # reset() re-reads the env var; override with the explicitly requested cap
+    # so callers don't have to mutate the environment.
+    global SCALE_STEPS  # pylint: disable=global-statement
+    with _lock:
+        SCALE_STEPS = new_steps
+    _logger.info("configure_max_workers: cap=%d steps=%s", n, new_steps)
+
+
+def set_scale_steps(steps) -> None:
+    """Install an explicit scaling-step tuple and reset rollout state.
+
+    The supplied ``steps`` must be a non-empty iterable of positive ``int``s
+    that is strictly ascending and whose final element is at most ``50``.
+    Starting at ``1`` is the recommended convention used by the default
+    scaling progression, but any positive starting value is accepted so
+    callers can install custom progressions in tests.
+
+    Args:
+        steps: Iterable of ``int`` scaling steps (e.g. ``(1, 2, 4)``).
+
+    Raises:
+        TypeError: If ``steps`` is not iterable or contains non-ints.
+        ValueError: If ``steps`` is empty, not strictly ascending, contains a
+            non-positive value, or exceeds the ``50`` cap.
+    """
+    try:
+        candidate = tuple(steps)
+    except TypeError as exc:
+        raise TypeError(f"steps must be iterable, got {type(steps).__name__}") from exc
+    if not candidate:
+        raise ValueError("steps must be non-empty")
+    for value in candidate:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(
+                f"steps must contain ints, got {type(value).__name__}"
+            )
+        if value < 1:
+            raise ValueError(f"steps must be positive, got {value}")
+    for prev, nxt in zip(candidate, candidate[1:]):
+        if nxt <= prev:
+            raise ValueError(f"steps must be strictly ascending: {candidate}")
+    if candidate[-1] > _MAX_MAX_WORKER_COUNT:
+        raise ValueError(
+            f"final step {candidate[-1]} exceeds cap {_MAX_MAX_WORKER_COUNT}"
+        )
+    reset()
+    global SCALE_STEPS  # pylint: disable=global-statement
+    with _lock:
+        SCALE_STEPS = candidate
+    _logger.info("set_scale_steps: steps=%s", candidate)
