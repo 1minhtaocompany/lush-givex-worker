@@ -52,15 +52,15 @@ class BiometricProfile:
     def generate_4x4_pattern(self) -> list[float]:
         """16 delay values for 16 card digits (4 fast → pause → repeat)."""
         delays: list[float] = []
-        for group in range(4):
-            for _ in range(4):
-                with self._rnd_lock:
-                    delays.append(self._rnd.uniform(0.03, 0.08))
-            if group < 3:
+        for i in range(16):
+            if i in (3, 7, 11):
                 with self._rnd_lock:
                     delays.append(
                         max(MIN_TYPING_DELAY,
                             min(self._rnd.uniform(0.6, 1.8), MAX_TYPING_DELAY)))
+            else:
+                with self._rnd_lock:
+                    delays.append(self._rnd.uniform(0.03, 0.08))
         return delays
 
     def apply_noise(self, base_delay: float) -> float:

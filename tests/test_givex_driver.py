@@ -1724,7 +1724,7 @@ class TestRealisticTypeField(unittest.TestCase):
         kwargs = mock_tv.call_args[1]
         delays = kwargs.get("delays")
         self.assertIsNotNone(delays)
-        self.assertEqual(len(delays), 19)
+        self.assertEqual(len(delays), 16)
 
     def test_realistic_type_temporal_adjusts_typo_rate(self):
         """Night temporal state adds to persona typo_rate passed to type_value."""

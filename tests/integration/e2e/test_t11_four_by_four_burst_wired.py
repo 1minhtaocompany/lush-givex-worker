@@ -25,9 +25,10 @@ class TestT11FourByFourBurstWired(E2EBase):
         raw = MagicMock()
         raw.find_elements.return_value = [MagicMock()]
         gd = GivexDriver(raw)
-        gd._bio = MagicMock()
-        gd._bio.generate_4x4_pattern.return_value = [0.05] * 19
-        gd._bio.generate_burst_pattern.return_value = [0.07]
+        bio = MagicMock()
+        bio.generate_4x4_pattern.return_value = [0.05] * 16
+        bio.generate_burst_pattern.return_value = [0.07]
+        setattr(gd, "_bio", bio)
 
         with patch("modules.cdp.driver._type_value") as mock_type:
             gd._realistic_type_field(
@@ -37,10 +38,10 @@ class TestT11FourByFourBurstWired(E2EBase):
                 field_kind="card_number",
             )
 
-        gd._bio.generate_4x4_pattern.assert_called_once()
-        gd._bio.generate_burst_pattern.assert_not_called()
+        bio.generate_4x4_pattern.assert_called_once()
+        bio.generate_burst_pattern.assert_not_called()
         # Delays forwarded into the typing helper must be the 4×4 pattern.
-        self.assertEqual(mock_type.call_args.kwargs["delays"], [0.05] * 19)
+        self.assertEqual(mock_type.call_args.kwargs["delays"], [0.05] * 16)
 
 
 if __name__ == "__main__":

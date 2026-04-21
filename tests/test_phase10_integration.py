@@ -44,7 +44,7 @@ class TestFullPipeline(unittest.TestCase):
         p = PersonaProfile(102)
         bio = BiometricProfile(p)
         pattern = bio.generate_4x4_pattern()
-        self.assertEqual(len(pattern), 19)
+        self.assertEqual(len(pattern), 16)
         noisy = [bio.apply_noise(d) for d in pattern]
         for d in noisy:
             self.assertGreaterEqual(d, 0.0)
