@@ -107,10 +107,9 @@ class E2EBase(unittest.TestCase):
             _submitted_task_ids.clear()
 
     def tearDown(self):
-        try:
-            _cdp_main.unregister_driver(self.worker_id)
-        except Exception:  # noqa: BLE001
-            pass
+        # cdp.unregister_driver is a no-op when worker_id is not registered
+        # (it uses dict.pop with a default), so no guard is needed.
+        _cdp_main.unregister_driver(self.worker_id)
         cleanup_worker(self.worker_id)
 
 

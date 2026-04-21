@@ -52,10 +52,17 @@ class TestT12FsmTransitionFromPageState(E2EBase):
         with self.assertRaises(InvalidStateError):
             transition_for_worker(wid, "unknown_state")
 
-    def test_allowed_states_matches_page_states(self):
-        # The page states detect_page_state can return must ALL be in the FSM.
+    def test_allowed_states_covers_all_page_states(self):
+        # The page states detect_page_state can return must ALL be valid FSM
+        # states.  Using issubset keeps the test forward-compatible with future
+        # additions to ALLOWED_STATES that are not reachable from the CDP
+        # page-detection path.
         page_states = {"success", "vbv_3ds", "declined", "ui_lock"}
-        self.assertEqual(page_states, set(ALLOWED_STATES))
+        self.assertTrue(
+            page_states.issubset(set(ALLOWED_STATES)),
+            f"page states {page_states - set(ALLOWED_STATES)!r} "
+            f"are not in ALLOWED_STATES",
+        )
 
 
 if __name__ == "__main__":
