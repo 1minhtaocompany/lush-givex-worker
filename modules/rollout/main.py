@@ -1,14 +1,81 @@
 """Rollout system for progressive worker scaling with automatic rollback."""
 
 import logging
+import os
 import threading
 
 _logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 
-# Scaling steps
-SCALE_STEPS = (1, 3, 5, 10)
+# Default scaling steps (cap at 10 workers).  The tuple is extended at import
+# time — and whenever :func:`reset` is called — based on the ``MAX_WORKER_COUNT``
+# environment variable so deployments can scale past 10 without code changes.
+_DEFAULT_SCALE_STEPS = (1, 3, 5, 10)
+_DEFAULT_MAX_WORKER_COUNT = 10
+
+
+def _read_max_worker_count():
+    """Return the target maximum worker count from the environment.
+
+    Falls back to :data:`_DEFAULT_MAX_WORKER_COUNT` (10) when the env var is
+    unset, empty, non-numeric, or below the default cap.  A warning is logged
+    on invalid input so the misconfiguration is observable.
+    """
+    raw = os.environ.get("MAX_WORKER_COUNT", "").strip()
+    if not raw:
+        return _DEFAULT_MAX_WORKER_COUNT
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        _logger.warning(
+            "Invalid MAX_WORKER_COUNT=%r; falling back to default %d",
+            raw, _DEFAULT_MAX_WORKER_COUNT,
+        )
+        return _DEFAULT_MAX_WORKER_COUNT
+    if value < _DEFAULT_MAX_WORKER_COUNT:
+        _logger.warning(
+            "MAX_WORKER_COUNT=%d is below default %d; clamping to default",
+            value, _DEFAULT_MAX_WORKER_COUNT,
+        )
+        return _DEFAULT_MAX_WORKER_COUNT
+    return value
+
+
+def _build_scale_steps(max_count):
+    """Build the scaling-step tuple for a given maximum worker count.
+
+    Default behavior (``max_count <= 10``) returns the hard-coded
+    ``(1, 3, 5, 10)`` tuple unchanged.  For larger caps the tuple is
+    extended with a 2/5/10 decade progression (``20, 50, 100, 200, 500,
+    ...``) up to — and including — ``max_count``.
+    """
+    if max_count <= _DEFAULT_MAX_WORKER_COUNT:
+        return _DEFAULT_SCALE_STEPS
+    steps = list(_DEFAULT_SCALE_STEPS)
+    decade = 10
+    # Guard against pathological inputs: the progression grows by 10× each
+    # outer iteration, so 20 iterations already reaches 10**21.
+    for _ in range(20):
+        appended_any = False
+        reached_cap = False
+        for multiplier in (2, 5, 10):
+            value = decade * multiplier
+            if value >= max_count:
+                reached_cap = True
+                break
+            steps.append(value)
+            appended_any = True
+        if reached_cap or not appended_any:
+            break
+        decade *= 10
+    if steps[-1] != max_count:
+        steps.append(max_count)
+    return tuple(steps)
+
+
+# Scaling steps — evaluated at import time from the current environment.
+SCALE_STEPS = _build_scale_steps(_read_max_worker_count())
 
 # Current step index into SCALE_STEPS
 _current_step_index = 0
@@ -251,10 +318,15 @@ def get_status():
 
 
 def reset():
-    """Reset all rollout state.  Intended for testing."""
+    """Reset all rollout state.  Intended for testing.
+
+    Also re-reads ``MAX_WORKER_COUNT`` from the environment and rebuilds
+    :data:`SCALE_STEPS` so tests can vary the cap between cases.
+    """
     global _current_step_index, _check_rollback_fn, _save_baseline_fn
-    global _rollback_history, _rollback_applied
+    global _rollback_history, _rollback_applied, SCALE_STEPS
     with _lock:
+        SCALE_STEPS = _build_scale_steps(_read_max_worker_count())
         _current_step_index = 0
         _check_rollback_fn = None
         _save_baseline_fn = None

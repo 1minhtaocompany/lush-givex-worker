@@ -1,6 +1,8 @@
+import os
 import threading
 import unittest
 
+from modules.rollout import main as rollout_module
 from modules.rollout.main import (
     SCALE_STEPS,
     can_scale_up,
@@ -496,6 +498,90 @@ class TestRollbackAtomicity(RolloutResetMixin, unittest.TestCase):
         self.assertLess(idx, len(SCALE_STEPS))
         # Every increment must be matched by exactly one successful save.
         self.assertEqual(idx, save_count[0])
+
+
+class TestMaxWorkerCountEnv(unittest.TestCase):
+    """Verify MAX_WORKER_COUNT env var extends SCALE_STEPS beyond the default cap."""
+
+    def setUp(self):
+        self._saved_env = os.environ.get("MAX_WORKER_COUNT")
+        reset()
+
+    def tearDown(self):
+        if self._saved_env is None:
+            os.environ.pop("MAX_WORKER_COUNT", None)
+        else:
+            os.environ["MAX_WORKER_COUNT"] = self._saved_env
+        reset()
+
+    def _reload_steps(self, value):
+        if value is None:
+            os.environ.pop("MAX_WORKER_COUNT", None)
+        else:
+            os.environ["MAX_WORKER_COUNT"] = value
+        reset()
+        return rollout_module.SCALE_STEPS
+
+    def test_default_behavior_unchanged_when_env_unset(self):
+        steps = self._reload_steps(None)
+        self.assertEqual(steps, (1, 3, 5, 10))
+
+    def test_default_behavior_unchanged_when_env_empty(self):
+        steps = self._reload_steps("")
+        self.assertEqual(steps, (1, 3, 5, 10))
+
+    def test_env_equal_to_default_keeps_default(self):
+        steps = self._reload_steps("10")
+        self.assertEqual(steps, (1, 3, 5, 10))
+
+    def test_env_below_default_is_clamped(self):
+        steps = self._reload_steps("5")
+        self.assertEqual(steps, (1, 3, 5, 10))
+
+    def test_env_invalid_falls_back_to_default(self):
+        steps = self._reload_steps("not-a-number")
+        self.assertEqual(steps, (1, 3, 5, 10))
+
+    def test_env_50_extends_steps_to_50(self):
+        steps = self._reload_steps("50")
+        self.assertEqual(steps, (1, 3, 5, 10, 20, 50))
+        self.assertEqual(rollout_module.get_current_workers(), 1)
+        self.assertTrue(rollout_module.can_scale_up())
+
+    def test_env_100_extends_steps_to_100(self):
+        steps = self._reload_steps("100")
+        self.assertEqual(steps, (1, 3, 5, 10, 20, 50, 100))
+
+    def test_env_500_extends_steps_across_decades(self):
+        steps = self._reload_steps("500")
+        self.assertEqual(steps, (1, 3, 5, 10, 20, 50, 100, 200, 500))
+
+    def test_env_20_extends_minimally(self):
+        steps = self._reload_steps("20")
+        self.assertEqual(steps, (1, 3, 5, 10, 20))
+
+    def test_env_non_canonical_cap_is_appended(self):
+        steps = self._reload_steps("30")
+        self.assertEqual(steps, (1, 3, 5, 10, 20, 30))
+
+    def test_steps_strictly_ascending_for_large_cap(self):
+        steps = self._reload_steps("1000")
+        for i in range(len(steps) - 1):
+            self.assertLess(steps[i], steps[i + 1])
+        self.assertEqual(steps[-1], 1000)
+
+    def test_can_scale_all_the_way_up_to_50(self):
+        self._reload_steps("50")
+        rollout_module.configure(
+            check_rollback_fn=lambda: [],
+            save_baseline_fn=lambda: None,
+        )
+        last_count = None
+        for _ in range(len(rollout_module.SCALE_STEPS) - 1):
+            last_count, action, _ = rollout_module.try_scale_up()
+            self.assertEqual(action, "scaled_up")
+        self.assertEqual(last_count, 50)
+        self.assertFalse(rollout_module.can_scale_up())
 
 
 if __name__ == "__main__":

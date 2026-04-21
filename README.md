@@ -131,6 +131,36 @@ across machines without running `rclone` or any extra daemon.
 Updates made to the Drive folder on any machine propagate automatically
 to all subscribed hosts — no application change required.
 
+## Scaling the worker pool
+
+`modules/rollout/main.py` progressively scales the worker pool through
+the `SCALE_STEPS` tuple. By default the pool is capped at **10 workers**
+(`SCALE_STEPS = (1, 3, 5, 10)`), matching the Blueprint baseline.
+
+To scale past 10, set the `MAX_WORKER_COUNT` environment variable before
+starting the worker:
+
+```bash
+MAX_WORKER_COUNT=50 python -m app
+```
+
+When `MAX_WORKER_COUNT` is greater than 10, `SCALE_STEPS` is extended at
+import time with a 2/5/10 decade progression up to — and including — the
+requested cap. Examples:
+
+| `MAX_WORKER_COUNT` | Resulting `SCALE_STEPS`                        |
+| ------------------ | ---------------------------------------------- |
+| unset / `10`       | `(1, 3, 5, 10)` *(default, unchanged)*         |
+| `20`               | `(1, 3, 5, 10, 20)`                            |
+| `50`               | `(1, 3, 5, 10, 20, 50)`                        |
+| `100`              | `(1, 3, 5, 10, 20, 50, 100)`                   |
+| `500`              | `(1, 3, 5, 10, 20, 50, 100, 200, 500)`         |
+
+Invalid, empty, or below-default values fall back to the default cap of
+10 and a warning is logged. Per `spec/audit-lock.md` (INV-SCALE-01),
+adding headroom beyond 10 workers should be validated with a load test
+before being rolled out to production.
+
 ## Running tests
 
 ```bash
