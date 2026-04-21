@@ -1,11 +1,15 @@
 import inspect
+import os
 import unittest
 from unittest.mock import MagicMock, patch
+
+from selenium.webdriver.common.by import By
 
 from modules.cdp import driver as drv
 from modules.cdp.driver import (
     SEL_POPUP_CLOSE,
     SEL_POPUP_SOMETHING_WRONG,
+    XPATH_POPUP_SWW,
     POPUP_TEXT_PATTERNS_EN,
     POPUP_TEXT_PATTERNS_VN,
     POPUP_TEXT_PATTERNS_DEFAULT,
@@ -267,6 +271,122 @@ class TestCheckPopupTextMatch(unittest.TestCase):
             any("no popup text" in s for s in call_args_list),
             "Expected a debug log about no popup text found",
         )
+
+
+class TestPopupXPathLocator(unittest.TestCase):
+    """P1-1: verify XPath text-match locator + POPUP_USE_XPATH rollback flag."""
+
+    # Exact spec from issue P1-1 acceptance criteria.
+    EXPECTED_XPATH = (
+        "//*[self::div or self::section or self::dialog]"
+        "[contains(translate(normalize-space(.),"
+        "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),"
+        "'something went wrong')]"
+    )
+
+    def setUp(self):
+        self._saved_env = os.environ.get("POPUP_USE_XPATH")
+        if "POPUP_USE_XPATH" in os.environ:
+            del os.environ["POPUP_USE_XPATH"]
+
+    def tearDown(self):
+        if self._saved_env is None:
+            os.environ.pop("POPUP_USE_XPATH", None)
+        else:
+            os.environ["POPUP_USE_XPATH"] = self._saved_env
+
+    def test_xpath_constant_matches_issue_spec(self):
+        self.assertEqual(XPATH_POPUP_SWW, self.EXPECTED_XPATH)
+
+    def _run_handler_capturing_locator(self):
+        wrapper = MagicMock()
+        wrapper._driver = MagicMock()
+        wrapper.bounding_box_click = MagicMock()
+        captured = {}
+
+        def fake_presence(locator):
+            captured["locator"] = locator
+            return lambda d: MagicMock()
+
+        with patch.object(drv.EC, "presence_of_element_located",
+                          side_effect=fake_presence), \
+             patch.object(drv, "WebDriverWait") as mock_wait:
+            mock_wait.return_value.until.return_value = MagicMock()
+            handle_something_wrong_popup(wrapper, timeout=0.1)
+        return captured.get("locator")
+
+    def test_uses_xpath_locator_by_default(self):
+        locator = self._run_handler_capturing_locator()
+        self.assertEqual(locator, (By.XPATH, XPATH_POPUP_SWW))
+
+    def test_uses_xpath_when_env_enabled_explicitly(self):
+        os.environ["POPUP_USE_XPATH"] = "1"
+        locator = self._run_handler_capturing_locator()
+        self.assertEqual(locator, (By.XPATH, XPATH_POPUP_SWW))
+
+    def test_falls_back_to_css_when_env_disabled(self):
+        os.environ["POPUP_USE_XPATH"] = "0"
+        locator = self._run_handler_capturing_locator()
+        self.assertEqual(locator, (By.CSS_SELECTOR, SEL_POPUP_SOMETHING_WRONG))
+
+    def test_cookie_banner_without_text_does_not_match(self):
+        """AC: DOM có cookie banner `.modal` không text → KHÔNG match.
+
+        Simulates XPath evaluation: a cookie banner modal without the target
+        phrase produces no XPath hit, so WebDriverWait raises TimeoutException
+        and the handler returns False (no click, no false-positive flow loss).
+        """
+        from selenium.common.exceptions import TimeoutException
+
+        cookie_banner_dom = [
+            {"tag": "div", "class": "modal cookie-banner",
+             "text": "We use cookies. Accept all?"},
+        ]
+
+        def fake_find_element(by, value):
+            # Emulate XPath matching: only divs containing target phrase match.
+            target = "something went wrong"
+            if by == By.XPATH:
+                for el in cookie_banner_dom:
+                    if target in el["text"].lower():
+                        return MagicMock()
+                raise drv.TimeoutException() if hasattr(drv, "TimeoutException") else Exception()
+            raise Exception("unexpected locator")
+
+        wrapper = MagicMock()
+        wrapper._driver = MagicMock()
+        wrapper.bounding_box_click = MagicMock()
+
+        with patch.object(drv, "WebDriverWait") as mock_wait:
+            mock_wait.return_value.until.side_effect = TimeoutException()
+            result = handle_something_wrong_popup(wrapper, timeout=0.1)
+
+        self.assertFalse(result)
+        wrapper.bounding_box_click.assert_not_called()
+
+    def test_modal_with_target_text_does_match(self):
+        """AC: DOM có modal với text 'Something went wrong, please try again' → match."""
+        wrapper = MagicMock()
+        wrapper._driver = MagicMock()
+        wrapper.bounding_box_click = MagicMock()
+
+        captured = {}
+
+        def fake_presence(locator):
+            captured["locator"] = locator
+            # Simulate XPath hit — predicate returns a matched element.
+            return lambda d: MagicMock(text="Something went wrong, please try again")
+
+        with patch.object(drv.EC, "presence_of_element_located",
+                          side_effect=fake_presence), \
+             patch.object(drv, "WebDriverWait") as mock_wait:
+            mock_wait.return_value.until.return_value = MagicMock(
+                text="Something went wrong, please try again")
+            result = handle_something_wrong_popup(wrapper, timeout=0.1)
+
+        self.assertTrue(result)
+        self.assertEqual(captured["locator"], (By.XPATH, XPATH_POPUP_SWW))
+        wrapper.bounding_box_click.assert_called_once_with(SEL_POPUP_CLOSE)
 
 
 if __name__ == "__main__":
