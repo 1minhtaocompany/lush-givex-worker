@@ -82,14 +82,14 @@ class TestMaxWorkerCountCap(_CapRuntimeMixin, unittest.TestCase):
                 self.assertTrue(applied)
                 self.assertTrue(all(target <= cap for target in applied))
                 self.assertEqual(rollout.SCALE_STEPS[-1], cap)
+        rollout.configure_max_workers(4)
+        os.environ.pop("MAX_WORKER_COUNT", None)
+        self._run_for_cap(10)
+        self.assertEqual(rollout.SCALE_STEPS[-1], 10)
 
     def test_validate_startup_config_rejects_invalid_max_worker_count(self):
-        cases = (
-            ({"MAX_WORKER_COUNT": "abc"}, "non-int"),
-            ({"MAX_WORKER_COUNT": "0"}, "zero"),
-            ({"MAX_WORKER_COUNT": "51"}, "over-50"),
-            ({"MAX_WORKER_COUNT": "3", "WORKER_COUNT": "5"}, "worker>max"),
-        )
+        cases = (({"MAX_WORKER_COUNT": "abc"}, "non-int"), ({"MAX_WORKER_COUNT": "0"}, "zero"),
+                 ({"MAX_WORKER_COUNT": "51"}, "over-50"), ({"MAX_WORKER_COUNT": "3", "WORKER_COUNT": "5"}, "worker>max"))
         for env, label in cases:
             with self.subTest(case=label):
                 os.environ.pop("MAX_WORKER_COUNT", None)

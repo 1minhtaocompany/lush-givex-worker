@@ -744,30 +744,28 @@ def start(task_fn, interval=None):
         if _state not in ("INIT", "STOPPED"):
             return False
         _validate_startup_config()
-    # Propagate MAX_WORKER_COUNT to rollout BEFORE scheduler/loop starts, so
-    # SCALE_STEPS is derived from the operator-configured cap instead of the
-    # default.  Invalid/empty env → rollout falls back to its default cap.
+    # Propagate the effective worker cap BEFORE the loop starts. This also
+    # clears any stale runtime override from a previous start() call when the
+    # env var is now unset (defaulting back to 10).
     max_raw = os.environ.get("MAX_WORKER_COUNT", "").strip()
-    if max_raw:
-        try:
-            cap = int(max_raw)
-        except ValueError as exc:
-            # _validate_startup_config() already validated this; surface
-            # programmer-error clearly if it somehow slipped through.
-            raise ConfigError(
-                f"Failed to configure rollout cap from MAX_WORKER_COUNT={max_raw!r}: {exc}"
-            ) from exc
+    try:
+        cap = int(max_raw) if max_raw else 10
+    except ValueError as exc:
+        raise ConfigError(
+            f"Failed to configure rollout cap from MAX_WORKER_COUNT={max_raw!r}: {exc}"
+        ) from exc
+    if rollout.SCALE_STEPS[-1] != cap:
         try:
             rollout.configure_max_workers(cap)
         except (TypeError, ValueError) as exc:
             raise ConfigError(
                 f"Failed to configure rollout cap from MAX_WORKER_COUNT={max_raw!r}: {exc}"
             ) from exc
-        if rollout.SCALE_STEPS[-1] != cap:
-            raise ConfigError(
-                f"rollout.SCALE_STEPS[-1]={rollout.SCALE_STEPS[-1]} != "
-                f"MAX_WORKER_COUNT={cap}"
-            )
+    if rollout.SCALE_STEPS[-1] != cap:
+        raise ConfigError(
+            f"rollout.SCALE_STEPS[-1]={rollout.SCALE_STEPS[-1]} != "
+            f"MAX_WORKER_COUNT={cap}"
+        )
     _ensure_rollout_configured()
     try:
         _validate_billing_pool_preflight()
