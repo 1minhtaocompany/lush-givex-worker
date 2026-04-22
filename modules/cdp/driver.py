@@ -1515,16 +1515,26 @@ class GivexDriver:
         for attempt in range(1, max_attempts + 1):
             # Always ensure focus on the main window on each attempt so
             # that a stray popup or closed tab does not starve the check.
+            # If we cannot focus the main window, the attempt itself is
+            # considered failed: running geo-check on the wrong context
+            # would defeat the safeguard this method provides.
             try:
                 handles = self._driver.window_handles
-                if handles:
-                    self._driver.switch_to.window(handles[0])
+                if not handles:
+                    raise RuntimeError(
+                        "preflight_geo_check: no window handles available"
+                    )
+                self._driver.switch_to.window(handles[0])
             except Exception as switch_exc:  # pylint: disable=broad-except
-                _log.debug(
-                    "preflight_geo_check: main-window switch failed "
-                    "(attempt %d): %s",
-                    attempt, switch_exc,
+                last_exc = switch_exc
+                _log.warning(
+                    "preflight_geo_check: attempt %d/%d main-window "
+                    "switch failed: %s",
+                    attempt, max_attempts, switch_exc,
                 )
+                if attempt < max_attempts:
+                    time.sleep(2)
+                continue
             try:
                 self._driver.get(URL_GEO_CHECK)
                 body = self._driver.find_element("tag name", "body").text

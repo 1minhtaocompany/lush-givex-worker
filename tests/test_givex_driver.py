@@ -936,6 +936,45 @@ class TestPreflightGeoCheck(unittest.TestCase):
         # At least 3 (one per attempt). Tab janitor may also switch back.
         self.assertGreaterEqual(len(main_switches), 3)
 
+    def test_preflight_switch_failure_counts_as_failed_attempt(self):
+        """If main-window switch fails every attempt, raises without running
+        geo-check against the wrong window."""
+        selenium = _make_driver()
+        selenium.window_handles = ["MAIN"]
+        selenium.switch_to.window.side_effect = RuntimeError("no such window")
+        driver = GivexDriver(selenium)
+
+        with patch("time.sleep"):
+            with self.assertRaises(RuntimeError) as ctx:
+                driver.preflight_geo_check()
+
+        # Never queried body because switch always failed (janitor may
+        # still call get('about:blank') but must not hit URL_GEO_CHECK).
+        geo_nav = [
+            c for c in selenium.get.call_args_list
+            if c.args and "lumtest" in str(c.args[0])
+        ]
+        self.assertEqual(geo_nav, [])
+        selenium.find_element.assert_not_called()
+        self.assertIn("preflight_geo_check failed", str(ctx.exception))
+
+    def test_preflight_empty_handles_counts_as_failed_attempt(self):
+        """Empty window_handles on every attempt causes retry then raise."""
+        selenium = _make_driver()
+        selenium.window_handles = []
+        driver = GivexDriver(selenium)
+
+        with patch("time.sleep"):
+            with self.assertRaises(RuntimeError) as ctx:
+                driver.preflight_geo_check()
+
+        geo_nav = [
+            c for c in selenium.get.call_args_list
+            if c.args and "lumtest" in str(c.args[0])
+        ]
+        self.assertEqual(geo_nav, [])
+        self.assertIn("preflight_geo_check failed", str(ctx.exception))
+
 
 class TestMaxMindGeoLookup(unittest.TestCase):
     """_lookup_maxmind_utc_offset returns offset from MaxMind DB or None."""
