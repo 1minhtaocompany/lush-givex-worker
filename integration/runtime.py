@@ -750,14 +750,19 @@ def start(task_fn, interval=None):
     max_raw = os.environ.get("MAX_WORKER_COUNT", "").strip()
     if max_raw:
         try:
-            rollout.configure_max_workers(int(max_raw))
-        except (TypeError, ValueError) as exc:
-            # _validate_startup_config() already validated the range; any
-            # error here is programmer error but we surface it clearly.
+            cap = int(max_raw)
+        except ValueError as exc:
+            # _validate_startup_config() already validated this; surface
+            # programmer-error clearly if it somehow slipped through.
             raise ConfigError(
                 f"Failed to configure rollout cap from MAX_WORKER_COUNT={max_raw!r}: {exc}"
             ) from exc
-        cap = int(max_raw)
+        try:
+            rollout.configure_max_workers(cap)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(
+                f"Failed to configure rollout cap from MAX_WORKER_COUNT={max_raw!r}: {exc}"
+            ) from exc
         assert rollout.SCALE_STEPS[-1] == cap, (
             f"rollout.SCALE_STEPS[-1]={rollout.SCALE_STEPS[-1]} != "
             f"MAX_WORKER_COUNT={cap}"

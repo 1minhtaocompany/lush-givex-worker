@@ -165,20 +165,20 @@ class TestApplyScaleDefensiveClamp(_MaxWorkerCapMixin, unittest.TestCase):
     def test_clamp_logs_warning_and_reduces_target(self):
         os.environ["MAX_WORKER_COUNT"] = "4"
         rollout.configure_max_workers(4)
-        applied_targets: list[int] = []
+        launches: list[None] = []
 
-        # Stub worker start to avoid real threads; we only care about the
-        # observed target after clamping.
+        # Stub worker start to avoid real threads; count launches to verify
+        # the clamp reduced the requested target down to the cap (4).
         def _fake_start(_task_fn):
-            applied_targets.append(len(runtime._workers))  # pylint: disable=protected-access
+            launches.append(None)
 
         runtime._state = "RUNNING"  # pylint: disable=protected-access
         try:
             with patch("integration.runtime.start_worker", side_effect=_fake_start), \
                  patch("integration.runtime._logger") as mock_logger:
                 runtime._apply_scale(99, lambda _: None)  # pylint: disable=protected-access
-                # The cap is 4 → we should attempt exactly 4 launches.
-                self.assertEqual(len(applied_targets), 4)
+                # Requested 99; cap is 4 → exactly 4 launches must be attempted.
+                self.assertEqual(len(launches), 4)
                 # A warning must have been emitted.
                 self.assertTrue(
                     any(
