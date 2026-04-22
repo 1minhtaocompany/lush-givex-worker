@@ -195,7 +195,7 @@ _IN_FLIGHT_TTL_SECONDS: int = 300  # 5 min — stale in-flight eviction
 # Default TTL for submitted-but-unconfirmed tasks (watchdog timed out AFTER submit).
 # Long enough for a human to investigate and reconcile; configurable via env var.
 _UNCONFIRMED_TTL_SECONDS: int = int(
-    os.getenv("IDEMPOTENCY_UNCONFIRMED_TTL_SECONDS", str(24 * 3600))  # 24 hours
+    os.getenv("IDEMPOTENCY_UNCONFIRMED_TTL_SECONDS", "86400")  # 24 hours
 )
 _completed_task_ids: dict[str, float] = {}  # task_id → monotonic timestamp
 _submitted_task_ids: dict[str, float] = {}  # task_id → monotonic timestamp; payment sent but result unconfirmed
@@ -697,6 +697,11 @@ def reconcile_unconfirmed(
     Returns a dict with counters: ``{"checked": N, "confirmed": N,
     "cleared": N, "remaining": N}``.  Intended to be called from a scheduled
     job (cron / internal timer).
+
+    .. note::
+        Exceptions raised by *verifier* are caught and logged; the offending
+        entry is left in the unconfirmed set and will be retried on the next
+        reconciliation pass (or evicted when its TTL expires).
     """
     store = _get_idempotency_store()
     task_ids = store.list_unconfirmed()
