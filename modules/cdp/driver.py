@@ -690,18 +690,46 @@ def cdp_click_iframe_element(
     # Input.dispatchMouseEvent yields isTrusted=True and bypasses iframe sandbox.
     rng = rng or _random
     base = getattr(driver, "_driver", driver)
-    by = By.CSS_SELECTOR if By is not None else "css selector"
-    iframe = base.find_element(by, iframe_selector)
+    by_css = By.CSS_SELECTOR if By is not None else "css selector"
+    iframe = base.find_element(by_css, iframe_selector)
     base.switch_to.frame(iframe)
-    elem = base.find_element(by, element_selector)
-    er = base.execute_script("const r=arguments[0].getBoundingClientRect();return {left:r.left,top:r.top,width:r.width,height:r.height};", elem)
-    base.switch_to.default_content()
-    ir = base.execute_script("const r=arguments[0].getBoundingClientRect();return {left:r.left,top:r.top};", iframe)
-    abs_x = ir["left"] + er["left"] + er["width"] / 2 + rng.uniform(-15, 15)
-    abs_y = ir["top"] + er["top"] + er["height"] / 2 + rng.uniform(-5, 5)
+    elem_rect = None
+    try:
+        elem = base.find_element(by_css, element_selector)
+        elem_rect = base.execute_script(
+            "const r=arguments[0].getBoundingClientRect();"
+            "return {left:r.left,top:r.top,width:r.width,height:r.height};",
+            elem,
+        )
+    finally:
+        base.switch_to.default_content()
+    if elem_rect is None:
+        raise RuntimeError(
+            "Failed to resolve iframe element rect for selector: "
+            f"{element_selector}"
+        )
+    iframe_rect = base.execute_script(
+        "const r=arguments[0].getBoundingClientRect();"
+        "return {left:r.left,top:r.top};",
+        iframe,
+    )
+    abs_x = (
+        iframe_rect["left"]
+        + elem_rect["left"]
+        + elem_rect["width"] / 2
+        + rng.uniform(-15, 15)
+    )
+    abs_y = (
+        iframe_rect["top"]
+        + elem_rect["top"]
+        + elem_rect["height"] / 2
+        + rng.uniform(-5, 5)
+    )
     for evt in ("mousePressed", "mouseReleased"):
-        base.execute_cdp_cmd("Input.dispatchMouseEvent",
-            {"type": evt, "x": abs_x, "y": abs_y, "button": "left", "clickCount": 1})
+        base.execute_cdp_cmd(
+            "Input.dispatchMouseEvent",
+            {"type": evt, "x": abs_x, "y": abs_y, "button": "left", "clickCount": 1},
+        )
     return abs_x, abs_y
 
 
