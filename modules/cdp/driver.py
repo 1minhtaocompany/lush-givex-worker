@@ -726,7 +726,9 @@ def cdp_click_iframe_element(
 ) -> tuple[float, float]:
     """Click element inside iframe via CDP absolute coordinates (Blueprint §6 Fork 3)."""
     # Input.dispatchMouseEvent yields isTrusted=True and bypasses iframe sandbox.
-    rng = rng or _random
+    # Use a fresh per-call RNG when caller did not supply one so we never mutate
+    # the module-level ``random`` singleton (no shared state across threads).
+    rng = rng if rng is not None else _random.Random()
     base = getattr(driver, "_driver", driver)
     by = By.CSS_SELECTOR if By is not None else "css selector"
     iframe = base.find_element(by, iframe_selector)
