@@ -4,7 +4,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import (
+    StaleElementReferenceException,
+    TimeoutException,
+)
 
 from modules.cdp import driver as drv
 from modules.cdp.driver import (
@@ -18,6 +21,7 @@ from modules.cdp.driver import (
     check_popup_text_match,
     handle_something_wrong_popup,
 )
+from modules.common.exceptions import SelectorTimeoutError
 
 
 class TestPopupHandler(unittest.TestCase):
@@ -664,8 +668,6 @@ class TestPopupXPathCloseFallback(unittest.TestCase):
 
     def test_xpath_fallback_tries_next_element_when_first_click_raises(self):
         """If the first XPath match's click() raises, fallback must try the next."""
-        from selenium.common.exceptions import StaleElementReferenceException
-
         bad_el = MagicMock()
         bad_el.click.side_effect = StaleElementReferenceException("detached")
         good_el = MagicMock()
@@ -695,7 +697,12 @@ class TestPopupXPathCloseFallback(unittest.TestCase):
             clear_card_fields_cdp=MagicMock(),
         )
         with patch.object(drv, "WebDriverWait") as mock_wait:
-            mock_wait.return_value.until.return_value = MagicMock()
+            # First .until() = initial presence (popup present);
+            # second .until() = post-click verify (popup gone).
+            mock_wait.return_value.until.side_effect = [
+                MagicMock(),
+                TimeoutException(),
+            ]
             result = handle_something_wrong_popup(wrapper, timeout=0.1)
 
         self.assertIs(result, PopupCloseOutcome.CLOSED_NEEDS_REFILL)

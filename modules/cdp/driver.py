@@ -881,6 +881,19 @@ def handle_something_wrong_popup(
     for attempt in range(1, max_retries + 1):
         try:
             driver.bounding_box_click(SEL_POPUP_CLOSE)
+        except SelectorTimeoutError as exc:
+            # CSS close selector did not match — try the XPath text-match
+            # fallback (button/anchor with Close/OK/X/Đóng text). On first
+            # CSS miss we stop retrying CSS and let the fallback decide.
+            _log.info(
+                "popup CSS close missed (attempt %d/%d): %s — trying XPath fallback",
+                attempt, max_retries, exc,
+            )
+            if _popup_xpath_click_close(driver):
+                closed = True
+            else:
+                last_exc = exc
+            break
         except Exception as exc:  # pylint: disable=broad-except
             last_exc = exc
             _log.warning(
