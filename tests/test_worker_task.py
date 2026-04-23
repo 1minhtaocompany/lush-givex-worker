@@ -737,7 +737,7 @@ class TestMakeTaskFnPersonaInjection(unittest.TestCase):
         mock_givex_cls.assert_called_once()
         args, kwargs = mock_givex_cls.call_args
         self.assertEqual(args[0], selenium_drv)
-        persona = kwargs.get("persona", args[1] if len(args) > 1 else None)
+        persona = kwargs.get("persona")
         self.assertIsNotNone(persona, "GivexDriver must receive a persona (Layer 2)")
         from modules.delay.persona import PersonaProfile
         self.assertIsInstance(persona, PersonaProfile)
