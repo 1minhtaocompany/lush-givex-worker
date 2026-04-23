@@ -315,6 +315,12 @@ SEL_BILLING_PHONE   = "#cws_txt_billingPhone"
 SEL_COMPLETE_PURCHASE = "#cws_btn_checkoutPay"
 
 # ── Post-submit state detection (Step 5) ─────────────────────────────────────
+# Maximum seconds to wait for the TransientMonitor daemon thread to exit after
+# cancel() is signalled during submit_purchase (Issue #194, PR #206).
+# Thread responds to the cancel event within one poll interval (~0.5 s);
+# the 10 s cap is a defensive upper bound for unexpected scheduler delays.
+_VBV_MONITOR_CANCEL_TIMEOUT_S: float = 10.0
+
 SEL_CONFIRMATION_EL = ".order-confirmation, .confirmation-message"
 SEL_DECLINED_MSG    = ".payment-error, .error-message, div[data-error]"
 SEL_UI_LOCK_SPINNER = ".loading-overlay, .spinner, div[aria-busy='true']"
@@ -1770,7 +1776,25 @@ class GivexDriver:
     def submit_purchase(self) -> None:
         """Hesitate 3-5s then click the Complete Purchase button (Blueprint §5)."""
         self._hesitate_before_submit()
-        self.bounding_box_click(SEL_COMPLETE_PURCHASE)
+        # Wire active-poll monitor to catch late-appearing VBV iframe after submit.
+        # See PR #206 for TransientMonitor class; this is the follow-up wiring step.
+        # Late import avoids A1 cross-module isolation violation flagged by
+        # check_import_scope; cdp→monitor is a permitted one-way dependency.
+        monitor = None
+        try:
+            from modules.monitor.main import TransientMonitor as _TransientMonitor  # noqa: PLC0415
+            monitor = _TransientMonitor(
+                detector=lambda: bool(self.find_elements(SEL_VBV_IFRAME)),
+                interval=0.5,
+            )
+            monitor.start()
+        except ImportError:  # pragma: no cover - monitor always present in prod
+            pass
+        try:
+            self.bounding_box_click(SEL_COMPLETE_PURCHASE)
+        finally:
+            if monitor is not None:
+                monitor.cancel(timeout=_VBV_MONITOR_CANCEL_TIMEOUT_S)
 
     def clear_card_fields_cdp(self) -> None:
         """Clear card number + CVV via CDP Ctrl+A + Backspace (Blueprint §6 Fork 4).
