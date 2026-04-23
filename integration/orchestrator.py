@@ -1558,8 +1558,12 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None, abort_c
                 ui_lock_retry_count += 1
                 try:
                     monitor.record_ui_lock_retry()
-                except Exception:  # noqa: BLE001  # pylint: disable=broad-except
-                    pass
+                except Exception as _met_exc:  # noqa: BLE001  # pylint: disable=broad-except
+                    _logger.debug(
+                        "[trace=%s] monitor.record_ui_lock_retry failed for "
+                        "worker=%s: %s",
+                        _get_trace_id(), worker_id, _sanitize_error(_met_exc),
+                    )
                 _logger.info(
                     "[trace=%s] UI lock detected for worker=%s — calling "
                     "handle_ui_lock_focus_shift (attempt %d/%d)",
@@ -1582,8 +1586,12 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None, abort_c
                         _ui_lock_cleared = True
                         try:
                             monitor.record_ui_lock_recovered()
-                        except Exception:  # noqa: BLE001  # pylint: disable=broad-except
-                            pass
+                        except Exception as _met_exc:  # noqa: BLE001  # pylint: disable=broad-except
+                            _logger.debug(
+                                "[trace=%s] monitor.record_ui_lock_recovered "
+                                "failed for worker=%s: %s",
+                                _get_trace_id(), worker_id, _sanitize_error(_met_exc),
+                            )
                 except Exception as _det_exc:  # noqa: BLE001  # pylint: disable=broad-except
                     _logger.warning(
                         "[trace=%s] detect_page_state retry after ui_lock failed "
@@ -1599,8 +1607,12 @@ def run_cycle(task, zip_code=None, worker_id: str = "default", ctx=None, abort_c
                         and ui_lock_retry_count == _MAX_UI_LOCK_RETRIES):
                     try:
                         monitor.record_ui_lock_exhausted()
-                    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
-                        pass
+                    except Exception as _met_exc:  # noqa: BLE001  # pylint: disable=broad-except
+                        _logger.debug(
+                            "[trace=%s] monitor.record_ui_lock_exhausted "
+                            "failed for worker=%s: %s",
+                            _get_trace_id(), worker_id, _sanitize_error(_met_exc),
+                        )
                     _logger.warning(
                         "[trace=%s] UI lock retry budget exhausted for worker=%s "
                         "after %d attempts",
