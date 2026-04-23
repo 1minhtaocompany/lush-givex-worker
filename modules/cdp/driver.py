@@ -685,12 +685,12 @@ def cdp_click_iframe_element(
     # Input.dispatchMouseEvent yields isTrusted=True and bypasses iframe sandbox.
     rng = rng or _random
     base = getattr(driver, "_driver", driver)
-    by = By.CSS_SELECTOR if By is not None else "css selector"
-    iframe = base.find_element(by, iframe_selector)
+    by_css = By.CSS_SELECTOR if By is not None else "css selector"
+    iframe = base.find_element(by_css, iframe_selector)
     base.switch_to.frame(iframe)
     elem_rect = None
     try:
-        elem = base.find_element(by, element_selector)
+        elem = base.find_element(by_css, element_selector)
         elem_rect = base.execute_script(
             "const r=arguments[0].getBoundingClientRect();"
             "return {left:r.left,top:r.top,width:r.width,height:r.height};",
@@ -703,19 +703,19 @@ def cdp_click_iframe_element(
             "Failed to resolve iframe element rect for selector: "
             f"{element_selector}"
         )
-    ir = base.execute_script(
+    iframe_rect = base.execute_script(
         "const r=arguments[0].getBoundingClientRect();"
         "return {left:r.left,top:r.top};",
         iframe,
     )
     abs_x = (
-        ir["left"]
+        iframe_rect["left"]
         + elem_rect["left"]
         + elem_rect["width"] / 2
         + rng.uniform(-15, 15)
     )
     abs_y = (
-        ir["top"]
+        iframe_rect["top"]
         + elem_rect["top"]
         + elem_rect["height"] / 2
         + rng.uniform(-5, 5)
