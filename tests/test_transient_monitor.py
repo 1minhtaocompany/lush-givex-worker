@@ -148,16 +148,34 @@ class TestTransientMonitorCancel(_MonitorResetMixin, unittest.TestCase):
         self.assertFalse(mon.is_running())
 
     def test_double_start_is_noop(self):
+        call_times = []
+        lock = threading.Lock()
+
         def detector():
-            time.sleep(0.05)
+            with lock:
+                call_times.append(time.monotonic())
             return False
 
         mon = TransientMonitor(detector=detector, interval=0.05)
         mon.start()
-        first = mon._thread
-        mon.start()  # should be ignored while running
-        self.assertIs(mon._thread, first)
+        # Give the first loop a moment to record at least one poll.
+        time.sleep(0.12)
+        with lock:
+            before = len(call_times)
+        # A second start while already running must be a no-op: it must not
+        # spawn a second poller (which would roughly double the poll rate).
+        mon.start()
+        time.sleep(0.2)
         mon.cancel(timeout=1.0)
+        self.assertFalse(mon.is_running())
+        with lock:
+            after = len(call_times)
+        # If start() had spawned a second thread, we'd see ~2× the polls in
+        # the post-start window compared to the pre-start window of similar
+        # length.  Allow generous slack for scheduling jitter.
+        self.assertGreater(before, 0)
+        delta = after - before
+        self.assertLess(delta, before * 3)
 
 
 class TestTransientMonitorPollInterval(_MonitorResetMixin, unittest.TestCase):

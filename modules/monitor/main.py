@@ -27,7 +27,7 @@ _success_counts_by_persona: dict[str, int] = {}
 # Worker restart tracking: list of timestamps (epoch seconds)
 _restart_timestamps = []
 
-# Count of active-poll VBV / 3DS iframe detections (Blueprint §6 Ngã rẽ 3).
+# Count of active-poll VBV / 3DS iframe detections (Blueprint §6 Fork 3).
 # Incremented by :class:`TransientMonitor` and any external active detector
 # via :func:`record_vbv_detection`.
 _vbv_detections = 0
