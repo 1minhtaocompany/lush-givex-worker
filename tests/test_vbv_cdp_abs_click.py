@@ -60,12 +60,15 @@ class TestVbvCdpAbsClick(unittest.TestCase):
             self.assertGreaterEqual(offset_y, -5)
             self.assertLessEqual(offset_y, 5)
 
-    def test_dispatches_mouseMoved_mousePressed_then_mouseReleased(self):
+    def test_dispatches_moved_pressed_then_released(self):
+        """The 3-event CDP click sequence is emitted in canonical order."""
         elem_rect = {"left": 0, "top": 0, "width": 10, "height": 10}
         iframe_rect = {"left": 0, "top": 0}
         driver, _iframe, _elem = _make_driver(elem_rect, iframe_rect)
 
-        cdp_click_iframe_element(driver, "iframe", "button", rng=_FixedRng([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+        cdp_click_iframe_element(
+            driver, "iframe", "button", rng=_FixedRng([0.0] * 8),
+        )
 
         calls = [call.args[1]["type"] for call in driver.execute_cdp_cmd.call_args_list]
         self.assertEqual(calls, ["mouseMoved", "mousePressed", "mouseReleased"])

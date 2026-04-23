@@ -547,36 +547,44 @@ def _safe_cdp_cmd(driver, command: str, params: dict) -> object:
 
 def _dispatch_cdp_click_sequence(
         driver,
-        x: float,
-        y: float,
+        abs_x: float,
+        abs_y: float,
         *,
         rng: _random.Random | None = None,
         jitter: bool = False,
 ) -> None:
     """Dispatch a 3-event CDP mouse click (``mouseMoved`` → ``Pressed`` → ``Released``).
 
-    Emits ``Input.dispatchMouseEvent`` at ``(x, y)`` for each event type so
-    the target receives a proper hover-then-click sequence (matching real
-    user input). When ``jitter`` is True, a small sub-pixel offset is added
-    to each successive event to better mimic human cursor drift.
+    Emits ``Input.dispatchMouseEvent`` at ``(abs_x, abs_y)`` for each event
+    type so the target receives a proper hover-then-click sequence (matching
+    real user input). When ``jitter`` is True, a small sub-pixel offset is
+    added to each successive event to better mimic human cursor drift.
 
     Args:
         driver: Raw Selenium WebDriver exposing ``execute_cdp_cmd``.
-        x: Absolute X coordinate in viewport pixels.
-        y: Absolute Y coordinate in viewport pixels.
+        abs_x: Absolute X coordinate in viewport pixels.
+        abs_y: Absolute Y coordinate in viewport pixels.
         rng: Optional ``random.Random``-compatible instance used when
-            ``jitter`` is True. Defaults to the ``random`` module.
+            ``jitter`` is True. If ``None``, a fresh per-call
+            ``random.Random()`` instance is used so no module-level RNG
+            state is shared across threads.
         jitter: When True, apply up to ±0.5px per-event drift.
     """
-    r = rng or _random
+    rnd = rng if rng is not None else _random.Random()
     for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
-        ex, ey = x, y
+        event_x, event_y = abs_x, abs_y
         if jitter:
-            ex += r.uniform(-0.5, 0.5)
-            ey += r.uniform(-0.5, 0.5)
+            event_x += rnd.uniform(-0.5, 0.5)
+            event_y += rnd.uniform(-0.5, 0.5)
         driver.execute_cdp_cmd(
             "Input.dispatchMouseEvent",
-            {"type": event_type, "x": ex, "y": ey, "button": "left", "clickCount": 1},
+            {
+                "type": event_type,
+                "x": event_x,
+                "y": event_y,
+                "button": "left",
+                "clickCount": 1,
+            },
         )
 
 
