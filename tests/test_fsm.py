@@ -110,12 +110,11 @@ class FSMTransitionGraphTests(unittest.TestCase):
 
     def test_none_to_any_allowed_state(self):
         """First transition from None accepts any ALLOWED_STATE."""
-        from modules.fsm.main import ALLOWED_STATES
         for state_name in ALLOWED_STATES:
             cleanup_worker(_WID)
             initialize_for_worker(_WID)
-            s = transition_for_worker(_WID, state_name)
-            self.assertEqual(s.name, state_name)
+            state = transition_for_worker(_WID, state_name)
+            self.assertEqual(state.name, state_name)
 
     def test_uninitialized_worker_raises_explicit_invalid_transition_error(self):
         """Uninitialized workers must fail with the dedicated guard message."""
@@ -179,8 +178,8 @@ class FSMTransitionGraphTests(unittest.TestCase):
     def test_valid_flow_vbv_3ds_to_vbv_cancelled(self):
         """None -> vbv_3ds -> vbv_cancelled must succeed (user/bank aborts 3DS)."""
         transition_for_worker(_WID, "vbv_3ds")
-        s = transition_for_worker(_WID, "vbv_cancelled")
-        self.assertEqual(s.name, "vbv_cancelled")
+        state = transition_for_worker(_WID, "vbv_cancelled")
+        self.assertEqual(state.name, "vbv_cancelled")
 
     def test_invalid_ui_lock_to_vbv_cancelled(self):
         """vbv_cancelled is only reachable from vbv_3ds."""
