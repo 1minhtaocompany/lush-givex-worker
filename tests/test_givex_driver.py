@@ -617,7 +617,10 @@ class TestDetectPageState(unittest.TestCase):
                 self.assertEqual(gd.detect_page_state(), "success")
 
     def test_detect_page_state_success_via_element(self):
-        selenium = _make_driver(current_url="https://example.com/unknown")
+        # P1-6: DOM-element confirmation is only trusted on the Givex host.
+        selenium = _make_driver(
+            current_url="https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html"
+        )
         confirm_el = MagicMock()
         first_confirm = SEL_CONFIRMATION_EL.split(",")[0].strip()
 
@@ -723,7 +726,10 @@ class TestDetectPageState(unittest.TestCase):
 
     def test_detect_page_state_success_via_page_text_spa(self):
         """P1-3: SPA renders 'Thank you for your order' without URL change → success."""
-        selenium = _make_driver(current_url="https://example.com/checkout")
+        # P1-6: only trusted when URL is on the Givex host.
+        selenium = _make_driver(
+            current_url="https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html"
+        )
         selenium.find_elements.return_value = []
         body_el = MagicMock()
         body_el.text = "Thank you for your order! Order #12345 has been placed."
@@ -733,13 +739,47 @@ class TestDetectPageState(unittest.TestCase):
 
     def test_detect_page_state_success_via_page_text_case_insensitive(self):
         """P1-3: text match is case-insensitive."""
-        selenium = _make_driver(current_url="https://example.com/checkout")
+        selenium = _make_driver(
+            current_url="https://wwws-usa2.givex.com/cws4.0/lushusa/e-gifts/checkout.html"
+        )
         selenium.find_elements.return_value = []
         body_el = MagicMock()
         body_el.text = "THANK YOU FOR YOUR ORDER"
         selenium.find_element.return_value = body_el
         gd = GivexDriver(selenium)
         self.assertEqual(gd.detect_page_state(), "success")
+
+    def test_detect_page_state_ignores_confirmation_element_off_host(self):
+        """P1-6: generic .order-confirmation element on non-Givex host must NOT
+        be treated as success (false-positive prevention)."""
+        selenium = _make_driver(current_url="https://example.com/marketing/thanks")
+        confirm_el = MagicMock()
+        first_confirm = SEL_CONFIRMATION_EL.split(",")[0].strip()
+
+        def side_effect(_method, selector):
+            if selector.strip() == first_confirm:
+                return [confirm_el]
+            return []
+
+        selenium.find_elements.side_effect = side_effect
+        body_el = MagicMock()
+        body_el.text = "Some blog post"
+        selenium.find_element.return_value = body_el
+        gd = GivexDriver(selenium)
+        with self.assertRaises(PageStateError):
+            gd.detect_page_state()
+
+    def test_detect_page_state_ignores_thank_you_text_off_host(self):
+        """P1-6: 'thank you for your order' text on non-Givex host must NOT
+        be treated as success (false-positive prevention)."""
+        selenium = _make_driver(current_url="https://example.com/newsletter")
+        selenium.find_elements.return_value = []
+        body_el = MagicMock()
+        body_el.text = "Thank you for your order of our newsletter subscription."
+        selenium.find_element.return_value = body_el
+        gd = GivexDriver(selenium)
+        with self.assertRaises(PageStateError):
+            gd.detect_page_state()
 
 
 class TestNavigateToEgift(unittest.TestCase):
