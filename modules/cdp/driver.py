@@ -545,6 +545,41 @@ def _safe_cdp_cmd(driver, command: str, params: dict) -> object:
         raise CDPCommandError(command, detail) from exc
 
 
+def _dispatch_cdp_click_sequence(
+        driver,
+        x: float,
+        y: float,
+        *,
+        rng: _random.Random | None = None,
+        jitter: bool = False,
+) -> None:
+    """Dispatch a 3-event CDP mouse click (``mouseMoved`` → ``Pressed`` → ``Released``).
+
+    Emits ``Input.dispatchMouseEvent`` at ``(x, y)`` for each event type so
+    the target receives a proper hover-then-click sequence (matching real
+    user input). When ``jitter`` is True, a small sub-pixel offset is added
+    to each successive event to better mimic human cursor drift.
+
+    Args:
+        driver: Raw Selenium WebDriver exposing ``execute_cdp_cmd``.
+        x: Absolute X coordinate in viewport pixels.
+        y: Absolute Y coordinate in viewport pixels.
+        rng: Optional ``random.Random``-compatible instance used when
+            ``jitter`` is True. Defaults to the ``random`` module.
+        jitter: When True, apply up to ±0.5px per-event drift.
+    """
+    r = rng or _random
+    for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
+        ex, ey = x, y
+        if jitter:
+            ex += r.uniform(-0.5, 0.5)
+            ey += r.uniform(-0.5, 0.5)
+        driver.execute_cdp_cmd(
+            "Input.dispatchMouseEvent",
+            {"type": event_type, "x": ex, "y": ey, "button": "left", "clickCount": 1},
+        )
+
+
 def _get_proxy_ip(proxy_str: str | None = None) -> str | None:
     """Extract the proxy host IP from a proxy string via local DNS only.
 
@@ -694,9 +729,7 @@ def cdp_click_iframe_element(
     ir = base.execute_script("const r=arguments[0].getBoundingClientRect();return {left:r.left,top:r.top};", iframe)
     abs_x = ir["left"] + er["left"] + er["width"] / 2 + rng.uniform(-15, 15)
     abs_y = ir["top"] + er["top"] + er["height"] / 2 + rng.uniform(-5, 5)
-    for evt in ("mousePressed", "mouseReleased"):
-        base.execute_cdp_cmd("Input.dispatchMouseEvent",
-            {"type": evt, "x": abs_x, "y": abs_y, "button": "left", "clickCount": 1})
+    _dispatch_cdp_click_sequence(base, abs_x, abs_y, rng=rng, jitter=True)
     return abs_x, abs_y
 
 
@@ -1322,17 +1355,7 @@ class GivexDriver:
         abs_x = max(rect["left"], min(center_x + offset_x, rect["left"] + rect["width"]))
         abs_y = max(rect["top"], min(center_y + offset_y, rect["top"] + rect["height"]))
         try:
-            for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
-                self._driver.execute_cdp_cmd(
-                    "Input.dispatchMouseEvent",
-                    {
-                        "type": event_type,
-                        "x": abs_x,
-                        "y": abs_y,
-                        "button": "left",
-                        "clickCount": 1,
-                    },
-                )
+            _dispatch_cdp_click_sequence(self._driver, abs_x, abs_y)
             return
         except Exception:  # pylint: disable=broad-except
             if self._strict:

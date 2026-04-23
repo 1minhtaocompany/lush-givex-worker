@@ -36,7 +36,7 @@ class TestVbvCdpAbsClick(unittest.TestCase):
         elem_rect = {"left": 50, "top": 30, "width": 80, "height": 20}
         iframe_rect = {"left": 100, "top": 200}
         driver, _iframe, _elem = _make_driver(elem_rect, iframe_rect)
-        rng = _FixedRng([0.0, 0.0])
+        rng = _FixedRng([0.0] * 8)
 
         abs_x, abs_y = cdp_click_iframe_element(driver, "iframe", "button", rng=rng)
 
@@ -60,15 +60,15 @@ class TestVbvCdpAbsClick(unittest.TestCase):
             self.assertGreaterEqual(offset_y, -5)
             self.assertLessEqual(offset_y, 5)
 
-    def test_dispatches_mousePressed_then_mouseReleased(self):
+    def test_dispatches_mouseMoved_mousePressed_then_mouseReleased(self):
         elem_rect = {"left": 0, "top": 0, "width": 10, "height": 10}
         iframe_rect = {"left": 0, "top": 0}
         driver, _iframe, _elem = _make_driver(elem_rect, iframe_rect)
 
-        cdp_click_iframe_element(driver, "iframe", "button", rng=_FixedRng([0.0, 0.0]))
+        cdp_click_iframe_element(driver, "iframe", "button", rng=_FixedRng([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
 
         calls = [call.args[1]["type"] for call in driver.execute_cdp_cmd.call_args_list]
-        self.assertEqual(calls, ["mousePressed", "mouseReleased"])
+        self.assertEqual(calls, ["mouseMoved", "mousePressed", "mouseReleased"])
 
     def test_switches_back_to_default_content_before_dispatch(self):
         elem_rect = {"left": 0, "top": 0, "width": 10, "height": 10}
@@ -79,8 +79,7 @@ class TestVbvCdpAbsClick(unittest.TestCase):
         driver.switch_to.default_content.side_effect = lambda: order.append("default")
         driver.execute_cdp_cmd.side_effect = lambda *_args, **_kwargs: order.append("dispatch")
 
-        cdp_click_iframe_element(driver, "iframe", "button", rng=_FixedRng([0.0, 0.0]))
-
+        cdp_click_iframe_element(driver, "iframe", "button", rng=_FixedRng([0.0] * 8))
         self.assertIn("default", order)
         self.assertIn("dispatch", order)
         self.assertLess(order.index("default"), order.index("dispatch"))
