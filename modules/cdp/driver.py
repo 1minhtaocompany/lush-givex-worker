@@ -272,6 +272,11 @@ URL_PAYMENT   = os.getenv(
 
 # ── URL fragments used to detect order confirmation ─────────────────────────
 URL_CONFIRM_FRAGMENTS = ("/confirmation", "/order-confirmation", "order-confirm")
+# Host/domain that must be present in current_url before DOM/text-based
+# confirmation signals (generic CSS class, "thank you for your order")
+# are trusted. This avoids false-positives on unrelated pages (e.g. a
+# blog post or marketing page that happens to contain similar markup).
+URL_CONFIRM_HOST = "givex.com"
 
 # ── Navigation ───────────────────────────────────────────────────────────
 SEL_COOKIE_ACCEPT = "#button--accept-cookies"
@@ -730,8 +735,8 @@ def cdp_click_iframe_element(
     # the module-level ``random`` singleton (no shared state across threads).
     rng = rng if rng is not None else _random.Random()
     base = getattr(driver, "_driver", driver)
-    by = By.CSS_SELECTOR if By is not None else "css selector"
-    iframe = base.find_element(by, iframe_selector)
+    by_css = By.CSS_SELECTOR if By is not None else "css selector"
+    iframe = base.find_element(by_css, iframe_selector)
     base.switch_to.frame(iframe)
     elem = base.find_element(by, element_selector)
     er = base.execute_script("const r=arguments[0].getBoundingClientRect();return {left:r.left,top:r.top,width:r.width,height:r.height};", elem)
@@ -740,6 +745,43 @@ def cdp_click_iframe_element(
     abs_x = ir["left"] + er["left"] + er["width"] / 2 + rng.uniform(-15, 15)
     abs_y = ir["top"] + er["top"] + er["height"] / 2 + rng.uniform(-5, 5)
     _dispatch_cdp_click_sequence(base, abs_x, abs_y, rng=rng, jitter=True)
+    elem_rect = None
+    try:
+        elem = base.find_element(by_css, element_selector)
+        elem_rect = base.execute_script(
+            "const r=arguments[0].getBoundingClientRect();"
+            "return {left:r.left,top:r.top,width:r.width,height:r.height};",
+            elem,
+        )
+    finally:
+        base.switch_to.default_content()
+    if elem_rect is None:
+        raise RuntimeError(
+            "Failed to resolve iframe element rect for selector: "
+            f"{element_selector}"
+        )
+    iframe_rect = base.execute_script(
+        "const r=arguments[0].getBoundingClientRect();"
+        "return {left:r.left,top:r.top};",
+        iframe,
+    )
+    abs_x = (
+        iframe_rect["left"]
+        + elem_rect["left"]
+        + elem_rect["width"] / 2
+        + rng.uniform(-15, 15)
+    )
+    abs_y = (
+        iframe_rect["top"]
+        + elem_rect["top"]
+        + elem_rect["height"] / 2
+        + rng.uniform(-5, 5)
+    )
+    for evt in ("mousePressed", "mouseReleased"):
+        base.execute_cdp_cmd(
+            "Input.dispatchMouseEvent",
+            {"type": evt, "x": abs_x, "y": abs_y, "button": "left", "clickCount": 1},
+        )
     return abs_x, abs_y
 
 
@@ -761,6 +803,53 @@ def _popup_clear_after_close() -> bool:
     """
     raw = os.environ.get("POPUP_CLEAR_AFTER_CLOSE", "1").strip().lower()
     return raw not in ("0", "false", "no", "off", "")
+
+
+# P1-? — Max retry count for closing the "Something went wrong" popup.
+# The popup can re-appear immediately after a single close click (animation
+# race, re-render on the same error), so one click is not always enough.
+# Cap the retry loop at a small constant to avoid unbounded click storms.
+_POPUP_CLOSE_MAX_RETRIES_DEFAULT = 3
+_POPUP_CLOSE_VERIFY_TIMEOUT = 0.5
+
+
+def _popup_close_max_retries() -> int:
+    """Return the max number of close-button click attempts.
+
+    Default: 3. Set env ``POPUP_CLOSE_MAX_RETRIES`` to override (clamped
+    to ``[1, 10]``). Values that fail to parse fall back to the default.
+    """
+    raw = os.environ.get("POPUP_CLOSE_MAX_RETRIES", "").strip()
+    if not raw:
+        return _POPUP_CLOSE_MAX_RETRIES_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _POPUP_CLOSE_MAX_RETRIES_DEFAULT
+    if value < 1:
+        return 1
+    if value > 10:
+        return 10
+    return value
+
+
+def _popup_still_present(base_driver, locator, timeout: float) -> bool:
+    """Return True if the popup matched by ``locator`` is still present.
+
+    Uses a short :class:`WebDriverWait` so we do not block the retry loop
+    when the popup has been successfully dismissed.
+    """
+    if WebDriverWait is None or EC is None:  # pragma: no cover - import guard
+        return False
+    try:
+        WebDriverWait(base_driver, timeout).until(
+            EC.presence_of_element_located(locator)
+        )
+    except Exception:  # pylint: disable=broad-except
+        # TimeoutException → popup gone; any other selenium error →
+        # assume gone rather than loop forever.
+        return False
+    return True
 
 
 class PopupCloseOutcome(enum.Enum):
@@ -802,6 +891,13 @@ def handle_something_wrong_popup(
     "popup closed — re-fill required". The enum is bool-compatible to
     preserve existing ``if handle_...():`` call sites. Set env
     ``POPUP_CLEAR_AFTER_CLOSE=0`` to disable the clear step.
+
+    Retry: the close button is clicked up to ``POPUP_CLOSE_MAX_RETRIES``
+    times (default 3, clamped to ``[1, 10]``) because the popup can
+    re-render immediately after a single click. After each click we
+    re-check presence with a short timeout; if the popup has gone we
+    return ``CLOSED_NEEDS_REFILL``. If it is still present after the
+    final attempt a warning is logged and ``CLOSE_FAILED`` is returned.
     """
     if WebDriverWait is None or EC is None or By is None:
         return PopupCloseOutcome.NOT_PRESENT
@@ -815,10 +911,39 @@ def handle_something_wrong_popup(
             EC.presence_of_element_located(locator))
     except TimeoutException:
         return PopupCloseOutcome.NOT_PRESENT
-    try:
-        driver.bounding_box_click(SEL_POPUP_CLOSE)
-    except Exception as exc:  # pylint: disable=broad-except
-        _log.warning("popup close failed: %s", exc)
+    # Retry loop: the popup may re-appear immediately after a single
+    # close click (animation race / re-render). Try up to N times and
+    # log a warning if it's still present after the final attempt.
+    max_retries = _popup_close_max_retries()
+    closed = False
+    last_exc: "Exception | None" = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            driver.bounding_box_click(SEL_POPUP_CLOSE)
+        except Exception as exc:  # pylint: disable=broad-except
+            last_exc = exc
+            _log.warning(
+                "popup close failed (attempt %d/%d): %s",
+                attempt, max_retries, exc,
+            )
+            continue
+        # Re-check whether the popup is still present. If it has gone,
+        # we are done; otherwise loop and click again.
+        if not _popup_still_present(
+                base, locator, _POPUP_CLOSE_VERIFY_TIMEOUT):
+            closed = True
+            break
+        _log.warning(
+            "popup still present after close attempt %d/%d — retrying",
+            attempt, max_retries,
+        )
+    if not closed:
+        if last_exc is not None:
+            return PopupCloseOutcome.CLOSE_FAILED
+        _log.warning(
+            "popup still present after %d close attempts — giving up",
+            max_retries,
+        )
         return PopupCloseOutcome.CLOSE_FAILED
     if _popup_clear_after_close():
         clear = getattr(driver, "clear_card_fields_cdp", None)
@@ -1726,9 +1851,14 @@ class GivexDriver:
 
         Detection order:
         1. ``success``   — URL contains a confirmation fragment, OR
-                           ``.order-confirmation`` element is present, OR
-                           page text contains "thank you for your order"
-                           (SPA fallback when URL does not change).
+                           (URL is on the Givex host AND
+                            ``.order-confirmation`` element is present), OR
+                           (URL is on the Givex host AND page text contains
+                            "thank you for your order" — SPA fallback when
+                            URL path does not change).
+                           The host gate prevents false-positives when
+                           generic CSS classes or similar marketing copy
+                           appear on non-checkout pages.
         2. ``vbv_3ds``   — A 3-D Secure / Adyen iframe is present.
         3. ``declined``  — URL contains ``error=vv`` (Givex VBV/3DS failure
                            signal), OR a payment-error element is present, OR
@@ -1748,11 +1878,15 @@ class GivexDriver:
         # 1 — success
         if any(frag in current_url for frag in URL_CONFIRM_FRAGMENTS):
             return "success"
-        if self.find_elements(SEL_CONFIRMATION_EL):
+        # Gate DOM/text confirmation signals on the Givex host to avoid
+        # false-positives from generic CSS classes or marketing copy on
+        # unrelated pages.
+        on_givex_host = URL_CONFIRM_HOST in current_url.lower()
+        if on_givex_host and self.find_elements(SEL_CONFIRMATION_EL):
             return "success"
         # SPA fallback: DOM renders confirmation text without URL change
         page_text = self._driver.find_element("tag name", "body").text.lower()
-        if "thank you for your order" in page_text:
+        if on_givex_host and "thank you for your order" in page_text:
             return "success"
 
         # 2 — vbv_3ds

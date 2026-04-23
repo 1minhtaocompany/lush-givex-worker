@@ -698,5 +698,102 @@ class TestMakeTaskFnZipWiring(unittest.TestCase):
         mock_zip_lookup.assert_called_once_with("203.0.113.5")
 
 
+class TestMakeTaskFnPersonaInjection(unittest.TestCase):
+    """GivexDriver must receive a PersonaProfile derived from worker_id (Layer 2).
+
+    When ``persona is None`` in GivexDriver, 4x4 card pattern, ghost-cursor,
+    temporal night-factor, and biometric profile are all bypassed.  The
+    production task_fn must therefore always pass a persona so Layer 2
+    anti-detection stays active in production.
+    """
+
+    def _run(self, worker_id="worker-1"):
+        selenium_drv = _make_selenium_driver(pid=None)
+        bb_client = _make_bitbrowser_client()
+        givex_drv = MagicMock()
+        with (
+            patch(
+                "integration.worker_task.get_bitbrowser_client",
+                return_value=bb_client,
+            ),
+            patch(
+                "integration.worker_task._build_remote_driver",
+                return_value=selenium_drv,
+            ),
+            patch(
+                "modules.cdp.driver.GivexDriver",
+                return_value=givex_drv,
+            ) as mock_givex_cls,
+            patch("integration.worker_task.cdp"),
+            patch("integration.runtime.probe_cdp_listener_support"),
+        ):
+            from integration.worker_task import make_task_fn
+            make_task_fn()(worker_id)
+        return mock_givex_cls, selenium_drv
+
+    def test_givex_driver_called_with_persona(self):
+        """GivexDriver must be constructed with a non-None persona kwarg."""
+        mock_givex_cls, selenium_drv = self._run()
+        mock_givex_cls.assert_called_once()
+        args, kwargs = mock_givex_cls.call_args
+        self.assertEqual(args[0], selenium_drv)
+        persona = kwargs.get("persona")
+        self.assertIsNotNone(persona, "GivexDriver must receive a persona (Layer 2)")
+        from modules.delay.persona import PersonaProfile
+        self.assertIsInstance(persona, PersonaProfile)
+
+    def test_persona_seed_is_deterministic_from_worker_id(self):
+        """Same worker_id → same persona seed (matches runtime.start_worker)."""
+        import zlib
+        mock_givex_cls, _ = self._run(worker_id="worker-7")
+        _, kwargs = mock_givex_cls.call_args
+        persona = kwargs["persona"]
+        expected_seed = zlib.crc32(b"worker-7") & 0xFFFFFFFF
+        self.assertEqual(persona._seed, expected_seed)
+
+    def test_real_givex_driver_has_layer2_components_active(self):
+        """Production path must build a real GivexDriver with Layer 2 active.
+
+        Regression guard: patching ``GivexDriver`` only proves a ``persona``
+        kwarg is passed. This test runs without patching the constructor and
+        asserts the persona-backed components (``_bio``, ``_engine``,
+        ``_temporal``, ``_cursor``) are non-None, which is exactly what
+        bypasses 4x4 card pattern, ghost-cursor, temporal night-factor and
+        biometric profile when persona is ``None``.
+        """
+        selenium_drv = _make_selenium_driver(pid=None)
+        bb_client = _make_bitbrowser_client()
+        captured: list = []
+
+        def _capture_register(_wid, drv):
+            captured.append(drv)
+
+        with (
+            patch(
+                "integration.worker_task.get_bitbrowser_client",
+                return_value=bb_client,
+            ),
+            patch(
+                "integration.worker_task._build_remote_driver",
+                return_value=selenium_drv,
+            ),
+            patch("integration.worker_task.cdp") as mock_cdp,
+            patch("integration.runtime.probe_cdp_listener_support"),
+        ):
+            mock_cdp.register_driver.side_effect = _capture_register
+            from integration.worker_task import make_task_fn
+            make_task_fn()("worker-layer2")
+
+        self.assertEqual(len(captured), 1, "register_driver must be called once")
+        real_driver = captured[0]
+        from modules.cdp.driver import GivexDriver
+        self.assertIsInstance(real_driver, GivexDriver)
+        # Layer 2 components must all be active (non-None) in production.
+        self.assertIsNotNone(real_driver._engine, "DelayEngine must be active")
+        self.assertIsNotNone(real_driver._temporal, "TemporalModel must be active")
+        self.assertIsNotNone(real_driver._bio, "BiometricProfile must be active")
+        self.assertIsNotNone(real_driver._cursor, "GhostCursor must be active")
+
+
 if __name__ == "__main__":
     unittest.main()
