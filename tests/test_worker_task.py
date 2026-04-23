@@ -751,6 +751,49 @@ class TestMakeTaskFnPersonaInjection(unittest.TestCase):
         expected_seed = zlib.crc32(b"worker-7") & 0xFFFFFFFF
         self.assertEqual(persona._seed, expected_seed)
 
+    def test_real_givex_driver_has_layer2_components_active(self):
+        """Production path must build a real GivexDriver with Layer 2 active.
+
+        Regression guard: patching ``GivexDriver`` only proves a ``persona``
+        kwarg is passed. This test runs without patching the constructor and
+        asserts the persona-backed components (``_bio``, ``_engine``,
+        ``_temporal``, ``_cursor``) are non-None, which is exactly what
+        bypasses 4x4 card pattern, ghost-cursor, temporal night-factor and
+        biometric profile when persona is ``None``.
+        """
+        selenium_drv = _make_selenium_driver(pid=None)
+        bb_client = _make_bitbrowser_client()
+        captured: list = []
+
+        def _capture_register(_wid, drv):
+            captured.append(drv)
+
+        with (
+            patch(
+                "integration.worker_task.get_bitbrowser_client",
+                return_value=bb_client,
+            ),
+            patch(
+                "integration.worker_task._build_remote_driver",
+                return_value=selenium_drv,
+            ),
+            patch("integration.worker_task.cdp") as mock_cdp,
+            patch("integration.runtime.probe_cdp_listener_support"),
+        ):
+            mock_cdp.register_driver.side_effect = _capture_register
+            from integration.worker_task import make_task_fn
+            make_task_fn()("worker-layer2")
+
+        self.assertEqual(len(captured), 1, "register_driver must be called once")
+        real_driver = captured[0]
+        from modules.cdp.driver import GivexDriver
+        self.assertIsInstance(real_driver, GivexDriver)
+        # Layer 2 components must all be active (non-None) in production.
+        self.assertIsNotNone(real_driver._engine, "DelayEngine must be active")
+        self.assertIsNotNone(real_driver._temporal, "TemporalModel must be active")
+        self.assertIsNotNone(real_driver._bio, "BiometricProfile must be active")
+        self.assertIsNotNone(real_driver._cursor, "GhostCursor must be active")
+
 
 if __name__ == "__main__":
     unittest.main()
