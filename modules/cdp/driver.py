@@ -272,6 +272,11 @@ URL_PAYMENT   = os.getenv(
 
 # ── URL fragments used to detect order confirmation ─────────────────────────
 URL_CONFIRM_FRAGMENTS = ("/confirmation", "/order-confirmation", "order-confirm")
+# Host/domain that must be present in current_url before DOM/text-based
+# confirmation signals (generic CSS class, "thank you for your order")
+# are trusted. This avoids false-positives on unrelated pages (e.g. a
+# blog post or marketing page that happens to contain similar markup).
+URL_CONFIRM_HOST = "givex.com"
 
 # ── Navigation ───────────────────────────────────────────────────────────
 SEL_COOKIE_ACCEPT = "#button--accept-cookies"
@@ -1693,9 +1698,14 @@ class GivexDriver:
 
         Detection order:
         1. ``success``   — URL contains a confirmation fragment, OR
-                           ``.order-confirmation`` element is present, OR
-                           page text contains "thank you for your order"
-                           (SPA fallback when URL does not change).
+                           (URL is on the Givex host AND
+                            ``.order-confirmation`` element is present), OR
+                           (URL is on the Givex host AND page text contains
+                            "thank you for your order" — SPA fallback when
+                            URL path does not change).
+                           The host gate prevents false-positives when
+                           generic CSS classes or similar marketing copy
+                           appear on non-checkout pages.
         2. ``vbv_3ds``   — A 3-D Secure / Adyen iframe is present.
         3. ``declined``  — URL contains ``error=vv`` (Givex VBV/3DS failure
                            signal), OR a payment-error element is present, OR
@@ -1715,11 +1725,15 @@ class GivexDriver:
         # 1 — success
         if any(frag in current_url for frag in URL_CONFIRM_FRAGMENTS):
             return "success"
-        if self.find_elements(SEL_CONFIRMATION_EL):
+        # Gate DOM/text confirmation signals on the Givex host to avoid
+        # false-positives from generic CSS classes or marketing copy on
+        # unrelated pages.
+        on_givex_host = URL_CONFIRM_HOST in current_url.lower()
+        if on_givex_host and self.find_elements(SEL_CONFIRMATION_EL):
             return "success"
         # SPA fallback: DOM renders confirmation text without URL change
         page_text = self._driver.find_element("tag name", "body").text.lower()
-        if "thank you for your order" in page_text:
+        if on_givex_host and "thank you for your order" in page_text:
             return "success"
 
         # 2 — vbv_3ds
