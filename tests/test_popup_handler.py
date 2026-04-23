@@ -483,5 +483,101 @@ class TestPopupClearAfterClose(unittest.TestCase):
         self.assertIs(result, PopupCloseOutcome.CLOSED_NEEDS_REFILL)
 
 
+class TestPopupXPathCloseFallback(unittest.TestCase):
+    """P1-6 — CSS-miss fallback to XPath text-match for <button>/<a> close."""
+
+    def test_xpath_close_locator_covers_required_texts_and_tags(self):
+        xpath = drv.XPATH_POPUP_CLOSE
+        # Must cover both <button> and <a> tags.
+        self.assertIn("//button", xpath)
+        self.assertIn("//a", xpath)
+        # Must cover the required text tokens (case-insensitive ASCII via
+        # translate() + literal Vietnamese "Đóng").
+        self.assertIn("'close'", xpath)
+        self.assertIn("'ok'", xpath)
+        self.assertIn("'x'", xpath)
+        self.assertIn("Đóng", xpath)
+
+    def test_css_miss_triggers_xpath_fallback_and_returns_needs_refill(self):
+        from modules.common.exceptions import SelectorTimeoutError
+
+        fake_el = MagicMock()
+        base_driver = MagicMock()
+        base_driver.find_elements.return_value = [fake_el]
+        wrapper = SimpleNamespace(
+            _driver=base_driver,
+            bounding_box_click=MagicMock(
+                side_effect=SelectorTimeoutError(SEL_POPUP_CLOSE, 0)
+            ),
+            clear_card_fields_cdp=MagicMock(),
+        )
+        with patch.object(drv, "WebDriverWait") as mock_wait:
+            mock_wait.return_value.until.return_value = MagicMock()
+            result = handle_something_wrong_popup(wrapper, timeout=0.1)
+
+        self.assertIs(result, PopupCloseOutcome.CLOSED_NEEDS_REFILL)
+        base_driver.find_elements.assert_called_once_with(
+            "xpath", drv.XPATH_POPUP_CLOSE
+        )
+        fake_el.click.assert_called_once_with()
+        wrapper.clear_card_fields_cdp.assert_called_once_with()
+
+    def test_css_miss_with_no_xpath_match_returns_close_failed(self):
+        from modules.common.exceptions import SelectorTimeoutError
+
+        base_driver = MagicMock()
+        base_driver.find_elements.return_value = []
+        wrapper = SimpleNamespace(
+            _driver=base_driver,
+            bounding_box_click=MagicMock(
+                side_effect=SelectorTimeoutError(SEL_POPUP_CLOSE, 0)
+            ),
+            clear_card_fields_cdp=MagicMock(),
+        )
+        with patch.object(drv, "WebDriverWait") as mock_wait:
+            mock_wait.return_value.until.return_value = MagicMock()
+            result = handle_something_wrong_popup(wrapper, timeout=0.1)
+
+        self.assertIs(result, PopupCloseOutcome.CLOSE_FAILED)
+        wrapper.clear_card_fields_cdp.assert_not_called()
+
+    def test_xpath_fallback_tries_next_element_when_first_click_raises(self):
+        from modules.common.exceptions import SelectorTimeoutError
+
+        bad_el = MagicMock()
+        bad_el.click.side_effect = RuntimeError("detached")
+        good_el = MagicMock()
+        base_driver = MagicMock()
+        base_driver.find_elements.return_value = [bad_el, good_el]
+        wrapper = SimpleNamespace(
+            _driver=base_driver,
+            bounding_box_click=MagicMock(
+                side_effect=SelectorTimeoutError(SEL_POPUP_CLOSE, 0)
+            ),
+            clear_card_fields_cdp=MagicMock(),
+        )
+        with patch.object(drv, "WebDriverWait") as mock_wait:
+            mock_wait.return_value.until.return_value = MagicMock()
+            result = handle_something_wrong_popup(wrapper, timeout=0.1)
+
+        self.assertIs(result, PopupCloseOutcome.CLOSED_NEEDS_REFILL)
+        bad_el.click.assert_called_once_with()
+        good_el.click.assert_called_once_with()
+
+    def test_css_success_does_not_invoke_xpath_fallback(self):
+        base_driver = MagicMock()
+        wrapper = SimpleNamespace(
+            _driver=base_driver,
+            bounding_box_click=MagicMock(),
+            clear_card_fields_cdp=MagicMock(),
+        )
+        with patch.object(drv, "WebDriverWait") as mock_wait:
+            mock_wait.return_value.until.return_value = MagicMock()
+            result = handle_something_wrong_popup(wrapper, timeout=0.1)
+
+        self.assertIs(result, PopupCloseOutcome.CLOSED_NEEDS_REFILL)
+        base_driver.find_elements.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

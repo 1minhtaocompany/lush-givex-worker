@@ -328,6 +328,24 @@ XPATH_POPUP_SWW = (
     "'something went wrong')]"
 )
 SEL_POPUP_CLOSE = SEL_POPUP_CLOSE_BTN
+# P1-6: XPath fallback for popup close — matches <button>/<a> whose normalized
+# text is exactly one of Close/OK/X/Đóng (case-insensitive for ASCII via
+# translate()). Used only when the CSS locator above matches nothing, so the
+# default selector-driven path is unchanged.
+_XPATH_POPUP_CLOSE_LOWER = (
+    "translate(normalize-space(.),"
+    "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')"
+)
+XPATH_POPUP_CLOSE = (
+    f"//button[{_XPATH_POPUP_CLOSE_LOWER}='close'"
+    f" or {_XPATH_POPUP_CLOSE_LOWER}='ok'"
+    f" or {_XPATH_POPUP_CLOSE_LOWER}='x'"
+    " or normalize-space(.)='Đóng' or normalize-space(.)='đóng']"
+    f" | //a[{_XPATH_POPUP_CLOSE_LOWER}='close'"
+    f" or {_XPATH_POPUP_CLOSE_LOWER}='ok'"
+    f" or {_XPATH_POPUP_CLOSE_LOWER}='x'"
+    " or normalize-space(.)='Đóng' or normalize-space(.)='đóng']"
+)
 SEL_NEUTRAL_DIV     = "body"
 
 # ── Popup text-match patterns (P1-1, Blueprint §6 Fork 3 text-verify) ─────────
@@ -741,6 +759,30 @@ class PopupCloseOutcome(enum.Enum):
         return self is PopupCloseOutcome.CLOSED_NEEDS_REFILL
 
 
+def _popup_xpath_click_close(driver) -> bool:
+    """P1-6: XPath-based fallback click for popup close buttons/anchors.
+
+    Tries each element matching :data:`XPATH_POPUP_CLOSE` in document order
+    and returns True on the first successful ``.click()``. Returns False if
+    no elements match or every click attempt raises.
+    """
+    base = getattr(driver, "_driver", driver)
+    try:
+        elements = base.find_elements("xpath", XPATH_POPUP_CLOSE)
+    except Exception as exc:  # pylint: disable=broad-except
+        _log.warning("popup XPath close: find_elements failed: %s", exc)
+        return False
+    for element in elements:
+        try:
+            element.click()
+            return True
+        except Exception as exc:  # pylint: disable=broad-except
+            _log.debug(
+                "popup XPath close: click failed on element: %s", exc
+            )
+    return False
+
+
 def handle_something_wrong_popup(
     driver, timeout: float = 2.0
 ) -> "PopupCloseOutcome":
@@ -774,6 +816,16 @@ def handle_something_wrong_popup(
         return PopupCloseOutcome.NOT_PRESENT
     try:
         driver.bounding_box_click(SEL_POPUP_CLOSE)
+    except SelectorTimeoutError:
+        # P1-6: CSS locator matched nothing — fall back to XPath text-match
+        # so popups that use <a>Close</a> / <button>OK</button> / "Đóng" /
+        # an "X" glyph anchor still get closed. Failures fall through to the
+        # CLOSE_FAILED branch below.
+        if not _popup_xpath_click_close(driver):
+            _log.warning(
+                "popup close failed: no CSS or XPath text-match element"
+            )
+            return PopupCloseOutcome.CLOSE_FAILED
     except Exception as exc:  # pylint: disable=broad-except
         _log.warning("popup close failed: %s", exc)
         return PopupCloseOutcome.CLOSE_FAILED
