@@ -193,16 +193,30 @@ class BitBrowserClient:
 
 
 class BitBrowserSession:
-    """Context manager for BitBrowser profile lifecycle.
+    """Context manager for BitBrowser profile lifecycle (Blueprint §2.1).
 
-    __enter__: create_profile() → launch_profile() → return (profile_id, webdriver_url)
-    __exit__: release_profile() — idempotent close + delete, best-effort
+    Supports two modes, selected by ``isinstance(client, BitBrowserPoolClient)``:
+
+    * **POOL MODE** (``BITBROWSER_POOL_MODE=1``, pool client):
+      ``__enter__`` runs ``acquire_profile()`` → ``randomize_fingerprint()``
+      → ``launch_profile()`` (POST ``/browser/open``). ``__exit__`` runs
+      ``release_profile()`` which posts ``/browser/close`` and clears the
+      pool BUSY set. ``create_profile()`` / ``delete_profile()`` are **NEVER**
+      called (POOL-NO-DELETE). On HTTP 404 from ``/browser/open`` the
+      profile is evicted from the pool (POOL-EVICT).
+    * **LEGACY MODE** (non-pool client): ``__enter__`` runs
+      ``create_profile()`` → ``launch_profile()``. ``__exit__`` runs
+      ``close_profile()`` + ``delete_profile()`` (idempotent, best-effort).
     """
 
     def __init__(self, client: BitBrowserClient):
         self._client = client
         self._profile_id: Optional[str] = None
         self._released: bool = False
+        # Detect pool-capable clients (Blueprint §2.1). We intentionally
+        # check this ONCE here rather than per-call; legacy ``BitBrowserClient``
+        # instances keep the original create/delete flow untouched.
+        self._pool_mode: bool = isinstance(client, BitBrowserPoolClient)
 
     @property
     def profile_id(self) -> Optional[str]:
@@ -210,10 +224,55 @@ class BitBrowserSession:
         return self._profile_id
 
     def __enter__(self) -> Tuple[str, str]:
-        profile_id = self._client.create_profile()
-        launch_data = self._client.launch_profile(profile_id)
+        if self._pool_mode:
+            # Pool-mode flow (Blueprint §2.1):
+            #   acquire_profile → randomize_fingerprint (/browser/update/partial)
+            #   → launch_profile (/browser/open)
+            # NEVER calls create_profile / delete_profile.
+            profile_id = self._client.acquire_profile()
+            try:
+                self._client.randomize_fingerprint(profile_id)
+                launch_data = self._client.launch_profile(profile_id)
+            except urllib.error.HTTPError as exc:
+                # POOL-EVICT: 404 on /browser/open must also evict the
+                # profile from the pool; randomize_fingerprint evicts on
+                # its own 404 internally before re-raising.
+                if exc.code == 404:
+                    self._client._evict_profile(  # pylint: disable=protected-access
+                        profile_id)
+                # Always release BUSY so the pool does not leak a slot.
+                try:
+                    self._client.release_profile(profile_id)
+                except (urllib.error.URLError, OSError, RuntimeError) as rel_exc:
+                    _log.warning(
+                        "release_profile failed after HTTPError for %s: %s",
+                        profile_id, rel_exc)
+                self._released = True
+                raise
+            except (urllib.error.URLError, OSError, RuntimeError):
+                # Network / runtime failure (e.g. randomize_fingerprint's
+                # RuntimeError-wrapped 404). Release BUSY then propagate.
+                try:
+                    self._client.release_profile(profile_id)
+                except (urllib.error.URLError, OSError, RuntimeError) as rel_exc:
+                    _log.warning(
+                        "release_profile failed after error for %s: %s",
+                        profile_id, rel_exc)
+                self._released = True
+                raise
+        else:
+            profile_id = self._client.create_profile()
+            launch_data = self._client.launch_profile(profile_id)
         webdriver_url = launch_data.get("webdriver")
         if not isinstance(webdriver_url, str) or not webdriver_url:
+            if self._pool_mode:
+                try:
+                    self._client.release_profile(profile_id)
+                except (urllib.error.URLError, OSError, RuntimeError) as rel_exc:
+                    _log.warning(
+                        "release_profile failed after missing webdriver "
+                        "for %s: %s", profile_id, rel_exc)
+                self._released = True
             raise RuntimeError("BitBrowser launch_profile response missing webdriver")
         self._profile_id = profile_id
         self._released = False
@@ -228,6 +287,11 @@ class BitBrowserSession:
         calls log and swallow network errors individually, and
         ``_released`` is set in a ``finally`` block so a transient failure
         never causes a re-release on a subsequent call.
+
+        In pool mode (``BITBROWSER_POOL_MODE=1``) delegates to
+        ``client.release_profile(profile_id)`` which closes the browser and
+        returns the profile to the pool — ``delete_profile`` is NEVER
+        invoked (POOL-NO-DELETE).
         """
         if self._released:
             return
@@ -236,21 +300,31 @@ class BitBrowserSession:
             return
         profile_id = self._profile_id
         try:
-            # Order: close the browser process first so no in-flight state is
-            # clobbered, then delete the profile from the pool.  Each step
-            # is already best-effort inside the client wrappers.
-            try:
-                self._client.close_profile(profile_id)
-            except (urllib.error.URLError, OSError) as exc:
-                _log.warning(
-                    "Best-effort BitBrowser close_profile failed for %s: %s",
-                    profile_id, exc)
-            try:
-                self._client.delete_profile(profile_id)
-            except (urllib.error.URLError, OSError) as exc:
-                _log.warning(
-                    "Best-effort BitBrowser delete_profile failed for %s: %s",
-                    profile_id, exc)
+            if self._pool_mode:
+                # POOL-NO-DELETE: close via pool client's release which
+                # handles /browser/close + BUSY clear, never /browser/delete.
+                try:
+                    self._client.release_profile(profile_id)
+                except (urllib.error.URLError, OSError, RuntimeError) as exc:
+                    _log.warning(
+                        "Best-effort BitBrowser pool release_profile failed "
+                        "for %s: %s", profile_id, exc)
+            else:
+                # Legacy: close the browser process first so no in-flight
+                # state is clobbered, then delete the profile from the pool.
+                # Each step is already best-effort inside the client wrappers.
+                try:
+                    self._client.close_profile(profile_id)
+                except (urllib.error.URLError, OSError) as exc:
+                    _log.warning(
+                        "Best-effort BitBrowser close_profile failed for %s: %s",
+                        profile_id, exc)
+                try:
+                    self._client.delete_profile(profile_id)
+                except (urllib.error.URLError, OSError) as exc:
+                    _log.warning(
+                        "Best-effort BitBrowser delete_profile failed for %s: %s",
+                        profile_id, exc)
         finally:
             self._released = True
 
@@ -273,11 +347,38 @@ def get_bitbrowser_client() -> Optional[BitBrowserClient]:
     pool_mode = os.getenv("BITBROWSER_POOL_MODE", "0").strip().lower()
     if pool_mode in ("1", "true", "yes"):
         ids_raw = os.getenv("BITBROWSER_PROFILE_IDS", "")
-        profile_ids = [pid.strip() for pid in ids_raw.split(",") if pid.strip()]
-        if not profile_ids:
+        raw_ids = [pid.strip() for pid in ids_raw.split(",") if pid.strip()]
+        if not raw_ids:
             raise RuntimeError(
                 "BITBROWSER_POOL_MODE=1 but BITBROWSER_PROFILE_IDS is empty. "
                 "Add a CSV of profile IDs to .env (Blueprint §2.1)."
+            )
+        # Dedupe while preserving order; warn if duplicates were present.
+        seen: set = set()
+        profile_ids: List[str] = []
+        for pid in raw_ids:
+            if pid in seen:
+                continue
+            seen.add(pid)
+            profile_ids.append(pid)
+        if len(profile_ids) < len(raw_ids):
+            _log.warning(
+                "BITBROWSER_PROFILE_IDS contains duplicate ids; "
+                "deduped %d → %d entries.",
+                len(raw_ids), len(profile_ids),
+            )
+        # Warn when the pool is too small for the configured worker count —
+        # Blueprint §2.1 recommends ≥ 2×WORKER_COUNT so workers do not
+        # serialise on acquire_profile.
+        try:
+            worker_count = int(os.getenv("WORKER_COUNT", "0"))
+        except ValueError:
+            worker_count = 0
+        if worker_count > 0 and len(profile_ids) < worker_count * 2:
+            _log.warning(
+                "BitBrowser pool size %d < 2x WORKER_COUNT (%d); workers "
+                "may block on acquire_profile. Increase BITBROWSER_PROFILE_IDS.",
+                len(profile_ids), worker_count,
             )
         return BitBrowserPoolClient(
             endpoint=endpoint,
@@ -354,7 +455,7 @@ class BitBrowserPoolClient(BitBrowserClient):
                         self._busy.add(pid)
                         self._cursor = (idx + 1) % n
                         _log.debug(
-                            "acquired profile=%s cursor=%d busy=%d",
+                            "event=pool_acquire profile=%s cursor=%d busy=%d",
                             pid, self._cursor, len(self._busy),
                         )
                         return pid
@@ -373,13 +474,13 @@ class BitBrowserPoolClient(BitBrowserClient):
         """
         try:
             self._close_browser(profile_id)
-        except Exception as exc:  # pylint: disable=broad-except
+        except (urllib.error.URLError, OSError, RuntimeError) as exc:
             _log.warning("close_browser failed for %s: %s", profile_id, exc)
         finally:
             with self._lock:
                 self._busy.discard(profile_id)
                 _log.debug(
-                    "released profile=%s busy=%d",
+                    "event=pool_release profile=%s busy=%d",
                     profile_id, len(self._busy),
                 )
 
@@ -399,7 +500,7 @@ class BitBrowserPoolClient(BitBrowserClient):
         }
         try:
             self._post("/browser/update/partial", payload, timeout=10)
-            _log.info("fingerprint randomised for %s", profile_id)
+            _log.info("event=fingerprint_randomised profile=%s", profile_id)
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 self._evict_profile(profile_id)
