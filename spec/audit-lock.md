@@ -320,13 +320,24 @@ modules/cdp/fingerprint.py — BitBrowserPoolClient
   acquire_profile() → str (sequential, thread-safe)
   release_profile(profile_id) → None (best-effort close, always clears BUSY)
   randomize_fingerprint(profile_id) → POST /browser/update/partial
+    HTTPError 404 → _evict_profile(profile_id) → raise RuntimeError
   launch_profile(profile_id) → dict (POST /browser/open)
-  _evict_profile(profile_id) → pool removal on 404
+    HTTPError 404 → _evict_profile(profile_id) → re-raise HTTPError
+  _evict_profile(profile_id) → pool removal on 404; rewinds cursor
+    (decrements when cursor was strictly past the removed index, else
+    clamps back to 0 when the cursor would fall off the end)
+  __init__ validation:
+    • strips + filters empty/whitespace-only profile IDs before dedupe
+    • dedupes profile_ids, emits WARNING per duplicate
+    • raises ValueError when the sanitised pool is empty
+    • raises RuntimeError when len(pool) < WORKER_COUNT
+    • emits WARNING when len(pool) < 2 × WORKER_COUNT
+    • migration note: deployments with pool < WORKER_COUNT now fail fast
+      at startup until BITBROWSER_PROFILE_IDS is expanded
   get_bitbrowser_client() factory branches on BITBROWSER_POOL_MODE:
-    "1"/"true"/"yes" → BitBrowserPoolClient (requires BITBROWSER_PROFILE_IDS)
+    "1"/"true"/"yes" → BitBrowserPoolClient (requires BITBROWSER_PROFILE_IDS;
+                       dedupe + size guards enforced by __init__)
     otherwise        → legacy BitBrowserClient (unchanged behaviour)
-  get_bitbrowser_client() dedupes BITBROWSER_PROFILE_IDS (warns) and warns
-    when len(pool) < 2 × WORKER_COUNT.
 
 modules/cdp/fingerprint.py — BitBrowserSession (INV-POOL-INT, Phase 2)
   __init__: detects pool capability via isinstance(client, BitBrowserPoolClient)
